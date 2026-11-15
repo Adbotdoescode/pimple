@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Pt, Shape } from "@shared/contracts";
 import type { ShapeStyle } from "./palette";
 import {
@@ -68,7 +68,6 @@ interface Item { shape: Shape; index: number }
 
 export function ShapeLayer(props: ShapeLayerProps): ReactElement {
   const { shapes, visibleSegmentIds, pulseShapeIds, variant = "main", toView, scale, styleFor, opacity = 1, viewport } = props;
-  const uid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const side = variant === "sidenote";
   const pulseSet = new Set(pulseShapeIds ?? []);
 
@@ -101,14 +100,6 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
 
   return (
     <g className={side ? "gt-root gt-sidenote" : "gt-root"} style={{ opacity }}>
-      <defs>
-        <filter id={`gt-shadow-${uid}`} filterUnits="userSpaceOnUse" x={-5000} y={-5000} width={20000} height={20000}>
-          <feDropShadow dx={0} dy={1.5} stdDeviation={1.6} floodColor="#000000" floodOpacity={0.28} />
-        </filter>
-        <filter id={`gt-blur-${uid}`} filterUnits="userSpaceOnUse" x={-5000} y={-5000} width={20000} height={20000}>
-          <feGaussianBlur stdDeviation={2.5} />
-        </filter>
-      </defs>
       {items.map(({ shape, index }) => (
         <ShapeNode
           key={shape.id}
@@ -118,7 +109,6 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
           scale={scale}
           style={styleFor(shape)}
           side={side}
-          uid={uid}
           pulsing={pulseSet.has(shape.id)}
           placements={placements}
         />
@@ -134,12 +124,11 @@ interface ShapeNodeProps {
   scale: number;
   style: ShapeStyle;
   side: boolean;
-  uid: string;
   pulsing: boolean;
   placements: Map<string, LabelPlacement>;
 }
 
-function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing, placements }: ShapeNodeProps): ReactElement | null {
+function ShapeNode({ shape, index, toView, scale, style, side, pulsing, placements }: ShapeNodeProps): ReactElement | null {
   const ctx: Ctx = {
     toView,
     scale,
@@ -161,18 +150,16 @@ function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing, pla
       d={built.main}
       fill="none"
       stroke={style.stroke}
-      strokeWidth={6}
+      strokeWidth={STROKE_W + 8}
       strokeLinecap="round"
       strokeLinejoin="round"
       className="gt-glow"
-      filter={`url(#gt-blur-${uid})`}
     />
   ) : null;
   return (
     <g
       className={side ? "gt-side-shape" : undefined}
       style={side ? { animationDelay: `${ctx.delay}ms` } : undefined}
-      filter={side ? undefined : `url(#gt-shadow-${uid})`}
     >
       {glow}
       {built.nodes}
@@ -434,25 +421,30 @@ function placedAt(c: Ctx, s: Shape): LabelPlacement | null {
 /* ───────────── shared pieces ───────────── */
 
 /** A stroke that draws on (dashoffset animation) in the main variant, or fades with the group in sidenote. */
-function Stroke({ d, color, width, c, dash, opacity }: {
-  d: string; color: string; width: number; c: Ctx; dash?: string; opacity?: number;
+function Stroke({ d, color, width, c, dash, opacity, dy }: {
+  d: string; color: string; width: number; c: Ctx; dash?: string; opacity?: number; dy?: number;
 }): ReactElement {
+  const transform = dy ? `translate(0 ${dy})` : undefined;
   if (c.side) {
     return (
       <path d={d} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round"
-        strokeDasharray={dash ?? "7 5"} strokeOpacity={opacity} />
+        strokeDasharray={dash ?? "7 5"} strokeOpacity={opacity} transform={transform} />
     );
   }
   return (
     <path d={d} pathLength={1} className="gt-draw" fill="none" stroke={color} strokeWidth={width}
-      strokeLinecap="round" strokeLinejoin="round" strokeOpacity={opacity}
+      strokeLinecap="round" strokeLinejoin="round" strokeOpacity={opacity} transform={transform}
       style={{ animationDelay: `${c.delay}ms` }} />
   );
 }
 
-/** Main stroke with an optional halo underlay (same path, 2 px per side wider). */
+/**
+ * Main stroke, optional halo underlay (2 px per side wider), and a soft shadow underlay
+ * offset 1.5 px down. Underlays are plain offset copies, never SVG or CSS filters.
+ */
 function strokeNodes(d: string, c: Ctx, width = STROKE_W): ReactNode[] {
   const out: ReactNode[] = [];
+  if (!c.side) out.push(<Stroke key="shadow" d={d} color="rgba(0,0,0,0.16)" width={width + 1.5} c={c} dy={1.5} />);
   if (c.style.halo) out.push(<Stroke key="halo" d={d} color={c.style.halo} width={width + 4} c={c} />);
   out.push(<Stroke key="main" d={d} color={c.style.stroke} width={width} c={c} />);
   return out;
