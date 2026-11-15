@@ -29,10 +29,11 @@ function devDragBead(fx: number, fy: number, hold = 120): void {
     i += 1;
     const t = i / steps;
     fire("pointermove", from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
-    if (i < steps) requestAnimationFrame(tick);
+    // Timers, not rAF: a hidden window gets no animation frames and the drag would never end.
+    if (i < steps) window.setTimeout(tick, 16);
     else window.setTimeout(() => fire("pointerup", to.x, to.y), hold);
   };
-  requestAnimationFrame(tick);
+  window.setTimeout(tick, 16);
 }
 
 export default function App() {
@@ -66,7 +67,8 @@ export default function App() {
 
   // Dev only (the tray is hard to reach from scripts): an injected ui:intent of the made-up type
   // "dev" (which the brain ignores) drives this window. `devOpen: "<tab>"` shows it on that tab,
-  // `devOpen: "hide"` hides it, `devTab: "<tab>"` switches section without focusing. Example:
+  // `devOpen: "hide"` hides it, `devTab: "<tab>"` switches section without focusing,
+  // `devDrag: {x, y}` drags the mini bubble in-page, `devReload: true` reloads this webview. Example:
   //   scripts/gt-emit.sh ui:intent '{"type":"dev","devOpen":"voice"}'
   const [devTab, setDevTab] = useState<string | undefined>(undefined);
   useEffect(() => {
@@ -77,6 +79,10 @@ export default function App() {
       // `devTab` switches the section without showing or focusing the window.
       const tabOnly = (p as { devTab?: unknown }).devTab;
       if (typeof tabOnly === "string") setDevTab(tabOnly);
+      if ((p as { devReload?: unknown }).devReload === true) {
+        window.location.reload();
+        return;
+      }
       const drag = (p as { devDrag?: { x: number; y: number; hold?: number } }).devDrag;
       if (drag && typeof drag.x === "number" && typeof drag.y === "number") devDragBead(drag.x, drag.y, drag.hold);
       const dev = (p as { devOpen?: unknown }).devOpen;
