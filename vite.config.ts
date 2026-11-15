@@ -6,7 +6,7 @@ import { resolve } from "path";
 const host = process.env.TAURI_DEV_HOST;
 
 // One Vite entry per Tauri window label (see docs/ARCHITECTURE.md).
-const WINDOWS = ["brain", "bubble", "overlay", "card", "whiteboard", "settings"];
+const WINDOWS = ["brain", "bubble", "overlay", "card", "whiteboard", "settings", "gizmo"];
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
