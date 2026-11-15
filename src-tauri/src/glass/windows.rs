@@ -179,7 +179,7 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
     // card: glass panel under/next to the bubble; can become key (typed-question box).
     // Card sits directly below the visible bubble circle, right-aligned with it.
     let (cw, ch) = CARD_SIZE;
-    let circle_right = d.x + d.w - BUBBLE_EDGE_GAP;
+    let circle_right = d.x + d.w - 60.0; // beside the merged droplet, toward the interior
     let circle_bottom = bubble_y + (BUBBLE_SIZE + BUBBLE_DIAMETER) / 2.0;
     match PanelBuilder::<_, GlassKeyPanel>::new(app, "card")
         .url(url("card"))
