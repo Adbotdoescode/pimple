@@ -2,13 +2,14 @@ import type { AppSettings, CaptureResult, Segment, Shape, TutorResponse } from "
 import tutorSchema from "../../shared/tutor_response.schema.json";
 import { getAnthropic, readableApiError } from "./anthropic";
 import { createResponseStreamParser } from "./jsonStream";
-import { TUTOR_SYSTEM_PROMPT, buildTutorUserText, imageBlock } from "./prompts";
+import { TUTOR_SYSTEM_PROMPT, buildTutorUserText, captureBlocks } from "./prompts";
 
 export interface TutorCallInput {
   capture: CaptureResult; // must include imageBase64
   question: string;
   settings: AppSettings;
   interruption?: { segmentId: string; segmentText: string; spokenSegments: Segment[]; shapes: Shape[]; objection: string };
+  followUp?: { previousQuestion: string; spokenSegments: Segment[]; shapes: Shape[]; note: string };
   checkAnswer?: { checkQuestion: string; answer: string };
   critique?: string[];
   surfaceHint?: "overlay" | "whiteboard";
@@ -45,7 +46,7 @@ export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers)
       messages: [
         {
           role: "user",
-          content: [imageBlock(input.capture), { type: "text", text: buildTutorUserText(input) }],
+          content: [...captureBlocks(input.capture), { type: "text", text: buildTutorUserText(input) }],
         },
       ],
     },
@@ -84,7 +85,7 @@ export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers)
   const response = parser.finish(finalText);
   console.info(
     `[tutor] done +${Math.round(performance.now() - t0)} ms stop=${final.stop_reason} ` +
-      `segments=${response.segments.length} shapes=${response.shapes.length}`,
+      `segments=${response.segments.length} shapes=${response.shapes.length} surface=${response.surface}`,
   );
   return response;
 }

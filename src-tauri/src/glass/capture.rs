@@ -1,7 +1,8 @@
 //! C2 capture. Owner: Domain 2.
-//! `capture`: screenshot of a padded region of the display the bubble is on. Our own panels
-//! (bubble, overlay, card) are hidden for the shot and restored right after it. The JPEG is
-//! downscaled to a long edge of 1568 px for the model.
+//! `capture`: one native-resolution screenshot of the display the bubble is on, with our own
+//! panels (bubble, overlay, card) hidden for the shot. The main image is the full display,
+//! downscaled to a long edge of 1568 px. For modes "region" and "lasso" with a region, `focus`
+//! is a sharper crop of the padded region, cut from the native shot before any downscaling.
 //! `read_debug_file`: debug helper, reads an absolute path as text.
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,6 +34,19 @@ pub struct RectPts {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CaptureFocus {
+    pub image_path: String,
+    pub image_base64: String,
+    pub image_width: u32,
+    pub image_height: u32,
+    /// Focus region in MAIN-image pixels [x, y, w, h].
+    pub rect_in_image_px: [f64; 4],
+    /// Focus region in screen points (padded 12%, clamped to the display).
+    pub region_in_screen_points: RectPts,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CaptureResult {
     pub mode: String,
     pub image_path: String,
@@ -43,6 +57,8 @@ pub struct CaptureResult {
     pub display_id: u32,
     pub pixel_scale: f64,
     pub captured_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<CaptureFocus>,
 }
 
 /// invoke("capture", {mode, region?, fixture?}) → CaptureResult. Flat camelCase args.
@@ -70,61 +86,134 @@ fn capture_blocking(
     let total_t = Instant::now();
     let (display, display_id) = target_display(app);
     let captured_at = now_ms();
-    let out = captures_dir(app)?.join(format!("cap-{captured_at}.jpg"));
+    let dir = captures_dir(app)?;
+    let native_path = dir.join(format!("cap-{captured_at}-native.jpg"));
+    let main_path = dir.join(format!("cap-{captured_at}.jpg"));
+    let focus_path = dir.join(format!("cap-{captured_at}-focus.jpg"));
 
+    // The native source is the full display at native resolution. `native_region` is its frame
+    // in points, `native_scale` its pixels per point, `native_px` its pixel size.
     let is_fixture = fixture.is_some();
-    let (region, image_width, image_height, hide_ms, shot_ms) = match fixture {
+    let (native_region, native_scale, native_px, hide_ms, shot_ms) = match fixture {
         Some(src) => {
             let src = PathBuf::from(&src);
             if !src.is_absolute() || !src.is_file() {
                 return Err(format!("fixture is not an existing absolute file: {src:?}"));
             }
-            run_sips(&["-s", "format", "jpeg"], &src, Some(&out))?;
-            let (iw, ih) = fit_to_edge(&out)?;
+            run_sips(&["-s", "format", "jpeg"], &src, Some(&native_path))?;
+            let (iw, ih) = pixel_size(&native_path)?;
             let scale = (iw as f64 / display.w).max(ih as f64 / display.h);
-            let region = RectPts {
+            let nr = RectPts {
                 x: display.x,
                 y: display.y,
                 w: iw as f64 / scale,
                 h: ih as f64 / scale,
             };
-            (region, iw, ih, 0, 0)
+            (nr, scale, (iw, ih), 0, 0)
         }
         None => {
-            let target = if mode == "click" { None } else { region };
-            let region = plan_region(display, target);
-
             let hide_t = Instant::now();
             let hidden = hide_ours(app)?;
             std::thread::sleep(HIDE_SETTLE);
             let hide_ms = hide_t.elapsed().as_millis();
 
             let shot_t = Instant::now();
-            let shot = screencapture(region, &out);
+            let shot = screencapture(display, &native_path);
             // Restore before anything else, even when the capture failed.
             restore_ours(app, &hidden);
             let shot_ms = shot_t.elapsed().as_millis();
             shot?;
 
-            let (iw, ih) = fit_to_edge(&out)?;
-            (region, iw, ih, hide_ms, shot_ms)
+            let (nw, nh) = pixel_size(&native_path)?;
+            (display, nw as f64 / display.w, (nw, nh), hide_ms, shot_ms)
         }
     };
 
-    let bytes = std::fs::read(&out).map_err(|e| format!("read capture: {e}"))?;
+    // Focus: the padded region, cut from the native image before anything is downscaled.
+    let focus_region = match (mode, region) {
+        ("region" | "lasso", Some(r)) => Some(plan_region(display, Some(r))),
+        _ => None,
+    };
+    let focus_t = Instant::now();
+    let focus_native = match focus_region {
+        Some(fr) => {
+            let (nw, nh) = native_px;
+            let x0 = ((fr.x - native_region.x) * native_scale).round().clamp(0.0, nw as f64 - 1.0);
+            let y0 = ((fr.y - native_region.y) * native_scale).round().clamp(0.0, nh as f64 - 1.0);
+            let cw = (fr.w * native_scale).round().clamp(1.0, nw as f64 - x0);
+            let ch = (fr.h * native_scale).round().clamp(1.0, nh as f64 - y0);
+            let (ys, xs) = (format!("{}", y0 as u32), format!("{}", x0 as u32));
+            let (hs, ws) = (format!("{}", ch as u32), format!("{}", cw as u32));
+            run_sips(
+                &["--cropOffset", ys.as_str(), xs.as_str(), "-c", hs.as_str(), ws.as_str()],
+                &native_path,
+                Some(&focus_path),
+            )?;
+            let native_crop = pixel_size(&focus_path)?;
+            let (fw, fh) = fit_to_edge(&focus_path)?;
+            log::info!(
+                "capture focus native_crop={}x{} image={}x{} took={}ms",
+                native_crop.0,
+                native_crop.1,
+                fw,
+                fh,
+                focus_t.elapsed().as_millis()
+            );
+            Some((fr, fw, fh))
+        }
+        None => None,
+    };
+
+    // Main: the full display (or the fixture's full frame), downscaled to fit the model.
+    let main_t = Instant::now();
+    std::fs::copy(&native_path, &main_path).map_err(|e| format!("copy capture: {e}"))?;
+    let (mw, mh) = fit_to_edge(&main_path)?;
+    let main_scale = mw as f64 / native_region.w;
+    log::info!(
+        "capture main native={}x{} image={}x{} took={}ms",
+        native_px.0,
+        native_px.1,
+        mw,
+        mh,
+        main_t.elapsed().as_millis()
+    );
+    let _ = std::fs::remove_file(&native_path);
+
+    let focus = match focus_native {
+        Some((fr, fw, fh)) => {
+            let rect = [
+                ((fr.x - native_region.x) * main_scale).round(),
+                ((fr.y - native_region.y) * main_scale).round(),
+                (fr.w * main_scale).round(),
+                (fr.h * main_scale).round(),
+            ];
+            let bytes = std::fs::read(&focus_path).map_err(|e| format!("read focus: {e}"))?;
+            Some(CaptureFocus {
+                image_path: focus_path.to_string_lossy().into_owned(),
+                image_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+                image_width: fw,
+                image_height: fh,
+                rect_in_image_px: rect,
+                region_in_screen_points: fr,
+            })
+        }
+        None => None,
+    };
+
+    let bytes = std::fs::read(&main_path).map_err(|e| format!("read capture: {e}"))?;
     let image_base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    let pixel_scale = image_width as f64 / region.w;
 
     log::info!(
-        "capture mode={} fixture={} region=({:.0},{:.0},{:.0},{:.0}) image={}x{} hide={}ms shot={}ms total={}ms",
+        "capture mode={} fixture={} region=({:.0},{:.0},{:.0},{:.0}) image={}x{} focus={} hide={}ms shot={}ms total={}ms",
         mode,
         is_fixture,
-        region.x,
-        region.y,
-        region.w,
-        region.h,
-        image_width,
-        image_height,
+        native_region.x,
+        native_region.y,
+        native_region.w,
+        native_region.h,
+        mw,
+        mh,
+        focus.is_some(),
         hide_ms,
         shot_ms,
         total_t.elapsed().as_millis()
@@ -132,14 +221,15 @@ fn capture_blocking(
 
     Ok(CaptureResult {
         mode: mode.to_string(),
-        image_path: out.to_string_lossy().into_owned(),
+        image_path: main_path.to_string_lossy().into_owned(),
         image_base64,
-        image_width,
-        image_height,
-        region_in_screen_points: region,
+        image_width: mw,
+        image_height: mh,
+        region_in_screen_points: native_region,
         display_id,
-        pixel_scale,
+        pixel_scale: main_scale,
         captured_at,
+        focus,
     })
 }
 
@@ -201,8 +291,8 @@ fn target_display(app: &AppHandle) -> (RectPts, u32) {
     }
 }
 
-/// No target (click mode or no region): the full display. Otherwise the target padded by 12%
-/// per side, intersected with the display and rounded outward to whole points.
+/// No target: the full display. Otherwise the target padded by 12% per side, intersected with
+/// the display and rounded outward to whole points.
 fn plan_region(display: RectPts, target: Option<RectPts>) -> RectPts {
     let padded = match target {
         Some(t) if t.w > 0.0 && t.h > 0.0 => RectPts {
@@ -315,6 +405,7 @@ fn restore_ours(app: &AppHandle, hidden: &[&'static str]) {
     }
 }
 
+/// One screencapture of `region` (points) at native resolution.
 fn screencapture(region: RectPts, out: &Path) -> Result<(), String> {
     let rect = format!(
         "{},{},{},{}",
@@ -379,7 +470,8 @@ fn pixel_size(path: &Path) -> Result<(u32, u32), String> {
     }
 }
 
-/// Downscales in place so the long edge is at most MAX_EDGE. Returns the final pixel size.
+/// Downscales in place so the long edge is at most MAX_EDGE (never upscales). Returns the
+/// final pixel size.
 fn fit_to_edge(path: &Path) -> Result<(u32, u32), String> {
     let (w, h) = pixel_size(path)?;
     if w.max(h) <= MAX_EDGE {

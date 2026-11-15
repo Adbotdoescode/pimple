@@ -12,6 +12,33 @@ export const VERIFIER_SEGMENT_PROMPT = `You check one sentence a tutor is about 
 
 export const REWRITE_PROMPT = `Rewrite this one spoken tutor sentence so it is accurate for the screenshot, fixing only the flagged problem. Keep it under 25 words, same role in the explanation, readable notation (e.g. 24.5 N, sin 30°). Reply with the sentence only.`;
 
+export type RequestBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: "image/jpeg"; data: string } };
+
+/**
+ * The image part of a request. With a focus crop (region/lasso) it sends the full screen as context
+ * plus the focus crop, both labelled; without one it is just the main image. Callers append their text block.
+ */
+export function captureBlocks(capture: CaptureResult): RequestBlock[] {
+  const main = imageBlock(capture);
+  if (!capture.focus) return [main];
+  const f = capture.focus;
+  const [x, y, w, h] = f.rectInImagePx;
+  return [
+    {
+      type: "text",
+      text: `FULL SCREEN (context only; all overlay shape coordinates are pixels of this image, ${capture.imageWidth}×${capture.imageHeight}):`,
+    },
+    main,
+    {
+      type: "text",
+      text: `FOCUS — the region the learner pointed at; this is the subject of the question. It sits at x,y,w,h = ${x}, ${y}, ${w}, ${h} in the full-screen image.`,
+    },
+    { type: "image", source: { type: "base64", media_type: "image/jpeg", data: f.imageBase64 } },
+  ];
+}
+
 /** Image content block for the Claude request. Placed BEFORE the text block by callers. */
 export function imageBlock(capture: CaptureResult) {
   return {
@@ -30,6 +57,16 @@ export function buildTutorUserText(input: TutorCallInput): string {
     `Image size: ${capture.imageWidth}×${capture.imageHeight} px. All overlay coordinates are pixels of this image.`,
     `Student question: "${input.question}"`,
   ];
+
+  if (input.followUp) {
+    const f = input.followUp;
+    const said = f.spokenSegments.map((s) => s.text).join(" ") || "nothing yet";
+    parts.push(
+      `FOLLOW-UP. Earlier the student asked: "${f.previousQuestion}". You had said: ${said} ` +
+        `(shapes on screen: ${JSON.stringify(f.shapes)}). ${f.note} ` +
+        `Answer the new question in that context; it replaces the earlier answer.`,
+    );
+  }
 
   if (input.interruption) {
     const i = input.interruption;

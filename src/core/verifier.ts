@@ -1,7 +1,7 @@
 import type { AppSettings, CaptureResult, Segment, Shape, TutorResponse, VerifierResult } from "../../shared/contracts";
 import verifierSchema from "../../shared/verifier.schema.json";
 import { getAnthropic } from "./anthropic";
-import { REWRITE_PROMPT, VERIFIER_SEGMENT_PROMPT, VERIFIER_SYSTEM_PROMPT, imageBlock } from "./prompts";
+import { REWRITE_PROMPT, VERIFIER_SEGMENT_PROMPT, VERIFIER_SYSTEM_PROMPT, captureBlocks } from "./prompts";
 
 const VERIFIER_TIMEOUT_MS = 4000;
 const SEGMENT_TIMEOUT_MS = 3000;
@@ -39,7 +39,7 @@ async function callVerifier(args: {
       messages: [
         {
           role: "user",
-          content: [imageBlock(args.capture), { type: "text", text: args.text }],
+          content: [...captureBlocks(args.capture), { type: "text", text: args.text }],
         },
       ],
     },
@@ -201,7 +201,7 @@ export async function rewriteSentence(a: {
           thinking: { type: "disabled" },
           output_config: { effort: "low" },
           system: REWRITE_PROMPT,
-          messages: [{ role: "user", content: [imageBlock(a.capture), { type: "text", text }] }],
+          messages: [{ role: "user", content: [...captureBlocks(a.capture), { type: "text", text }] }],
         },
         { signal },
       );
