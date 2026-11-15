@@ -315,6 +315,14 @@ export function Card({
   const contested = s?.contested ?? [];
   const checkQuestion = s?.checkQuestion || null;
   const tone = PHASE_TONE[phase];
+  // The mic can be closed while the phase still says listening (mic set not to open by itself).
+  // `micOpen` is landing in the snapshot; older brains are recognised by their caption.
+  const micOpenRaw = (s as { micOpen?: unknown } | null)?.micOpen;
+  const micOff = (phase === "listening" || phase === "checking")
+    && (micOpenRaw === false
+      || (micOpenRaw === undefined && s?.settings?.micAutoOpen === false && caption.trim() === "Hold Space to talk"));
+  const statusLabel = micOff ? "Mic off · hold Space" : PHASE_LABEL[phase];
+  const dotClass = micOff ? "dot dot-off" : `dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`;
   const isEmpty = phase === "idle" && !response && !caption && !error;
   const busy = BUSY_PHASES.has(phase);
 
@@ -383,14 +391,14 @@ export function Card({
               blurActiveButton();
               setMini(false);
             }}
-            aria-label={`Expand Pimple card. ${PHASE_LABEL[phase]}`}
+            aria-label={`Expand Pimple card. ${statusLabel}`}
           >
             <span
-              className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
+              className={dotClass}
               aria-hidden="true"
             />
             <span className="mini-status" role="status" aria-live="polite">
-              {PHASE_LABEL[phase]}
+              {statusLabel}
             </span>
             {snippet && <span className="mini-caption ellipsis">{snippet}</span>}
             {gizmo === "ready" && <span className="mini-gizmo-dot" title="Diagram ready" aria-label="Diagram ready" />}
@@ -437,10 +445,10 @@ export function Card({
           <div className="card-header-left">
             <span className="chip status" role="status" aria-live="polite">
               <span
-                className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
+                className={dotClass}
                 aria-hidden="true"
               />
-              {PHASE_LABEL[phase]}
+              {statusLabel}
             </span>
             <VerifierBadge snapshot={s} />
           </div>
