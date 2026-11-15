@@ -207,6 +207,8 @@ export type TtsPlayerHandle = TtsPlayer & {
   isPlaying(): boolean;
   currentSegmentId(): string | null;
   warm(segments: Segment[]): void;
+  /** Clears all cached and warmed audio (new session). */
+  reset(): void;
 };
 
 export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
@@ -230,27 +232,30 @@ export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
   let paused = false;
   let firstAudioPending = true;
   let current: Current | null = null;
+  // Cache entries are keyed by id and text, because every answer reuses the ids s1, s2, ... and a rewritten sentence keeps its id.
+  const keyOf = (seg: Segment): string => `${seg.id}\u0000${seg.text}`;
   const loads = new Map<string, Promise<Loaded>>();
-  // Warmed ids (warm()) that no queue has requested yet; each maps to its 60 s expiry timer.
+  // Warmed keys (warm()) that no queue has requested yet; each maps to its 60 s expiry timer.
   const warmed = new Map<string, ReturnType<typeof setTimeout>>();
 
-  const unwarm = (id: string): void => {
-    const timer = warmed.get(id);
+  const unwarm = (key: string): void => {
+    const timer = warmed.get(key);
     if (timer === undefined) return;
     clearTimeout(timer);
-    warmed.delete(id);
+    warmed.delete(key);
   };
 
   const loadFor = (seg: Segment): Promise<Loaded> => {
-    let p = loads.get(seg.id);
+    const k = keyOf(seg);
+    let p = loads.get(k);
     if (p) {
-      unwarm(seg.id); // the queue owns this entry now
+      unwarm(k); // the queue owns this entry now
     } else {
       p = load(seg, opts, getGraph).catch((err) => {
         warnOnce("load", err);
         return simulated(seg);
       });
-      loads.set(seg.id, p);
+      loads.set(k, p);
     }
     return p;
   };
@@ -259,7 +264,7 @@ export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
   // (warmed entries survive until used or expired).
   const prefetch = (): void => {
     const upcoming = history.slice(pos, pos + PREFETCH);
-    const keep = new Set(upcoming.map((s) => s.id));
+    const keep = new Set(upcoming.map(keyOf));
     for (const id of [...loads.keys()]) {
       if (!keep.has(id) && !warmed.has(id)) loads.delete(id);
     }
@@ -269,13 +274,14 @@ export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
   // Start synthesis and decode now, without queuing or playing anything.
   const warm = (segments: Segment[]): void => {
     for (const seg of segments) {
-      if (loads.has(seg.id)) continue;
+      const k = keyOf(seg);
+      if (loads.has(k)) continue;
       loadFor(seg);
       const timer = setTimeout(() => {
-        warmed.delete(seg.id);
-        loads.delete(seg.id);
+        warmed.delete(k);
+        loads.delete(k);
       }, WARM_TTL_MS);
-      warmed.set(seg.id, timer);
+      warmed.set(k, timer);
     }
   };
 
@@ -409,6 +415,14 @@ export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
     append(segments);
   };
 
+  // New session: drop every cached and warmed synthesis so nothing from an earlier answer can play.
+  const reset = (): void => {
+    stop();
+    for (const timer of warmed.values()) clearTimeout(timer);
+    warmed.clear();
+    loads.clear();
+  };
+
   const pause = (): PausePoint | null => {
     const seg = history[pos];
     if (!loopActive || !seg) return null;
@@ -438,5 +452,6 @@ export function createTtsPlayer(opts: TtsPlayerOptions): TtsPlayerHandle {
     isPlaying: () => loopActive,
     currentSegmentId: () => current?.segId ?? null,
     warm,
+    reset,
   };
 }
