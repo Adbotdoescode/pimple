@@ -26,6 +26,11 @@ export function cardUserMoved(): void {
   userMoved = true;
   autoMin = false;
 }
+/** The whiteboard window's rect in screen points while it is visible ("whiteboard:rect"). */
+let whiteboard: RectPts | null = null;
+export function setWhiteboardRect(r: RectPts | null): void {
+  whiteboard = r && [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0 ? r : null;
+}
 /** Session over: the card docks beside the drop again. */
 export function cardSessionEnded(): void {
   userMoved = false;
@@ -141,8 +146,11 @@ export async function dockCard(
     const ok = (r: RectPts | null | undefined): r is RectPts =>
       !!r && [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0;
     if (ok(region)) avoid.push({ x: region.x - GAP, y: region.y - GAP, w: region.w + 2 * GAP, h: region.h + 2 * GAP });
-    const drawn = drawingsBBox(snap);
+    // Whiteboard answers are drawn in the board's own 1600×1000 space, not on screen: while the
+    // board is up, keep clear of its window instead of mapping shapes to the display.
+    const drawn = whiteboard || snap.response?.surface === "whiteboard" ? null : drawingsBBox(snap);
     if (ok(drawn)) avoid.push(drawn);
+    if (ok(whiteboard)) avoid.push(whiteboard);
     // The focus crop is what the learner pointed at: it stays visible too.
     const focus = snap.phase === "idle" ? null : snap.capture?.focus?.regionInScreenPoints;
     if (ok(focus)) avoid.push(focus);
@@ -184,7 +192,7 @@ export async function dockCard(
       }
     }
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-    const line = `[bubble] card dock (${Math.round(x)},${Math.round(y)}) size=${Math.round(w)}x${Math.round(h)} avoid=${avoid.length}${drawn ? ` drawings=(${Math.round(drawn.x)},${Math.round(drawn.y)},${Math.round(drawn.w)}x${Math.round(drawn.h)})` : ""}${autoMin ? " auto-minimised" : ""}`;
+    const line = `[bubble] card dock (${Math.round(x)},${Math.round(y)}) size=${Math.round(w)}x${Math.round(h)} avoid=${avoid.length}${whiteboard ? " whiteboard" : ""}${drawn ? ` drawings=(${Math.round(drawn.x)},${Math.round(drawn.y)},${Math.round(drawn.w)}x${Math.round(drawn.h)})` : ""}${autoMin ? " auto-minimised" : ""}`;
     if (line !== lastLine) {
       lastLine = line;
       info(`[js] ${line}`).catch(() => {});

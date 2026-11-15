@@ -32,7 +32,7 @@ import {
   type Spring1,
   type Spring2,
 } from "./spring";
-import { cardSessionEnded, cardUserMoved, dockCard } from "./cardDock";
+import { cardSessionEnded, cardUserMoved, dockCard, setWhiteboardRect } from "./cardDock";
 import { listen } from "@tauri-apps/api/event";
 import { LassoTracker, type LassoLoop } from "./lasso";
 import { lensState } from "./liquidLens";
@@ -822,6 +822,16 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
       listen("card:user-moved", () => {
         cardUserMoved();
         blog("[bubble] card moved by the user: auto-dock off until the session ends");
+      }),
+    );
+    // The whiteboard window reports its rect on show/move/resize/hide: the card keeps off it.
+    track(
+      listen<{ x?: number; y?: number; w?: number; h?: number; visible?: boolean }>("whiteboard:rect", (e) => {
+        const r = e.payload;
+        setWhiteboardRect(
+          r && r.visible ? { x: Number(r.x), y: Number(r.y), w: Number(r.w), h: Number(r.h) } : null,
+        );
+        redockSoon(200);
       }),
     );
     // New drawings arrive while the tutor talks: move the card out of their way (debounced).
