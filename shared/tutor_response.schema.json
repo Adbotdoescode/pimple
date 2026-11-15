@@ -1,52 +1,167 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["concept", "surface", "grounding", "segments", "shapes", "check_question", "gizmo_offer", "parked"],
+  "required": [
+    "concept",
+    "surface",
+    "segments",
+    "shapes",
+    "grounding",
+    "check_question",
+    "gizmo_offer",
+    "parked"
+  ],
   "properties": {
-    "concept": { "type": "string" },
-    "surface": { "enum": ["overlay", "whiteboard"] },
-    "grounding": {
-      "type": "object", "additionalProperties": false,
-      "required": ["source_type", "source_ref", "quote"],
-      "properties": {
-        "source_type": { "enum": ["screen", "fixed_source"] },
-        "source_ref": { "type": "string" },
-        "quote": { "type": "string" }
-      }
+    "concept": {
+      "type": "string"
+    },
+    "surface": {
+      "enum": [
+        "overlay",
+        "whiteboard"
+      ]
     },
     "segments": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["id", "text"],
-        "properties": { "id": { "type": "string" }, "text": { "type": "string" } }
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
       }
     },
     "shapes": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["id", "segment_id", "kind", "color_role", "points", "radius", "label", "magnitude", "values", "target"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "segment_id",
+          "kind",
+          "color_role",
+          "points",
+          "radius",
+          "label",
+          "magnitude",
+          "values",
+          "target"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "segment_id": { "type": "string" },
-          "kind": { "enum": ["circle", "box", "line", "arrow", "vector", "stroke", "text", "graph", "slider"] },
-          "color_role": { "enum": ["primary", "secondary", "accent", "warn"] },
-          "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
-          "radius": { "type": "number" },
-          "label": { "type": "string" },
-          "magnitude": { "type": "string" },
-          "values": { "type": "array", "items": { "type": "number" } },
-          "target": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "segment_id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "circle",
+              "box",
+              "line",
+              "arrow",
+              "vector",
+              "stroke",
+              "text",
+              "graph",
+              "slider"
+            ]
+          },
+          "color_role": {
+            "enum": [
+              "primary",
+              "secondary",
+              "accent",
+              "warn"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "radius": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          },
+          "magnitude": {
+            "type": "string"
+          },
+          "values": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "target": {
+            "type": "string"
+          }
         }
       }
     },
-    "check_question": { "type": "string" },
-    "gizmo_offer": {
-      "type": "object", "additionalProperties": false,
-      "required": ["recommended", "pitch"],
-      "properties": { "recommended": { "type": "boolean" }, "pitch": { "type": "string" } }
+    "grounding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "source_ref",
+        "quote"
+      ],
+      "properties": {
+        "source_type": {
+          "enum": [
+            "screen",
+            "fixed_source"
+          ]
+        },
+        "source_ref": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        }
+      }
     },
-    "parked": { "type": "array", "items": { "type": "string" } }
+    "check_question": {
+      "type": "string"
+    },
+    "gizmo_offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recommended",
+        "pitch"
+      ],
+      "properties": {
+        "recommended": {
+          "type": "boolean"
+        },
+        "pitch": {
+          "type": "string"
+        }
+      }
+    },
+    "parked": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   }
 }
