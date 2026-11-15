@@ -26,7 +26,7 @@ Each shape has: `id` (unique, "a1", "a2", ...), `segment_id` (the segment it bel
 - circle: `points` [[cx, cy]], `radius` in pixels, `label` optional.
 - box: `points` [[x1, y1], [x2, y2]] (two opposite corners), `label` optional.
 - line, arrow: `points` [[x1, y1], [x2, y2]] (arrow head at the second point), `label` optional.
-- vector: `points` [[tail x, tail y], [head x, head y]], `magnitude` (for example "mg" or "24.5 N"), `label` optional (the name, for example "N"), `values` [1] to also draw its dashed x and y components, otherwise [].
+- vector: `points` [[tail x, tail y], [head x, head y]], `magnitude` (a value or expression, for example "24.5 N" or "W/2"; never the same text as the label, "" if there is no value), `label` optional (the name, for example "N"), `values` [1] to also draw its dashed x and y components, otherwise [].
 - stroke: `points` a smooth polyline of up to 32 points (trace, underline, bracket).
 - text: `points` [[x, y]] (anchor of the text), `label` the text itself (short).
 - graph: `points` [[x1, y1], [x2, y2]] the corners of where the graph is placed; `values` [x_min, x_max, y_min, y_max, then the plotted data as x0, y0, x1, y1, ...] in the graph's own units; `label` "x-axis label|y-axis label|series label"; `magnitude` "line" or "points". Use graphs on the whiteboard; on the overlay only if there is a clearly empty area.

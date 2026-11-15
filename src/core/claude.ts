@@ -46,7 +46,7 @@ export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers)
       messages: [
         {
           role: "user",
-          content: [...captureBlocks(input.capture), { type: "text", text: buildTutorUserText(input) }],
+          content: [...cachedCaptureBlocks(input.capture), { type: "text", text: buildTutorUserText(input) }],
         },
       ],
     },
@@ -85,7 +85,19 @@ export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers)
   const response = parser.finish(finalText);
   console.info(
     `[tutor] done +${Math.round(performance.now() - t0)} ms stop=${final.stop_reason} ` +
-      `segments=${response.segments.length} shapes=${response.shapes.length} surface=${response.surface}`,
+      `segments=${response.segments.length} shapes=${response.shapes.length} surface=${response.surface} ` +
+      `in=${final.usage.input_tokens} cache_read=${final.usage.cache_read_input_tokens ?? 0} cache_write=${final.usage.cache_creation_input_tokens ?? 0} out=${final.usage.output_tokens}`,
   );
   return response;
+}
+
+/**
+ * Capture blocks with a cache breakpoint on the last image: follow-ups on the same capture
+ * (interruptions, check answers, regenerations) then reuse system prompt + screenshot from cache.
+ */
+function cachedCaptureBlocks(capture: CaptureResult) {
+  const blocks = captureBlocks(capture);
+  const i = blocks.length - 1;
+  blocks[i] = { ...blocks[i], cache_control: { type: "ephemeral" as const } } as unknown as (typeof blocks)[number];
+  return blocks;
 }
