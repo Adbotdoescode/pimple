@@ -1,0 +1,524 @@
+<!--
+GIZMO DESIGN KIT
+A gizmo is a short scene script that calls the Kit API below on window.Kit. Plain JS, no framework.
+Elements are appended in call order to <main id="page">. Light theme only. No network, no external assets.
+
+LAYOUT
+  Kit.section(n, title)           -> <h2>. n = 0..20 prints ⓪ ① ② …; n may be a string prefix.
+                                     e.g. Kit.section(0, "Grow the bubble")
+  Kit.card({cols?, parent?})      -> white rounded card, appended to page unless parent is given.
+                                     cols = CSS grid columns, then card.main and card.side are the two columns.
+                                     e.g. const c = Kit.card({cols: "1.55fr 1fr"}); Kit.svg(c.main, {w:490,h:380});
+  Kit.row(parent?)                -> flex row (wraps on phones) for a slider beside a button.
+  Kit.equation(parent, parts)     -> card with a centred serif equation strip. parts = string | {t, color}.
+                                     Returns {el, set(parts)}.
+                                     e.g. Kit.equation(Kit.root, ["avg = ", {t:"caught", color:Kit.colors.gold}, " ÷ 4"]);
+
+CONTROLS
+  Kit.slider(parent, {label, min, max, value, step?, log?, format?, onInput?})
+                                  -> {el, min, max, get(), set(v), toPos(v), fromPos(p)}
+                                     Shows "label: " + bold format(value). log:true = log track (min > 0).
+                                     set(v) moves the thumb AND calls onInput(v); so do user drags.
+                                     onInput is NOT called on creation: call your draw(...) once yourself.
+                                     e.g. Kit.slider(row, {label:"Radius r", min:1, max:100, value:10, format:v=>v.toFixed(1)+" m", onInput:draw})
+  Kit.playButton(parent, {label, slider, to?, ms?})
+                                  -> pill button. Click: eases the slider from its current value to `to`
+                                     (default slider max) over ms (default 3000). Shows "❚❚ Pause" while running;
+                                     click again to pause. Dragging the slider stops it.
+                                     e.g. Kit.playButton(row, {label:"▶ Grow", slider: sl, to: 100, ms: 3000});
+  Kit.valuePanel(parent, {title, rows:[{key,label,color}], note?})
+                                  -> {el, set(key, text)}. Grey label, then bold coloured value per row.
+                                     note = small grey text ("\n\n" starts a new paragraph).
+                                     e.g. const p = Kit.valuePanel(card.side, {title:"Live", rows:[{key:"a", label:"area", color:Kit.colors.blueInk}]}); p.set("a", "9.8 × 10¹⁸ m²");
+
+DIAGRAMS (SVG, viewBox w×h, scales to the card width; every helper returns its element)
+  Kit.svg(parent, {w, h})         -> <svg>. e.g. const svg = Kit.svg(card.main, {w:490, h:380});
+  Kit.s.circle(svg, {cx,cy,r,fill?,stroke?,width?})     fill defaults to none.
+  Kit.s.line(svg, {x1,y1,x2,y2,stroke?,width?,dash?})
+  Kit.s.arrow(svg, {x1,y1,x2,y2,stroke?,width?})        line with an arrowhead in the stroke colour.
+  Kit.s.arc(svg, {cx,cy,r,a0,a1,stroke?,width?,cap?})   degrees; 0 = 3 o'clock, clockwise positive.
+  Kit.s.arcPath(cx,cy,r,a0,a1) -> path d string, to update an arc: el.setAttribute("d", arcPath(...)).
+  Kit.s.text(svg, {x,y,text,color?,size?,weight?,anchor?})   anchor = start | middle | end.
+  Kit.s.radial(svg, id, [[offset,color], …]) -> "url(#id)" for a fill. e.g. Kit.s.radial(svg,"g",[[0,"#fff"],[1,"#fa0"]])
+  Kit.s.group(svg)                -> <g>, for grouping or batch-updating children.
+  Kit.s.set(el, {attr: value, …}) -> set attributes on any element.
+
+FORMAT AND TOKENS
+  Kit.fmtSci(x, digits=3)         -> "8.82 × 10⁸" (unicode superscripts; digits = significant figures).
+  Kit.colors                      -> {page, card, navy, text, muted, blue, blueInk, gold, red, green, purple, grid, track, btn, ring}
+                                     as JS strings, read from the CSS variables (--blue-ink etc. on :root).
+  Fonts: --sans (system UI), --serif (Georgia). Radius: --r-card 14px, --r-btn 8px.
+
+The LAST <script> block (SCENE) is one example gizmo. Copy it and replace its contents; leave the KIT block alone.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gizmo design kit</title>
+<style>
+:root {
+  --page: #EEF1F5;
+  --card: #FFFFFF;
+  --navy: #1F2E4D;
+  --text: #262E3D;
+  --muted: #6B7588;
+  --blue: #2F6FEB;
+  --blue-ink: #2B5C9E;
+  --gold: #B8860B;
+  --red: #C0392B;
+  --green: #2E8B57;
+  --purple: #6A4FB3;
+  --grid: #E3E7EE;
+  --track: #D5DBE5;
+  --btn: #E3E8F0;
+  --ring: #C17F26;
+  --r-card: 14px;
+  --r-btn: 8px;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 4px 14px rgba(20, 30, 50, .07);
+  --sans: -apple-system, "SF Pro Text", system-ui, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+  --gap: 24px;
+  --pad: 24px;
+}
+html { background: var(--page); }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 14px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+#page { max-width: 1080px; margin: 0 auto; padding: var(--pad); box-sizing: border-box; }
+h2.section {
+  margin: 32px 0 12px;
+  font: 700 20px/1.3 var(--sans);
+  color: var(--navy);
+}
+h2.section:first-child { margin-top: 4px; }
+
+.row {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 14px 22px; margin: 0 0 16px;
+}
+
+/* slider */
+.sl { flex: 1 1 280px; min-width: 0; }
+.sl-label { font-size: 14px; line-height: 1.3; color: var(--text); margin-bottom: 8px; }
+.sl-label b { font-weight: 700; }
+.sl-wrap { position: relative; height: 18px; }
+.sl-track {
+  position: absolute; left: 8px; right: 8px; top: 6px; height: 6px; border-radius: 3px;
+  background: linear-gradient(to right, var(--blue) var(--p, 0%), var(--track) var(--p, 0%));
+}
+.sl input {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%;
+  margin: 0; background: transparent; cursor: pointer;
+  -webkit-appearance: none; appearance: none; outline: none;
+}
+.sl input::-webkit-slider-runnable-track { background: transparent; height: 18px; }
+.sl input::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; margin-top: 1px; border-radius: 50%;
+  background: var(--blue); border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(20, 40, 80, .35);
+}
+.sl input::-moz-range-track { background: transparent; height: 18px; border: 0; }
+.sl input::-moz-range-thumb {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--blue); border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(20, 40, 80, .35);
+}
+.sl input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(47, 111, 235, .35); }
+
+/* pill button */
+.btn {
+  flex: 0 0 auto; white-space: nowrap; cursor: pointer;
+  font: 700 14px/1 var(--sans); color: var(--navy);
+  background: var(--btn); border: 0; border-radius: var(--r-btn);
+  padding: 10px 14px;
+}
+.btn:hover { filter: brightness(.97); }
+.btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* cards */
+.card {
+  background: var(--card); border-radius: var(--r-card);
+  box-shadow: var(--shadow); padding: var(--pad); box-sizing: border-box;
+  min-width: 0;
+}
+.card + .card, .card + .row, .row + .card { margin-top: 0; }
+.card.grid { display: grid; gap: var(--gap); }
+.card.grid > .main, .card.grid > .side { min-width: 0; }
+.card.side-wrap, .card .side { display: flex; flex-direction: column; justify-content: center; }
+@media (max-width: 680px) {
+  .card.grid { grid-template-columns: 1fr !important; }
+}
+.card.eq { padding: 20px 24px; text-align: center; margin-top: 16px; }
+.eqline { font: 400 22px/1.6 var(--serif); color: var(--text); }
+@media (max-width: 480px) { .eqline { font-size: 18px; } }
+
+/* diagrams: scroll sideways on phones rather than shrinking the labels */
+.fig { overflow-x: auto; max-width: 100%; }
+@media (max-width: 680px) { .fig > svg { min-width: 440px; } }
+
+/* value panel */
+.vpanel { padding: 0 4px; }
+.vtitle { font: 700 15px/1.3 var(--sans); color: var(--navy); margin-bottom: 16px; }
+.vrow { margin-bottom: 14px; }
+.vlabel { font-size: 13px; line-height: 1.4; color: var(--muted); margin-bottom: 2px; }
+.vval { font-size: 17px; font-weight: 700; line-height: 1.3; }
+.vnote { font-size: 13px; line-height: 1.55; color: var(--muted); margin-top: 24px; white-space: pre-line; }
+</style>
+</head>
+<body>
+<main id="page"></main>
+
+<script>
+/* ===================== KIT (do not edit for a scene) ===================== */
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  const CIRCLED = ['⓪','①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩','⑪','⑫','⑬','⑭','⑮','⑯','⑰','⑱','⑲','⑳'];
+  const SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+  let uid = 0;
+
+  const $ = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const se = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    if (attrs) for (const k in attrs) if (attrs[k] != null) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+
+  function fmtSci(x, digits) {
+    digits = digits || 3;
+    if (!isFinite(x)) return '–';
+    if (x === 0) return '0';
+    const sign = x < 0 ? '−' : '';
+    x = Math.abs(x);
+    let e = Math.floor(Math.log10(x));
+    let s = (x / Math.pow(10, e)).toFixed(digits - 1);
+    if (+s >= 10) { e++; s = (x / Math.pow(10, e)).toFixed(digits - 1); }
+    if (+s < 1) { e--; s = (x / Math.pow(10, e)).toFixed(digits - 1); }
+    const exp = String(e).split('').map(c => SUP[c] || c).join('');
+    return sign + s + ' × 10' + exp;
+  }
+
+  function defs(svg) {
+    return svg._defs || (svg._defs = se('defs', null, svg));
+  }
+  function markerId(svg, color) {
+    svg._marks = svg._marks || {};
+    if (!svg._marks[color]) {
+      const id = 'kit-ah-' + (++uid);
+      const m = se('marker', { id, viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto', markerUnits: 'strokeWidth' }, defs(svg));
+      se('path', { d: 'M0,0 L10,5 L0,10 z', fill: color }, m);
+      svg._marks[color] = id;
+    }
+    return svg._marks[color];
+  }
+  function arcPath(cx, cy, r, a0, a1) {
+    const p = a => [cx + r * Math.cos(a * Math.PI / 180), cy + r * Math.sin(a * Math.PI / 180)];
+    const [x0, y0] = p(a0), [x1, y1] = p(a1);
+    const large = (((a1 - a0) % 360) + 360) % 360 > 180 ? 1 : 0;
+    return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+
+  const S = {
+    arcPath,
+    set(el, attrs) { for (const k in attrs) el.setAttribute(k, attrs[k]); return el; },
+    circle(svg, o) {
+      return se('circle', { cx: o.cx, cy: o.cy, r: o.r, fill: o.fill || 'none', stroke: o.stroke || 'none', 'stroke-width': o.width || 1 }, svg);
+    },
+    line(svg, o) {
+      return se('line', { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2, stroke: o.stroke || '#333', 'stroke-width': o.width || 1, 'stroke-dasharray': o.dash, 'stroke-linecap': 'round' }, svg);
+    },
+    arrow(svg, o) {
+      const color = o.stroke || '#333';
+      const l = S.line(svg, { x1: o.x1, y1: o.y1, x2: o.x2, y2: o.y2, stroke: color, width: o.width });
+      l.setAttribute('marker-end', 'url(#' + markerId(svg, color) + ')');
+      return l;
+    },
+    arc(svg, o) {
+      return se('path', { d: arcPath(o.cx, o.cy, o.r, o.a0, o.a1), fill: 'none', stroke: o.stroke || '#333', 'stroke-width': o.width || 1, 'stroke-linecap': o.cap || 'butt' }, svg);
+    },
+    text(svg, o) {
+      const t = se('text', { x: o.x, y: o.y, fill: o.color || 'currentColor', 'font-size': o.size || 11, 'font-weight': o.weight || 400, 'text-anchor': o.anchor || 'start' }, svg);
+      t.textContent = o.text || '';
+      return t;
+    },
+    radial(svg, id, stops) {
+      const g = se('radialGradient', { id, cx: '50%', cy: '50%', r: '50%' }, defs(svg));
+      stops.forEach(([off, c]) => se('stop', { offset: off, 'stop-color': c }, g));
+      return 'url(#' + id + ')';
+    },
+    group(svg) { return se('g', null, svg); }
+  };
+
+  const Kit = {
+    root: null,
+    colors: {},
+    fmtSci,
+    s: S,
+
+    section(n, title) {
+      const h = $('h2', 'section');
+      const prefix = typeof n === 'number' ? (CIRCLED[n] || '(' + n + ')') : (n || '');
+      h.textContent = (prefix ? prefix + ' ' : '') + title;
+      Kit.root.appendChild(h);
+      return h;
+    },
+
+    card(o) {
+      o = o || {};
+      const c = $('div', 'card');
+      if (o.cols) {
+        c.classList.add('grid');
+        c.style.gridTemplateColumns = o.cols;
+        c.main = $('div', 'main');
+        c.side = $('div', 'side');
+        c.append(c.main, c.side);
+      }
+      (o.parent || Kit.root).appendChild(c);
+      return c;
+    },
+
+    row(parent) {
+      const r = $('div', 'row');
+      (parent || Kit.root).appendChild(r);
+      return r;
+    },
+
+    slider(parent, o) {
+      const lo = o.min, hi = o.max, log = !!o.log;
+      const L0 = Math.log10(lo), L1 = Math.log10(hi);
+      const toPos = v => log ? (Math.log10(v) - L0) / (L1 - L0) : (v - lo) / (hi - lo);
+      const fromPos = p => { p = clamp(p, 0, 1); return log ? Math.pow(10, L0 + p * (L1 - L0)) : lo + p * (hi - lo); };
+      const snap = v => {
+        v = clamp(v, lo, hi);
+        if (!log && o.step) v = clamp(lo + Math.round((v - lo) / o.step) * o.step, lo, hi);
+        return v;
+      };
+
+      const el = $('div', 'sl');
+      const head = $('div', 'sl-label');
+      const lab = $('span', null, o.label + ': ');
+      const val = $('b');
+      head.append(lab, val);
+      const wrap = $('div', 'sl-wrap');
+      const track = $('div', 'sl-track');
+      const inp = $('input');
+      inp.type = 'range'; inp.min = 0; inp.max = 1000; inp.step = 1;
+      inp.setAttribute('aria-label', o.label);
+      wrap.append(track, inp);
+      el.append(head, wrap);
+      parent.appendChild(el);
+
+      let value = snap(o.value != null ? o.value : lo);
+      const show = () => {
+        const p = toPos(value);
+        wrap.style.setProperty('--p', (p * 100).toFixed(2) + '%');
+        val.textContent = o.format ? o.format(value) : String(value);
+        inp.value = Math.round(p * 1000);
+      };
+      inp.addEventListener('input', () => {
+        value = snap(fromPos(inp.value / 1000));
+        show();
+        if (o.onInput) o.onInput(value);
+      });
+      show();
+
+      return {
+        el, min: lo, max: hi, toPos, fromPos,
+        get: () => value,
+        set(v) {
+          value = snap(v);
+          show();
+          if (o.onInput) o.onInput(value);
+        }
+      };
+    },
+
+    playButton(parent, o) {
+      const s = o.slider;
+      const b = $('button', 'btn', o.label || '▶ Play');
+      b.type = 'button';
+      const playLabel = b.textContent, pauseLabel = '❚❚ Pause';
+      const ms = o.ms || 3000;
+      let raf = 0, t0 = null, p0 = 0, p1 = 0;
+
+      const stop = () => {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0; t0 = null;
+        b.textContent = playLabel;
+      };
+      const tick = t => {
+        if (t0 === null) t0 = t;
+        const k = Math.min(1, (t - t0) / ms);
+        const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        s.set(s.fromPos(p0 + (p1 - p0) * e));
+        if (k >= 1) { stop(); return; }
+        raf = requestAnimationFrame(tick);
+      };
+      b.addEventListener('click', () => {
+        if (raf) { stop(); return; }
+        p0 = s.toPos(s.get());
+        p1 = s.toPos(o.to != null ? o.to : s.max);
+        if (Math.abs(p1 - p0) < 1e-4) { p0 = 0; s.set(s.min); }
+        b.textContent = pauseLabel;
+        raf = requestAnimationFrame(tick);
+      });
+      s.el.addEventListener('pointerdown', () => { if (raf) stop(); });
+      parent.appendChild(b);
+      return b;
+    },
+
+    valuePanel(parent, o) {
+      const el = $('div', 'vpanel');
+      if (o.title) el.appendChild($('div', 'vtitle', o.title));
+      const vals = {};
+      (o.rows || []).forEach(r => {
+        const row = $('div', 'vrow');
+        const lab = $('div', 'vlabel', r.label);
+        const val = $('div', 'vval');
+        if (r.color) val.style.color = r.color;
+        row.append(lab, val);
+        el.appendChild(row);
+        vals[r.key] = val;
+      });
+      if (o.note) el.appendChild($('div', 'vnote', o.note));
+      parent.appendChild(el);
+      return {
+        el,
+        set(key, text) { if (vals[key]) vals[key].textContent = text; }
+      };
+    },
+
+    equation(parent, parts) {
+      const card = Kit.card({ parent });
+      card.classList.add('eq');
+      const line = $('div', 'eqline');
+      card.appendChild(line);
+      const render = ps => {
+        line.textContent = '';
+        ps.forEach(p => {
+          if (typeof p === 'string') line.appendChild(document.createTextNode(p));
+          else {
+            const sp = $('span', null, p.t);
+            if (p.color) sp.style.color = p.color;
+            line.appendChild(sp);
+          }
+        });
+      };
+      render(parts);
+      return { el: card, set: render };
+    },
+
+    svg(parent, o) {
+      const fig = $('div', 'fig');
+      const s = se('svg', { viewBox: '0 0 ' + o.w + ' ' + o.h, role: 'img' });
+      s.style.cssText = 'display:block;width:100%;height:auto;font-family:var(--sans)';
+      fig.appendChild(s);
+      parent.appendChild(fig);
+      return s;
+    }
+  };
+
+  const cs = getComputedStyle(document.documentElement);
+  ['page','card','navy','text','muted','blue','blue-ink','gold','red','green','purple','grid','track','btn','ring'].forEach(k => {
+    Kit.colors[k.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = cs.getPropertyValue('--' + k).trim();
+  });
+
+  Kit.root = document.getElementById('page');
+  window.Kit = Kit;
+})();
+</script>
+
+<script>
+/* ===================== SCENE: sample gizmo built only with Kit ===================== */
+(function () {
+  const R_SUN = 6.96e8, R_EARTH = 1.496e11, P_SUN = 3.9e26;
+  const DOTS = 720, WINDOW = 0.127, RING = 170, START = 8.82e8, MIN_ARC = 6;
+  const CX = 200, CY = 200;
+  const C = Kit.colors;
+  const ratioTxt = x => x < 10 ? x.toFixed(1) : Math.round(x).toLocaleString('en-US');
+
+  Kit.section(0, "From the Sun's surface out to Earth: grow the bubble");
+  const row = Kit.row();
+  const slider = Kit.slider(row, {
+    label: 'Bubble radius r', min: R_SUN, max: R_EARTH, value: START, log: true,
+    format: v => `${Kit.fmtSci(v)} m (${ratioTxt(v / R_SUN)} × the Sun's radius)`,
+    onInput: v => draw(v)
+  });
+  Kit.playButton(row, { label: '▶ Grow to Earth', slider, to: R_EARTH, ms: 3000 });
+
+  const card = Kit.card({ cols: '1.55fr 1fr' });
+  const svg = Kit.svg(card.main, { w: 510, h: 400 });
+  // The bubble ring is a fixed size on screen; the Sun is drawn to scale against it (sunR = RING × R_sun / r).
+  const bubble = Kit.s.circle(svg, { cx: CX, cy: CY, r: RING, fill: '#F3F6FA' });
+  const sun = Kit.s.circle(svg, { cx: CX, cy: CY, r: RING, fill: Kit.s.radial(svg, 'kit-sun-grad', [[0, '#FFF7CF'], [0.5, '#F8C65C'], [1, '#E8912C']]) });
+  const ring = Kit.s.circle(svg, { cx: CX, cy: CY, r: RING, stroke: C.ring, width: 1.6 });
+  const dotsG = Kit.s.group(svg);
+  for (let i = 0; i < DOTS; i++) {
+    const a = i / DOTS * 2 * Math.PI;
+    Kit.s.circle(dotsG, { cx: (CX + RING * Math.cos(a)).toFixed(2), cy: (CY + RING * Math.sin(a)).toFixed(2), r: 0.6, fill: C.gold });
+  }
+  const sunLbl = Kit.s.text(svg, { x: CX, y: CY + 4, text: 'Sun', color: '#7A4E0E', size: 12, weight: 600, anchor: 'middle' });
+  const arc = Kit.s.arc(svg, { cx: CX, cy: CY, r: RING, a0: 0, a1: 0, stroke: C.red, width: 5, cap: 'round' });
+  const lbl1 = Kit.s.text(svg, { x: 0, y: 0, text: 'fixed-size window', color: C.red, size: 10.5, weight: 600 });
+  const lbl2 = Kit.s.text(svg, { x: 0, y: 0, text: '', color: C.red, size: 10.5, weight: 600 });
+
+  const side = Kit.valuePanel(card.side, {
+    title: 'As the bubble grows',
+    rows: [
+      { key: 'dots', label: 'dots (total power)', color: C.gold },
+      { key: 'area', label: 'bubble area 4πr²', color: C.blueInk },
+      { key: 'ppm', label: 'power per m²', color: C.red },
+      { key: 'ratio', label: "bubble vs Sun's surface", color: C.text }
+    ],
+    note: 'Drawn flat: dots spread along the circle. In 3D they spread over a sphere, so per m² drops with r², not r.\n\n(the bubble ring stays one size on screen; the Sun shrinks to scale)'
+  });
+  side.set('dots', `always ${DOTS} → ${Kit.fmtSci(P_SUN, 2)} W`);
+
+  const fmtCount = n => n >= 1 ? String(Math.round(n)) : n < 0.001 ? '< 0.001' : String(Number(n.toPrecision(2)));
+
+  function draw(r) {
+    const k = R_SUN / r;
+    const sunR = Math.max(3, RING * k);                   // Sun drawn to scale against the fixed ring
+    const area = 4 * Math.PI * r * r;
+    const ratio = (r * r) / (R_SUN * R_SUN);
+    const n = DOTS * WINDOW * k * k;                      // dots inside the fixed-size window
+    const n0 = DOTS * WINDOW * (R_SUN / START) ** 2;      // about 57 at the starting radius
+    const ang = Math.max(40 * n / n0, MIN_ARC / RING * 180 / Math.PI);  // 40° at the start, never under 6 px
+
+    sun.setAttribute('r', sunR);
+    sunLbl.setAttribute('y', sunR > 20 ? CY + 4 : CY + sunR + 14);
+    arc.setAttribute('d', Kit.s.arcPath(CX, CY, RING, -ang / 2, ang / 2));
+    const tx = CX + RING + 10;
+    lbl1.setAttribute('x', tx); lbl1.setAttribute('y', CY - 6);
+    lbl2.setAttribute('x', tx); lbl2.setAttribute('y', CY + 8);
+    lbl2.textContent = 'dots in it: ' + fmtCount(n);
+
+    side.set('area', `${Kit.fmtSci(area)} m²`);
+    side.set('ppm', `${Kit.fmtSci(P_SUN / area)} W/m²`);
+    side.set('ratio', `× ${ratioTxt(ratio)} area → ÷ ${ratioTxt(ratio)} per m²`);
+  }
+  draw(slider.get());
+
+  Kit.section(1, 'Earth catches with a disc, but shares over a sphere → S/4');
+  Kit.equation(Kit.root, [
+    'average = ', { t: 'power caught', color: C.gold },
+    ' ÷ ', { t: 'whole surface', color: C.blueInk },
+    ' = S · πR² ÷ 4πR² = S/4 = 1360 / 4 = 340 W/m²'
+  ]);
+})();
+</script>
+</body>
+</html>
