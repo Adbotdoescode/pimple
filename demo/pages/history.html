@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History 201 · Versailles Reading</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f3f5f8; color: #1f2933;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 20px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 56px;
+    background: #ffffff; border-bottom: 1px solid #dfe3e9;
+    display: flex; align-items: center; padding: 0 20px; font-size: 15px; line-height: 1.4;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #14213d; letter-spacing: -0.01em; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: #1d4ed8; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  }
+  .logo .sep { color: #9aa5b1; font-weight: 400; margin: 0 2px; }
+  .logo .unit { font-weight: 500; color: #52606d; font-size: 15px; }
+  .topnav { margin-left: 36px; display: flex; gap: 22px; font-size: 14px; color: #52606d; }
+  .topnav .on { color: #1d4ed8; font-weight: 600; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #52606d; }
+  .pill { background: #fff4e5; color: #9a4b00; border: 1px solid #f7d9ac; border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #d9e2f1; color: #1d4ed8;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    position: absolute; left: 0; top: 56px; width: 240px; height: 844px;
+    background: #fbfcfd; border-right: 1px solid #dfe3e9; padding: 18px 12px;
+  }
+  .sidebar h4 {
+    margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #7b8794;
+  }
+  .sidebar ul { list-style: none; margin: 0; padding: 0; }
+  .sidebar li { padding: 7px 10px; border-radius: 6px; font-size: 14px; line-height: 1.4; color: #3e4c59; }
+  .sidebar li.sub { padding-left: 26px; font-size: 13.5px; }
+  .sidebar li.active { background: #e3ebfb; color: #1d4ed8; font-weight: 600; }
+  .sidebar li .done { color: #2f9e6b; margin-left: 6px; font-size: 12px; }
+
+  /* ---------- main card ---------- */
+  .card {
+    position: absolute; left: 272px; top: 88px; width: 1136px; height: 760px;
+    background: #ffffff; border: 1px solid #dfe3e9; border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    padding: 30px 40px; overflow: hidden;
+  }
+  .crumbs { font-size: 13px; color: #7b8794; margin-bottom: 10px; }
+  .crumbs b { color: #3e4c59; font-weight: 500; }
+  h1 { margin: 0 0 18px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #14213d; }
+
+  .article { max-width: 1000px; }
+  .article p { margin: 0 0 16px; color: #2b3440; line-height: 1.55; }
+
+  .discuss {
+    max-width: 1000px; margin-top: 8px; padding: 14px 18px;
+    background: #eef4ff; border: 1px solid #c9dbfb; border-left: 4px solid #1d4ed8; border-radius: 8px;
+    color: #1f2933;
+  }
+  .discuss b { color: #1d4ed8; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">H</div>
+    <span>History 201</span>
+    <span class="sep">·</span>
+    <span class="unit">Unit 5: Interwar Europe</span>
+  </div>
+  <nav class="topnav">
+    <span>Syllabus</span>
+    <span class="on">Readings</span>
+    <span>Assignments</span>
+    <span>Grades</span>
+    <span>Calendar</span>
+  </nav>
+  <div class="topright">
+    <span class="pill">Reading response due Wed 11:59 PM</span>
+    <div class="avatar">AK</div>
+  </div>
+</header>
+
+<aside class="sidebar">
+  <ul>
+    <li>Course home</li>
+    <li>Syllabus</li>
+  </ul>
+  <h4>Modules</h4>
+  <ul>
+    <li>Unit 3 · Industrial age <span class="done">✓</span></li>
+    <li>Unit 4 · World War I <span class="done">✓</span></li>
+    <li class="active">Unit 5 · Interwar Europe</li>
+    <li class="sub">5.1 The Russian Revolution <span class="done">✓</span></li>
+    <li class="sub active">5.2 The Treaty of Versailles</li>
+    <li class="sub">5.3 The Great Depression</li>
+    <li class="sub">5.4 Fascism in Italy</li>
+    <li>Unit 6 · World War II</li>
+  </ul>
+  <h4>Resources</h4>
+  <ul>
+    <li>Reading list</li>
+    <li>Map archive</li>
+    <li>Office hours</li>
+  </ul>
+</aside>
+
+<main class="card">
+  <div class="crumbs">Unit 5 <b>›</b> 5.2 The Treaty of Versailles <b>›</b> <b>Reading</b></div>
+  <h1>Reading: The Treaty of Versailles (1919)</h1>
+
+  <div class="article">
+    <p>The Treaty of Versailles was signed on 28 June 1919 in the Hall of Mirrors at the Palace of Versailles, formally ending the state of war between Germany and the Allied Powers. Its terms were drafted largely by the victorious nations, principally France, Britain, the United States and Italy, while Germany was given little room to negotiate. The treaty also created the League of Nations and redrew the borders of much of Europe.</p>
+
+    <p>Article 231, often called the 'war guilt clause', required Germany to accept responsibility for the loss and damage caused by the war. Germany was also required to pay reparations for damage to Allied civilians and their property. The total was not fixed until 1921, when it was set at 132 billion gold marks. Payments were later reduced and rescheduled during the 1920s, but reparations remained a contested issue in German politics.</p>
+
+    <p>The treaty also stripped Germany of about 13 per cent of its European territory and roughly 10 per cent of its population, including Alsace-Lorraine, which returned to France. Its military terms capped the army at 100,000 men, abolished conscription, and barred submarines and military aircraft. Many Germans viewed the treaty as a 'Diktat', a peace imposed under threat rather than negotiated, and nationalist politicians later used this grievance against the Weimar Republic.</p>
+  </div>
+
+  <div class="discuss"><b>Discussion question:</b> Why did many Germans see the treaty as a 'Diktat'?</div>
+</main>
+
+</body>
+</html>

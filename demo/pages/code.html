@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS 101 · Exercise 4</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f3f5f8; color: #1f2933;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 20px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 56px;
+    background: #ffffff; border-bottom: 1px solid #dfe3e9;
+    display: flex; align-items: center; padding: 0 20px; font-size: 15px; line-height: 1.4;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #14213d; letter-spacing: -0.01em; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: #1d4ed8; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  }
+  .logo .sep { color: #9aa5b1; font-weight: 400; margin: 0 2px; }
+  .logo .unit { font-weight: 500; color: #52606d; font-size: 15px; }
+  .topnav { margin-left: 36px; display: flex; gap: 22px; font-size: 14px; color: #52606d; }
+  .topnav .on { color: #1d4ed8; font-weight: 600; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #52606d; }
+  .pill { background: #fff4e5; color: #9a4b00; border: 1px solid #f7d9ac; border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #d9e2f1; color: #1d4ed8;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    position: absolute; left: 0; top: 56px; width: 240px; height: 844px;
+    background: #fbfcfd; border-right: 1px solid #dfe3e9; padding: 18px 12px;
+  }
+  .sidebar h4 {
+    margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #7b8794;
+  }
+  .sidebar ul { list-style: none; margin: 0; padding: 0; }
+  .sidebar li { padding: 7px 10px; border-radius: 6px; font-size: 14px; line-height: 1.4; color: #3e4c59; }
+  .sidebar li.sub { padding-left: 26px; font-size: 13.5px; }
+  .sidebar li.active { background: #e3ebfb; color: #1d4ed8; font-weight: 600; }
+  .sidebar li .done { color: #2f9e6b; margin-left: 6px; font-size: 12px; }
+
+  /* ---------- main card ---------- */
+  .card {
+    position: absolute; left: 272px; top: 88px; width: 1136px; height: 760px;
+    background: #ffffff; border: 1px solid #dfe3e9; border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    padding: 30px 40px; overflow: hidden;
+  }
+  .crumbs { font-size: 13px; color: #7b8794; margin-bottom: 10px; }
+  .crumbs b { color: #3e4c59; font-weight: 500; }
+  h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #14213d; }
+  .meta { font-size: 13px; color: #7b8794; margin-bottom: 20px; }
+  .meta span + span::before { content: "  ·  "; color: #c3ccd6; }
+  p.prompt { margin: 0 0 22px; color: #2b3440; }
+
+  .label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #7b8794;
+    margin-bottom: 6px;
+  }
+
+  .cols { display: flex; gap: 28px; align-items: flex-start; }
+  .codewrap { flex: 1; min-width: 0; }
+  .side { width: 380px; flex: none; }
+
+  /* ---------- code block ---------- */
+  .codeblock {
+    counter-reset: ln;
+    background: #1f2933; color: #e4e7eb; border-radius: 10px; padding: 18px 0;
+    font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 19px; line-height: 1.7; overflow: hidden;
+  }
+  .codeblock .line { white-space: pre; padding-right: 20px; }
+  .codeblock .line::before {
+    counter-increment: ln; content: counter(ln); display: inline-block; width: 52px;
+    padding-right: 18px; text-align: right; color: #6b7785; user-select: none;
+  }
+  .kw { color: #c792ea; }
+  .fn { color: #82aaff; }
+  .num { color: #f78c6c; }
+
+  /* ---------- output and fix ---------- */
+  .output {
+    background: #f7f9fc; border: 1px solid #dfe5ee; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+  }
+  .mono {
+    font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 19px; color: #1f2933;
+    margin-bottom: 6px;
+  }
+  .exp { font-size: 15px; color: #7b8794; }
+
+  .workbox { border: 1px solid #d5dbe3; border-radius: 8px; background: #fbfcfd; }
+  .workbox .head {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7b8794;
+    padding: 8px 14px; border-bottom: 1px solid #e6e9ee;
+  }
+  .workbox .body { padding: 12px 14px; height: 130px; font-size: 17px; color: #9aa5b1; }
+
+  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+  .btn {
+    font-size: 15px; font-weight: 600; border-radius: 7px; padding: 8px 16px;
+    border: 1px solid #c9d1db; background: #fff; color: #3e4c59; font-family: inherit;
+  }
+  .btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">C</div>
+    <span>CS 101</span>
+    <span class="sep">·</span>
+    <span class="unit">Week 4: Functions</span>
+  </div>
+  <nav class="topnav">
+    <span>Syllabus</span>
+    <span class="on">Modules</span>
+    <span>Assignments</span>
+    <span>Grades</span>
+    <span>Calendar</span>
+  </nav>
+  <div class="topright">
+    <span class="pill">Exercise 4 due Sun 11:59 PM</span>
+    <div class="avatar">AK</div>
+  </div>
+</header>
+
+<aside class="sidebar">
+  <ul>
+    <li>Course home</li>
+    <li>Syllabus</li>
+  </ul>
+  <h4>Modules</h4>
+  <ul>
+    <li>Week 1 · Variables <span class="done">✓</span></li>
+    <li>Week 2 · Control flow <span class="done">✓</span></li>
+    <li>Week 3 · Lists <span class="done">✓</span></li>
+    <li class="active">Week 4 · Functions</li>
+    <li class="sub">4.1 Defining functions <span class="done">✓</span></li>
+    <li class="sub">4.2 Loops over lists <span class="done">✓</span></li>
+    <li class="sub active">Exercise 4 · Debugging</li>
+    <li>Week 5 · Dictionaries</li>
+  </ul>
+  <h4>Resources</h4>
+  <ul>
+    <li>Python docs</li>
+    <li>Style guide</li>
+    <li>Office hours</li>
+  </ul>
+</aside>
+
+<main class="card">
+  <div class="crumbs">Week 4 <b>›</b> Functions <b>›</b> <b>Exercise 4</b></div>
+  <h1>CS 101 — Exercise 4</h1>
+  <div class="meta"><span>Exercise 4</span><span>5 points</span><span>Find the bug, then fix it</span></div>
+
+  <p class="prompt">This prints 4.666… instead of 6.0. Find the bug.</p>
+
+  <div class="cols">
+    <div class="codewrap">
+      <div class="label">Code</div>
+      <div class="codeblock">
+        <div class="line"><span class="kw">def</span> <span class="fn">average</span>(nums):</div>
+        <div class="line">    total = <span class="num">0</span></div>
+        <div class="line">    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="fn">len</span>(nums)):</div>
+        <div class="line">        total += nums[i]</div>
+        <div class="line">    <span class="kw">return</span> total / <span class="fn">len</span>(nums)</div>
+        <div class="line"></div>
+        <div class="line"><span class="fn">print</span>(<span class="fn">average</span>([<span class="num">4</span>, <span class="num">8</span>, <span class="num">6</span>]))</div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="output">
+        <div class="label">Output</div>
+        <div class="mono">4.666666666666667</div>
+        <div class="exp">Expected output: 6.0</div>
+      </div>
+      <div class="workbox">
+        <div class="head">Your fix</div>
+        <div class="body">Describe the bug in one sentence, then write the corrected code.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn">Save draft</button>
+    <button class="btn primary">Submit answer</button>
+  </div>
+</main>
+
+</body>
+</html>

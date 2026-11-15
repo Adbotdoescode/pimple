@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chemistry 110 · Lab 5</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f3f5f8; color: #1f2933;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 20px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 56px;
+    background: #ffffff; border-bottom: 1px solid #dfe3e9;
+    display: flex; align-items: center; padding: 0 20px; font-size: 15px; line-height: 1.4;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #14213d; letter-spacing: -0.01em; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: #1d4ed8; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  }
+  .logo .sep { color: #9aa5b1; font-weight: 400; margin: 0 2px; }
+  .logo .unit { font-weight: 500; color: #52606d; font-size: 15px; }
+  .topnav { margin-left: 36px; display: flex; gap: 22px; font-size: 14px; color: #52606d; }
+  .topnav .on { color: #1d4ed8; font-weight: 600; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #52606d; }
+  .pill { background: #fff4e5; color: #9a4b00; border: 1px solid #f7d9ac; border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #d9e2f1; color: #1d4ed8;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    position: absolute; left: 0; top: 56px; width: 240px; height: 844px;
+    background: #fbfcfd; border-right: 1px solid #dfe3e9; padding: 18px 12px;
+  }
+  .sidebar h4 {
+    margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #7b8794;
+  }
+  .sidebar ul { list-style: none; margin: 0; padding: 0; }
+  .sidebar li { padding: 7px 10px; border-radius: 6px; font-size: 14px; line-height: 1.4; color: #3e4c59; }
+  .sidebar li.sub { padding-left: 26px; font-size: 13.5px; }
+  .sidebar li.active { background: #e3ebfb; color: #1d4ed8; font-weight: 600; }
+  .sidebar li .done { color: #2f9e6b; margin-left: 6px; font-size: 12px; }
+
+  /* ---------- main card ---------- */
+  .card {
+    position: absolute; left: 272px; top: 88px; width: 1136px; height: 760px;
+    background: #ffffff; border: 1px solid #dfe3e9; border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    padding: 30px 40px; overflow: hidden;
+  }
+  .crumbs { font-size: 13px; color: #7b8794; margin-bottom: 10px; }
+  .crumbs b { color: #3e4c59; font-weight: 500; }
+  h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #14213d; }
+  .meta { font-size: 13px; color: #7b8794; margin-bottom: 20px; }
+  .meta span + span::before { content: "  ·  "; color: #c3ccd6; }
+
+  .label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #7b8794;
+    margin-bottom: 6px;
+  }
+
+  /* ---------- equation ---------- */
+  .eqpanel {
+    text-align: center; font-size: 46px; line-height: 1.3; padding: 22px 16px; margin-bottom: 24px;
+    background: #f7f9fc; border: 1px solid #dfe5ee; border-radius: 10px; color: #14213d;
+    font-family: "Cambria Math", "Times New Roman", Georgia, serif;
+  }
+  .eqpanel sub { font-size: 0.66em; line-height: 0; vertical-align: -0.28em; }
+
+  /* ---------- layout ---------- */
+  .cols { display: flex; gap: 28px; align-items: flex-start; }
+  .left { flex: 1; }
+  .right { width: 340px; flex: none; }
+
+  ol.qs { list-style: none; margin: 0 0 16px; padding: 0; }
+  ol.qs li { display: flex; gap: 12px; margin-bottom: 10px; color: #2b3440; }
+  ol.qs .k {
+    flex: none; width: 40px; height: 28px; border-radius: 6px; background: #f0f2f5; color: #3e4c59;
+    font-weight: 700; font-size: 14px; text-align: center; line-height: 28px;
+  }
+
+  .workbox { border: 1px solid #d5dbe3; border-radius: 8px; background: #fbfcfd; margin-bottom: 12px; }
+  .workbox .head {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7b8794;
+    padding: 8px 14px; border-bottom: 1px solid #e6e9ee;
+  }
+  .workbox .body { padding: 12px 14px; height: 74px; font-size: 17px; color: #9aa5b1; }
+
+  table.mm { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+  table.mm th {
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: #7b8794; padding: 8px 10px; border-bottom: 1px solid #d5dbe3;
+  }
+  table.mm td { padding: 12px 10px; border-bottom: 1px solid #e6e9ee; font-size: 19px; color: #1f2933; }
+  table.mm td.num { font-family: "Cambria Math", "Times New Roman", Georgia, serif; font-size: 20px; }
+  .note { margin: 0; font-size: 15px; color: #7b8794; }
+
+  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+  .btn {
+    font-size: 15px; font-weight: 600; border-radius: 7px; padding: 8px 16px;
+    border: 1px solid #c9d1db; background: #fff; color: #3e4c59; font-family: inherit;
+  }
+  .btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">C</div>
+    <span>Chemistry 110</span>
+    <span class="sep">·</span>
+    <span class="unit">Unit 3: Stoichiometry</span>
+  </div>
+  <nav class="topnav">
+    <span>Syllabus</span>
+    <span class="on">Labs</span>
+    <span>Quizzes</span>
+    <span>Grades</span>
+    <span>Calendar</span>
+  </nav>
+  <div class="topright">
+    <span class="pill">Lab 5 report due Mon 9:00 AM</span>
+    <div class="avatar">AK</div>
+  </div>
+</header>
+
+<aside class="sidebar">
+  <ul>
+    <li>Course home</li>
+    <li>Syllabus</li>
+  </ul>
+  <h4>Modules</h4>
+  <ul>
+    <li>Unit 1 · Atoms <span class="done">✓</span></li>
+    <li>Unit 2 · Bonding <span class="done">✓</span></li>
+    <li class="active">Unit 3 · Stoichiometry</li>
+    <li class="sub">3.1 Molar mass <span class="done">✓</span></li>
+    <li class="sub">3.2 Balancing equations <span class="done">✓</span></li>
+    <li class="sub">Lab 4 · Titration <span class="done">✓</span></li>
+    <li class="sub active">Lab 5 · Combustion of methane</li>
+    <li>Unit 4 · Thermochemistry</li>
+  </ul>
+  <h4>Resources</h4>
+  <ul>
+    <li>Periodic table</li>
+    <li>Lab safety</li>
+    <li>Office hours</li>
+  </ul>
+</aside>
+
+<main class="card">
+  <div class="crumbs">Unit 3 <b>›</b> Labs <b>›</b> <b>Lab 5</b></div>
+  <h1>Lab 5: Combustion of methane</h1>
+  <div class="meta"><span>Lab report</span><span>12 points</span><span>Show your mole ratios</span></div>
+
+  <div class="label">Reaction (unbalanced)</div>
+  <div class="eqpanel">CH<sub>4</sub> + O<sub>2</sub> → CO<sub>2</sub> + H<sub>2</sub>O</div>
+
+  <div class="cols">
+    <div class="left">
+      <ol class="qs">
+        <li><span class="k">(a)</span><span>Balance the equation.</span></li>
+        <li><span class="k">(b)</span><span>How many grams of O<sub>2</sub> react with 8.0 g of CH<sub>4</sub>?</span></li>
+      </ol>
+
+      <div class="workbox">
+        <div class="head">Answer (a)</div>
+        <div class="body">Write the balanced equation.</div>
+      </div>
+      <div class="workbox">
+        <div class="head">Answer (b)</div>
+        <div class="body">Show the mole calculation, then give the mass of O<sub>2</sub> in grams.</div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="label">Molar masses</div>
+      <table class="mm">
+        <tr><th>Element</th><th>Symbol</th><th>g/mol</th></tr>
+        <tr><td>Carbon</td><td>C</td><td class="num">12.01</td></tr>
+        <tr><td>Hydrogen</td><td>H</td><td class="num">1.008</td></tr>
+        <tr><td>Oxygen</td><td>O</td><td class="num">16.00</td></tr>
+      </table>
+      <p class="note">Use these values in every calculation.</p>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn">Save draft</button>
+    <button class="btn primary">Submit report</button>
+  </div>
+</main>
+
+</body>
+</html>

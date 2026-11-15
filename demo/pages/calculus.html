@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculus I · Problem 2.7</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f3f5f8; color: #1f2933;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 20px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 56px;
+    background: #ffffff; border-bottom: 1px solid #dfe3e9;
+    display: flex; align-items: center; padding: 0 20px; font-size: 15px; line-height: 1.4;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #14213d; letter-spacing: -0.01em; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: #1d4ed8; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  }
+  .logo .sep { color: #9aa5b1; font-weight: 400; margin: 0 2px; }
+  .logo .unit { font-weight: 500; color: #52606d; font-size: 15px; }
+  .topnav { margin-left: 36px; display: flex; gap: 22px; font-size: 14px; color: #52606d; }
+  .topnav .on { color: #1d4ed8; font-weight: 600; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #52606d; }
+  .pill { background: #fff4e5; color: #9a4b00; border: 1px solid #f7d9ac; border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #d9e2f1; color: #1d4ed8;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    position: absolute; left: 0; top: 56px; width: 240px; height: 844px;
+    background: #fbfcfd; border-right: 1px solid #dfe3e9; padding: 18px 12px;
+  }
+  .sidebar h4 {
+    margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #7b8794;
+  }
+  .sidebar ul { list-style: none; margin: 0; padding: 0; }
+  .sidebar li { padding: 7px 10px; border-radius: 6px; font-size: 14px; line-height: 1.4; color: #3e4c59; }
+  .sidebar li.sub { padding-left: 26px; font-size: 13.5px; }
+  .sidebar li.active { background: #e3ebfb; color: #1d4ed8; font-weight: 600; }
+  .sidebar li .done { color: #2f9e6b; margin-left: 6px; font-size: 12px; }
+
+  /* ---------- main card ---------- */
+  .card {
+    position: absolute; left: 272px; top: 88px; width: 1136px; height: 760px;
+    background: #ffffff; border: 1px solid #dfe3e9; border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    padding: 30px 40px; overflow: hidden;
+  }
+  .crumbs { font-size: 13px; color: #7b8794; margin-bottom: 10px; }
+  .crumbs b { color: #3e4c59; font-weight: 500; }
+  h1 { margin: 0 0 6px; font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #14213d; }
+  .meta { font-size: 13px; color: #7b8794; margin-bottom: 20px; }
+  .meta span + span::before { content: "  ·  "; color: #c3ccd6; }
+  p.prompt { margin: 0 0 12px; color: #2b3440; }
+
+  .label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #7b8794;
+    margin-bottom: 6px;
+  }
+
+  /* ---------- maths typography ---------- */
+  .m { font-family: "Cambria Math", "Times New Roman", Georgia, serif; }
+  .frac {
+    display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle;
+    font-size: 0.9em; line-height: 1.15; margin: 0 3px;
+  }
+  .frac > span:first-child { border-bottom: 1.5px solid currentColor; padding: 0 4px 1px; }
+  .frac > span:last-child { padding: 1px 4px 0; }
+  .eq {
+    text-align: center; font-size: 26px; margin: 14px 0 18px; padding: 18px 16px;
+    background: #f7f9fc; border: 1px solid #dfe5ee; border-radius: 10px;
+    font-family: "Cambria Math", "Times New Roman", Georgia, serif;
+  }
+
+  /* ---------- work box ---------- */
+  .cols { display: flex; gap: 24px; align-items: flex-start; }
+  .workbox { flex: 1; border: 1px solid #d5dbe3; border-radius: 8px; background: #fbfcfd; }
+  .workbox .head {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7b8794;
+    padding: 8px 14px; border-bottom: 1px solid #e6e9ee;
+  }
+  .steps { padding: 4px 16px; font-size: 19px; }
+  .step {
+    display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px dashed #e1e6ec;
+  }
+  .step:last-child { border-bottom: none; }
+  .step .n {
+    flex: none; width: 24px; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px; font-weight: 700; color: #7b8794;
+  }
+  .step .pending { color: #9aa5b1; font-style: italic; }
+
+  /* ---------- formula sheet ---------- */
+  .sheet {
+    width: 340px; flex: none; background: #f7f9fc; border: 1px solid #dfe5ee; border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .sheet .ref { margin-bottom: 14px; }
+  .sheet .ref:last-child { margin-bottom: 0; }
+  .sheet .rt { font-size: 15px; font-weight: 700; color: #3e4c59; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .sheet .f { font-size: 18px; color: #1f2933; }
+
+  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .btn {
+    font-size: 15px; font-weight: 600; border-radius: 7px; padding: 8px 16px;
+    border: 1px solid #c9d1db; background: #fff; color: #3e4c59; font-family: inherit;
+  }
+  .btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">C</div>
+    <span>Calculus I</span>
+    <span class="sep">·</span>
+    <span class="unit">Unit 2: Differentiation</span>
+  </div>
+  <nav class="topnav">
+    <span>Syllabus</span>
+    <span class="on">Modules</span>
+    <span>Assignments</span>
+    <span>Grades</span>
+    <span>Calendar</span>
+  </nav>
+  <div class="topright">
+    <span class="pill">Problem set 2 due Thu 11:59 PM</span>
+    <div class="avatar">AK</div>
+  </div>
+</header>
+
+<aside class="sidebar">
+  <ul>
+    <li>Course home</li>
+    <li>Syllabus</li>
+  </ul>
+  <h4>Modules</h4>
+  <ul>
+    <li>Unit 1 · Limits <span class="done">✓</span></li>
+    <li class="active">Unit 2 · Differentiation</li>
+    <li class="sub">2.4 Power and sum rules <span class="done">✓</span></li>
+    <li class="sub">2.5 Product and quotient rules <span class="done">✓</span></li>
+    <li class="sub">2.6 The chain rule <span class="done">✓</span></li>
+    <li class="sub active">2.7 Combining the rules</li>
+    <li>Unit 3 · Applications</li>
+    <li>Unit 4 · Integration</li>
+  </ul>
+  <h4>Resources</h4>
+  <ul>
+    <li>Formula sheet</li>
+    <li>Worked examples</li>
+    <li>Office hours</li>
+  </ul>
+</aside>
+
+<main class="card">
+  <div class="crumbs">Unit 2 <b>›</b> 2.7 Combining the rules <b>›</b> <b>Problem set 2</b></div>
+  <h1>Problem 2.7: Differentiate a product</h1>
+  <div class="meta"><span>Problem set 2</span><span>10 points</span><span>Show every rule you use</span></div>
+
+  <p class="prompt">Find <span class="m"><span class="frac"><span><i>dy</i></span><span><i>dx</i></span></span></span> for the function below. Use the product rule, and show each step.</p>
+
+  <div class="eq"><i>y</i> = (3<i>x</i><sup>2</sup> + 1) · sin(2<i>x</i>)</div>
+
+  <div class="cols">
+    <div class="workbox">
+      <div class="head">Your work</div>
+      <div class="steps m">
+        <div class="step"><span class="n">1</span><span>Product rule: <span class="frac"><span><i>dy</i></span><span><i>dx</i></span></span> = <span class="frac"><span>d</span><span><i>dx</i></span></span>(3<i>x</i><sup>2</sup> + 1) · sin(2<i>x</i>) + (3<i>x</i><sup>2</sup> + 1) · <span class="frac"><span>d</span><span><i>dx</i></span></span> sin(2<i>x</i>)</span></div>
+        <div class="step"><span class="n">2</span><span><span class="frac"><span>d</span><span><i>dx</i></span></span>(3<i>x</i><sup>2</sup> + 1) = 6<i>x</i></span></div>
+        <div class="step"><span class="n">3</span><span><span class="frac"><span>d</span><span><i>dx</i></span></span> sin(2<i>x</i>) = cos(2<i>x</i>)</span></div>
+        <div class="step"><span class="n">4</span><span><span class="frac"><span><i>dy</i></span><span><i>dx</i></span></span> = 6<i>x</i> · sin(2<i>x</i>) + (3<i>x</i><sup>2</sup> + 1) · cos(2<i>x</i>)</span></div>
+        <div class="step"><span class="n">5</span><span class="pending">Simplify: not started</span></div>
+      </div>
+    </div>
+
+    <aside class="sheet">
+      <div class="label">Formula sheet</div>
+      <div class="ref">
+        <div class="rt">Product rule</div>
+        <div class="f m">(<i>uv</i>)′ = <i>u′v</i> + <i>uv′</i></div>
+      </div>
+      <div class="ref">
+        <div class="rt">Chain rule</div>
+        <div class="f m"><span class="frac"><span>d</span><span><i>dx</i></span></span> [ <i>f</i>(<i>g</i>(<i>x</i>)) ] = <i>f′</i>(<i>g</i>(<i>x</i>)) · <i>g′</i>(<i>x</i>)</div>
+      </div>
+      <div class="ref">
+        <div class="rt">Basic derivatives</div>
+        <div class="f m"><span class="frac"><span>d</span><span><i>dx</i></span></span> sin(<i>x</i>) = cos(<i>x</i>)<br><span class="frac"><span>d</span><span><i>dx</i></span></span> <i>x</i><sup>n</sup> = <i>n</i>·<i>x</i><sup>n−1</sup></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="actions">
+    <button class="btn">Save draft</button>
+    <button class="btn primary">Submit answer</button>
+  </div>
+</main>
+
+</body>
+</html>
