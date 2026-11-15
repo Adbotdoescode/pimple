@@ -1,0 +1,282 @@
+/*
+ * Gizmo window chrome. Class prefix gz-. Glass material and tokens come from src/ui/glass.css.
+ * The diagram body stays light (the kit is light-only); only the header follows the theme.
+ */
+
+:root {
+  --gz-ground: #EEF0F3;   /* diagram page ground, light in both themes */
+  --gz-chrome: #EEF0F3;   /* window ground behind the glass header */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --gz-chrome: #16181D;
+  }
+}
+
+:root[data-theme="dark"] {
+  --gz-chrome: #16181D;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--gz-chrome);
+}
+
+.gz-root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background: var(--gz-chrome);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Header: liquid glass over the window ground. */
+.gz-header {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 12px 0 20px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--glass-hairline);
+  box-shadow: inset 0 1px 0 var(--glass-specular);
+}
+
+.gz-titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gz-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.gz-title {
+  margin: 0;
+  overflow: hidden;
+  font-family: "New York", ui-serif, Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-1);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gz-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Status pill. */
+.gz-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--chip-border);
+  border-radius: var(--r-pill);
+  background: var(--chip-bg);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.gz-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.gz-status--failed {
+  color: var(--bad-ink);
+}
+
+.gz-status--failed .gz-dot {
+  background: var(--bad);
+}
+
+/* Shimmering "Building…" label: a moving highlight clipped to the text. */
+.gz-status--building .gz-label {
+  background: linear-gradient(90deg, var(--text-3) 0%, var(--text-1) 50%, var(--text-3) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gt-shimmer 1.8s linear infinite;
+}
+
+/* Round glass button, 32 px. */
+.gz-btn {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--chip-border);
+  border-radius: 50%;
+  background: var(--glass-btn-bg);
+  color: var(--text-2);
+  box-shadow: var(--glass-btn-shadow), inset 0 1px 0 var(--glass-specular);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
+}
+
+.gz-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gz-btn:hover:not(:disabled) {
+  background: var(--glass-btn-hover);
+  color: var(--text-1);
+}
+
+.gz-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.gz-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gz-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Body: the diagram fills it edge to edge. */
+.gz-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--gz-ground);
+}
+
+.gz-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  animation: gz-fade-in 300ms ease-out both;
+}
+
+@keyframes gz-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Centred states (building, failed, empty). */
+.gz-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.gz-card {
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(420px, 100%);
+  padding: 28px 28px 26px;
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.gz-card-title {
+  margin: 0;
+  font-family: "New York", ui-serif, Georgia, serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-1);
+}
+
+.gz-card-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+/* Animated shimmer bar inside the building card. */
+.gz-bar {
+  width: 100%;
+  height: 6px;
+  margin: 8px 0 6px;
+  border-radius: var(--r-pill);
+  background-color: var(--skel);
+  background-image: linear-gradient(90deg, transparent 0%, var(--skel-hi) 50%, transparent 100%);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: gt-shimmer 1.4s linear infinite;
+}
+
+.gz-empty {
+  margin: 0;
+  max-width: 420px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-3);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gz-frame,
+  .gz-bar,
+  .gz-status--building .gz-label {
+    animation: none;
+  }
+
+  .gz-status--building .gz-label {
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    color: var(--text-1);
+  }
+
+  .gz-btn,
+  .gz-btn:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+}
