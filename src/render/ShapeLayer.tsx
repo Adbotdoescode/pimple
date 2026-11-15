@@ -399,8 +399,16 @@ function obstaclesOf(s: Shape, toView: (p: Pt) => Pt, scale: number): Seg[] {
 }
 
 /** 0 means clean. Otherwise a rough cost: label overlap area, stroke hits, and leaving the viewport. */
-function scoreCandidate(box: Box, segs: Seg[], placed: Box[], vp: { width: number; height: number } | undefined): number {
+function scoreCandidate(
+  box: Box,
+  segs: Seg[],
+  placed: Box[],
+  vp: { width: number; height: number } | undefined,
+  interiors: Box[] = [],
+): number {
   let score = 0;
+  // A label inside a box or circle hides what the shape points at and reads as belonging to it.
+  for (const r of interiors) if (boxOverlapArea(box, r) > 0) score += 400;
   const grown = inflate(box, 3);
   for (const p of placed) {
     const area = boxOverlapArea(grown, p);
@@ -419,7 +427,18 @@ function computePlacements(
   cache: Map<string, LabelPlacement>,
 ): Map<string, LabelPlacement> {
   const segs: Seg[] = [];
-  for (const { shape } of items) segs.push(...obstaclesOf(shape, toView, scale));
+  const interiors: Box[] = [];
+  for (const { shape } of items) {
+    segs.push(...obstaclesOf(shape, toView, scale));
+    if (shape.kind === "box") {
+      const g = rectGeom(shape.rect, toView);
+      if (g) interiors.push({ x0: g.L, y0: g.T, x1: g.L + g.W, y1: g.T + g.H });
+    } else if (shape.kind === "circle") {
+      const g = circleGeom(shape, toView, scale);
+      const k = g ? g.R * Math.SQRT1_2 : 0;
+      if (g) interiors.push({ x0: g.cx - k, y0: g.cy - k, x1: g.cx + k, y1: g.cy + k });
+    }
+  }
 
   const out = new Map<string, LabelPlacement>();
   const placed: Box[] = [];
@@ -455,7 +474,7 @@ function computePlacements(
           const L = Math.hypot(dx, dy) || 1;
           cand = { x: cand0.x + (dx / L) * push, y: cand0.y + (dy / L) * push, anchor: cand0.anchor };
         }
-        const score = scoreCandidate(labelBox(cand, text), segs, placed, vp) + push * 0.5;
+        const score = scoreCandidate(labelBox(cand, text), segs, placed, vp, ref ? interiors : []) + push * 0.5;
         if (score === 0) { pick = cand; best = 0; break search; }
         if (score < best) { best = score; pick = cand; }
       }
@@ -531,8 +550,8 @@ function inkNodes(
   );
   if (g.sheen) {
     nodes.push(
-      <path key={`${tag}-sheen`} d={g.sheen} fill="none" stroke="#ffffff" strokeOpacity={0.36}
-        strokeWidth={fmt(Math.max(0.8, width * 0.24))} strokeLinecap="round" strokeDasharray="17 4 9 3 26 6 6 3"
+      <path key={`${tag}-sheen`} d={g.sheen} fill="none" stroke="#ffffff" strokeOpacity={0.24}
+        strokeWidth={fmt(Math.max(0.8, width * 0.24))} strokeLinecap="round" strokeDasharray="38 3 61 5 23 2 47 4"
         transform="translate(-0.45 -0.75)" className="gt-fade" style={{ animationDelay: `${delay + DRAW_MS}ms` }} />,
     );
   }

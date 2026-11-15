@@ -358,10 +358,6 @@ export function Card({
                 </section>
               )}
 
-              {notice && (
-                <div className="notice fade-up" role="status">{notice}</div>
-              )}
-
               {err && (
                 <div className="error fade-up" role="alert">
                   <AlertTriangle size={15} strokeWidth={2} aria-hidden="true" />
@@ -404,6 +400,9 @@ export function Card({
         )}
 
         <footer className="card-footer">
+          {notice && (
+            <div className="notice fade-up" role="status" title={notice}>{notice}</div>
+          )}
           <div className="ask">
             <input
               ref={inputRef}
