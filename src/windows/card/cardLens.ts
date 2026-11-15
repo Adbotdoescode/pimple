@@ -57,20 +57,19 @@ void main() {
   // Body: a touch of magnification. Rim: the view is pulled in from further inside and squeezed.
   vec2 q = p * 0.955 - n * bend * band * 0.85;
   float split = bend * 7.0 + 0.6;                  // colour separation, points
-  float soft = mix(6.5, 1.2, rim);                 // frost radius: soft body, clear rim
+  float soft = mix(8.0, 1.4, rim);                 // frost radius: soft body, clear rim
 
+  // Frost: 16 taps on a golden-angle spiral, an even disc (a ring of taps would double every line).
   vec3 col = vec3(0.0);
-  for (int i = 0; i < 8; i++) {
-    float a = float(i) * 0.7853982;
-    vec2 o = vec2(cos(a), sin(a)) * soft * (mod(float(i), 2.0) < 0.5 ? 1.0 : 0.55);
+  for (int i = 0; i < 16; i++) {
+    float fi = float(i);
+    float a = fi * 2.3999632;
+    vec2 o = vec2(cos(a), sin(a)) * soft * sqrt((fi + 0.5) / 16.0);
     col.r += tap(q - n * split + o).r;
     col.g += tap(q + o).g;
     col.b += tap(q + n * split + o).b;
   }
-  col.r += tap(q - n * split).r;
-  col.g += tap(q).g;
-  col.b += tap(q + n * split).b;
-  col /= 9.0;
+  col /= 16.0;
 
   // A little more life in the refracted colours, then the readability tint (thinner at the rim).
   float l = dot(col, vec3(0.299, 0.587, 0.114));
