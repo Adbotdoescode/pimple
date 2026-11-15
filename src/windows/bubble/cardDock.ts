@@ -102,6 +102,26 @@ function slide(x: number, w: number, h: number, prefer: number, frame: RectPts, 
   return yAbove ?? yBelow;
 }
 
+/** Nudge the card back inside the display (8 pt margin) without otherwise moving it. */
+async function keepOnDisplay(frame: RectPts, logErr: (tag: string, e: unknown) => void): Promise<void> {
+  try {
+    const card = await Window.getByLabel("card");
+    if (!card) return;
+    const [pos, size, scale] = await Promise.all([card.outerPosition(), card.outerSize(), card.scaleFactor()]);
+    const k = scale > 0 ? scale : 1;
+    const x = pos.x / k, y = pos.y / k, w = size.width / k, h = size.height / k;
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return;
+    const mid = x + w / 2;
+    if (mid < frame.x || mid > frame.x + frame.w) return; // on another display: not ours to move
+    const nx = Math.max(frame.x + EDGE, Math.min(x, frame.x + frame.w - w - EDGE));
+    const ny = Math.max(frame.y + EDGE, Math.min(y, frame.y + frame.h - h - EDGE));
+    if (Math.abs(nx - x) < 0.5 && Math.abs(ny - y) < 0.5) return;
+    await card.setPosition(new LogicalPosition(Math.round(nx), Math.round(ny)));
+  } catch (e) {
+    logErr("card keep on display", e);
+  }
+}
+
 /**
  * @param cx,cy  drop centre, global logical points
  * @param radius drop radius at rest
@@ -117,7 +137,11 @@ export async function dockCard(
   region?: RectPts | null,
 ): Promise<void> {
   if (![cx, cy, radius].every(Number.isFinite)) return;
-  if (userMoved) return;
+  if (userMoved) {
+    // The learner's spot wins, but a card that has grown must not hang off the display.
+    await keepOnDisplay(frame, logErr);
+    return;
+  }
   try {
     const card = await Window.getByLabel("card");
     if (!card) return;
@@ -192,6 +216,12 @@ export async function dockCard(
       }
     }
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    {
+      // Whatever branch chose the spot, the card as it is right now stays fully on the display
+      // (a card taller than the space is shifted up to the top margin).
+      const liveH = autoMin && !isPill ? PILL.h : h;
+      y = Math.max(frame.y + EDGE, Math.min(y, frame.y + frame.h - liveH - EDGE));
+    }
     const line = `[bubble] card dock (${Math.round(x)},${Math.round(y)}) size=${Math.round(w)}x${Math.round(h)} avoid=${avoid.length}${whiteboard ? " whiteboard" : ""}${drawn ? ` drawings=(${Math.round(drawn.x)},${Math.round(drawn.y)},${Math.round(drawn.w)}x${Math.round(drawn.h)})` : ""}${autoMin ? " auto-minimised" : ""}`;
     if (line !== lastLine) {
       lastLine = line;

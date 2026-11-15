@@ -104,30 +104,36 @@ function Lens({ cx, cy, r }: { cx: number; cy: number; r: number }) {
   );
 }
 
+const CAPTURE_PAD = 0.12; // the capture pads the loop's box by 12% a side; the brackets show that box
+
 function Lasso({ pts, closed }: { pts: Pt[]; closed: boolean }) {
   if (pts.length === 0) return null;
+  const isLoop = closed && pts.length > 2;
   const d = pts.length === 1
     ? `M${fmt(pts[0][0])} ${fmt(pts[0][1])} h0.01`
-    : smoothPath(pts) + (closed && pts.length > 2 ? " Z" : "");
+    : isLoop
+      ? closedPath(pts)
+      : smoothPath(pts);
   const stroke = `url(#${GRAD_ID})`;
 
   let bbox: { x: number; y: number; w: number; h: number } | null = null;
-  if (closed && pts.length > 2) {
+  if (isLoop) {
     const xs = pts.map((p) => p[0]);
     const ys = pts.map((p) => p[1]);
-    const pad = 6;
-    const x0 = Math.min(...xs) - pad;
-    const y0 = Math.min(...ys) - pad;
-    bbox = { x: x0, y: y0, w: Math.max(...xs) + pad - x0, h: Math.max(...ys) + pad - y0 };
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const px = (x1 - x0) * CAPTURE_PAD, py = (y1 - y0) * CAPTURE_PAD;
+    bbox = { x: x0 - px, y: y0 - py, w: x1 - x0 + 2 * px, h: y1 - y0 + 2 * py };
   }
 
   // Liquid ribbon: a clear glass tube with a dispersed (rainbow) edge. Layered strokes only, no
   // SVG filters (WebKit rasterises them blurry): contact shadow, tube body, the three dispersed
   // channels pulled apart sideways, a running spectrum, then the specular thread on top.
+  // When the loop closes, the ribbon flashes once, the inside fills and the capture brackets land.
   const line = { fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
   return (
     <>
-      {closed && pts.length > 2 && <path d={d} fill="rgba(255,255,255,0.10)" stroke="none" />}
+      {isLoop && <path d={d} className="gt-lasso-fill" fill="rgba(255,255,255,0.12)" stroke="none" />}
       <path d={d} {...line} stroke="rgba(10,20,40,0.16)" strokeWidth={13} transform="translate(0 2)" />
       <path d={d} {...line} stroke="rgba(10,20,40,0.30)" strokeWidth={10} />
       <path d={d} {...line} stroke="rgba(255,255,255,0.55)" strokeWidth={8.5} />
@@ -137,10 +143,42 @@ function Lasso({ pts, closed }: { pts: Pt[]; closed: boolean }) {
       <path d={d} {...line} stroke={stroke} strokeWidth={5} opacity={0.55} />
       <path d={d} {...line} stroke="rgba(255,255,255,0.72)" strokeWidth={4} />
       <path d={d} {...line} stroke="#FFFFFF" strokeWidth={1.4} transform="translate(-1 -1.1)" />
-      {bbox && <path d={brackets(bbox)} {...line} stroke="rgba(0,0,0,0.25)" strokeWidth={3} />}
-      {bbox && <path d={brackets(bbox)} {...line} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} />}
+      {isLoop && <path d={d} {...line} className="gt-lasso-flash" stroke="#FFFFFF" strokeWidth={9} />}
+      {bbox && (
+        <g className="gt-lasso-box">
+          <path d={brackets(bbox)} {...line} stroke="rgba(0,0,0,0.25)" strokeWidth={3} />
+          <path d={brackets(bbox)} {...line} stroke="rgba(255,255,255,0.85)" strokeWidth={1.5} />
+        </g>
+      )}
+      <style>{LASSO_CSS}</style>
     </>
   );
+}
+
+const LASSO_CSS = `
+.gt-lasso-fill { animation: gt-lasso-fill 320ms ease-out both; }
+.gt-lasso-flash { animation: gt-lasso-flash 420ms ease-out both; pointer-events: none; }
+.gt-lasso-box { animation: gt-lasso-box 360ms cubic-bezier(0.25, 1.4, 0.4, 1) both; transform-box: fill-box; transform-origin: center; }
+@keyframes gt-lasso-fill { from { opacity: 0; } to { opacity: 1; } }
+@keyframes gt-lasso-flash { from { opacity: 0.75; } to { opacity: 0; } }
+@keyframes gt-lasso-box { from { opacity: 0; transform: scale(1.08); } to { opacity: 1; transform: none; } }
+`;
+
+/** A smooth closed curve through the loop's points (Catmull-Rom, wrapped), so the join has no corner. */
+function closedPath(pts: Pt[]): string {
+  const n = pts.length;
+  // Drop a duplicated end point so the wrap is clean.
+  const m = Math.hypot(pts[0][0] - pts[n - 1][0], pts[0][1] - pts[n - 1][1]) < 0.5 ? n - 1 : n;
+  if (m < 3) return smoothPath(pts) + " Z";
+  const at = (i: number) => pts[((i % m) + m) % m];
+  let d = `M${fmt(at(0)[0])} ${fmt(at(0)[1])}`;
+  for (let i = 0; i < m; i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C${fmt(c1x)} ${fmt(c1y)} ${fmt(c2x)} ${fmt(c2y)} ${fmt(p2[0])} ${fmt(p2[1])}`;
+  }
+  return d + " Z";
 }
 
 /** Corner brackets around a box (the same capture hint the lens uses). */

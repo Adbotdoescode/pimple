@@ -54,6 +54,11 @@ const Y_MAX = 0.92;
 const INPUT_SLOP = 1.5;
 const WHEEL_GAIN = 0.0025;
 const LENS_DELAY_MS = 40; // let the drag read as a drag before the lens opens
+const HINT_IDLE_MS = 350; // an unfinished circle that stops moving is a lens again
+const REDO_DIST = 140; // pt the pen must leave a closed loop's box by to start over
+// The pen rides on the pointer: a stiff, critically damped spring so the ribbon's tip and the glass
+// never drift apart (the soft drag spring trails the pointer by tens of points on a fast loop).
+const SPRING_PEN = { k: 2600, c: 2 * Math.sqrt(2600) };
 
 type Edge = "left" | "right";
 // "moving" = Shift + drag: reposition the resting spot, no capture, no lens, no targeting.
@@ -91,6 +96,20 @@ function logErr(tag: string, e: unknown): void {
 
 function sendIntent(i: UiIntent): void {
   emitEvent(EV.uiIntent, i).catch((e) => logErr("ui:intent emit", e));
+}
+
+/** Bounding box of an unfinished loop, or null when it is too small to mean anything. */
+function arcBox(pts: [number, number][]): RectPts | null {
+  if (pts.length < 6) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y] of pts) {
+    if (x < x0) x0 = x;
+    if (y < y0) y0 = y;
+    if (x > x1) x1 = x;
+    if (y > y1) y1 = y;
+  }
+  if (!(x1 - x0 >= 40 && y1 - y0 >= 40)) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 export interface BubbleMotion {
@@ -142,8 +161,11 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     tracker: new LassoTracker(),
     loop: null as LassoLoop | null,
     loopAt: 0, // time the latest loop closed
+    hint: false, // circling but not closed yet: the glass is already a pen and the ribbon shows
+    penFrom: R_LENS, // lens radius to go back to if the circle is abandoned
     sentVer: -1,
     sentClosed: false,
+    sentLoop: null as LassoLoop | null,
     // rest edge
     wantEdge: edge as Edge,
     wantY: bubbleY, // resting height, fraction of the display height (settings.bubbleY)
@@ -430,11 +452,13 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
 
   const emitLasso = useCallback(() => {
     const s = S.current;
-    // Show the closed loop once the pen pauses or lifts; the live trail while it is moving.
-    const showClosed =
-      s.loop !== null && (!s.held || performance.now() - s.lastInput > 150 || s.loopAt >= s.lastInput);
-    if (showClosed === s.sentClosed && s.tracker.version === s.sentVer) return;
+    // A closed loop is shown as soon as it closes and then stays put; until then, the live ribbon.
+    const showClosed = s.loop !== null;
+    if (showClosed) {
+      if (s.sentClosed && s.sentLoop === s.loop) return;
+    } else if (!s.sentClosed && s.tracker.version === s.sentVer) return;
     s.sentClosed = showClosed;
+    s.sentLoop = s.loop;
     s.sentVer = s.tracker.version;
     const update =
       showClosed && s.loop
@@ -448,8 +472,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     s.lasso = false;
     s.loop = null;
     s.loopAt = 0;
+    s.hint = false;
     s.sentVer = -1;
     s.sentClosed = false;
+    s.sentLoop = null;
     s.tracker.reset();
   }, []);
 
@@ -458,9 +484,14 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     if (s.mode !== "dragging" && s.mode !== "armed") return;
     let region: RectPts;
     let mode: "region" | "lasso";
+    let arc: RectPts | null = null;
     if (s.lasso) {
       if (!s.loop) return; // lasso mode always has a loop; be defensive
       region = s.loop.bbox;
+      mode = "lasso";
+    } else if (s.hint && (arc = arcBox(s.tracker.trail())) !== null) {
+      // Committed (Return) while still circling: what the unfinished loop surrounds is the target.
+      region = arc;
       mode = "lasso";
     } else {
       const r = clamp(fin(s.rad.x, R_REST), R_REST, R_MAX);
@@ -540,8 +571,20 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
       s.rT = Math.max(s.rT, R_LENS);
     }
 
+    // A circle that was started and then left alone is not a lasso: back to the lens.
+    if (s.hint && !s.lasso && performance.now() - s.lastInput > HINT_IDLE_MS) {
+      s.hint = false;
+      s.tracker.restart();
+      s.rT = Math.max(s.rT, s.penFrom);
+      s.lastLens = { cx: NaN, cy: NaN, r: NaN };
+      s.sentVer = -1;
+    }
+
+    const pen = (s.lasso || s.hint) && s.mode === "dragging";
     const cfg =
-      s.mode === "dragging" || s.mode === "armed" || s.mode === "moving"
+      pen
+        ? SPRING_PEN
+        : s.mode === "dragging" || s.mode === "armed" || s.mode === "moving"
         ? SPRING_DRAG
         : s.mode === "parking"
           ? SPRING_PARK
@@ -553,9 +596,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
 
     const targeting = s.mode === "dragging" || s.mode === "armed";
     if (targeting) {
-      if (s.lasso) emitLasso();
+      if (s.lasso || s.hint) emitLasso();
       else emitLens();
-      const wait = s.held ? COMMIT_HELD_MS : COMMIT_MS;
+      // A closed loop is captured 1.0 s after the last input, held or not; a lens held still, after 2 s.
+      const wait = s.lasso ? COMMIT_MS : s.held ? COMMIT_HELD_MS : COMMIT_MS;
       if (!s.suppress && performance.now() - s.lastInput >= wait) commit();
     } else if (s.mode === "parking" || s.mode === "returning") {
       const still =
@@ -644,15 +688,47 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     s.tracker.push(p.x, p.y, now);
     const loop = s.tracker.detect();
     if (loop) {
-      if (!s.lasso) {
-        // Became a pen: no lens growth; spring the glass back to 56 pt.
-        s.lasso = true;
-        s.lensAt = 0;
-        s.rT = R_REST;
-        blog(`[bubble] lasso detected (${loop.points.length} pts)`);
-      }
+      if (!s.hint && !s.lasso) s.penFrom = Math.max(s.rT, R_LENS);
+      // Closed: the glass is a pen (no lens growth) and the loop is locked in.
+      s.lasso = true;
+      s.hint = false;
+      s.lensAt = 0;
+      s.rT = R_REST;
       s.loop = loop; // latest closed loop wins
       s.loopAt = now;
+      const b = loop.bbox;
+      blog(
+        `[bubble] lasso closed (${loop.points.length} pts, ${s.tracker.why}) box=(${b.x.toFixed(0)},${b.y.toFixed(0)},${b.w.toFixed(0)}x${b.h.toFixed(0)})`,
+      );
+    } else if (s.loop) {
+      // The pen left the closed loop well behind: the student is starting over.
+      const b = s.loop.bbox;
+      if (p.x < b.x - REDO_DIST || p.x > b.x + b.w + REDO_DIST || p.y < b.y - REDO_DIST || p.y > b.y + b.h + REDO_DIST) {
+        s.loop = null;
+        s.lasso = false;
+        s.hint = false;
+        s.tracker.restart();
+        s.rT = Math.max(s.rT, s.penFrom);
+        s.lastLens = { cx: NaN, cy: NaN, r: NaN };
+        s.sentVer = -1;
+        s.sentClosed = false;
+        s.sentLoop = null;
+        blog("[bubble] lasso dropped (pen left the loop)");
+      }
+    } else {
+      // Clearly circling (well past a U-turn): shrink to a pen and start laying the ribbon.
+      const hint = s.tracker.curving();
+      if (hint && !s.hint) {
+        s.hint = true;
+        s.penFrom = Math.max(s.rT, R_LENS);
+        s.lensAt = 0;
+        s.rT = R_REST;
+        s.sentVer = -1;
+      } else if (!hint && s.hint) {
+        s.hint = false;
+        s.rT = Math.max(s.rT, s.penFrom);
+        s.lastLens = { cx: NaN, cy: NaN, r: NaN };
+      }
     }
   }, []);
 
@@ -730,7 +806,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     const onWheel = (e: WheelEvent) => {
       const c = S.current;
       if (c.mode !== "dragging" && c.mode !== "armed") return;
-      if (c.lasso) return; // the pen does not resize
+      if (c.lasso || c.hint) return; // the pen does not resize
       const dy = fin(e.deltaY, 0);
       if (!dy) return;
       // Only scrolls over (or near) the lens resize it; leave the rest alone.
