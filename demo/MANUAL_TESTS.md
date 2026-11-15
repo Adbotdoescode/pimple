@@ -84,7 +84,7 @@ Steps:
 3. Click the card's minimise (–) button, then the pill to expand it again.
 4. Click the card's close (×) button.
 
-Expected: (1) audio stops immediately, the shapes stay, the card shows "Listening…" (verified 14:49). (2) The follow-up is answered with the same screen as context. (3) The card collapses to a pill and comes back. (4) The session ends, the drawings clear, the bubble returns to its edge. Known issue (being fixed): without headphones the mic can pick up the end of the tutor's voice right after Stop and start a new turn on its own.
+Expected: (1) audio stops immediately, the shapes stay, the card shows "Listening…" (verified 14:49). (2) The follow-up is answered with the same screen as context. (3) The card collapses to a pill and comes back. (4) The session ends, the drawings clear, the bubble returns to its edge. The mic opens about 0.6 s after the voice stops and ignores echoes of the tutor's own last sentences, so it should not start a new turn by itself (fixed 14:55, e073b6b).
 
 ## 6. Interrupt by holding space
 
