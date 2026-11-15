@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   imagePxToScreen,
@@ -24,6 +24,14 @@ const TARGET_FADE_MS = 200;
 const FIXTURE_PHASES = new Set<Phase>([
   "summarising", "listening", "thinking", "verifying", "speaking", "interrupted", "checking",
 ]);
+
+/** Phases in which the screen-edge glow is on. Off while aiming and capturing, so it is never photographed. */
+const GLOW_PHASES = new Set<Phase>([
+  "summarising", "listening", "thinking", "verifying", "speaking", "interrupted", "checking",
+]);
+const EDGE_T = 9;             // glow thickness in points
+const EDGE_FLOW_MS = 16000;   // one colour period passing a point at rate 1 (speaking)
+const EDGE_FADE_MS = 500;
 
 interface Layer {
   capture: CaptureResult;
@@ -169,7 +177,10 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
   const sideLayer = sideHeld.value;
   const dimMain = sideHeld.visible;
 
+  const glowOn = !!snapshot && GLOW_PHASES.has(phase);
+
   return (
+    <>
     <svg
       className="gt-overlay"
       style={{
@@ -221,6 +232,117 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       )}
       <TargetingLayer origin={origin} />
     </svg>
+    <EdgeGlow active={glowOn} phase={phase} width={viewport.width} height={viewport.height} />
+    </>
+  );
+}
+
+/** How fast the colours travel round the screen, relative to the speaking pace. */
+function edgeRate(phase: Phase): number {
+  if (phase === "thinking" || phase === "verifying") return 3.4;
+  if (phase === "speaking") return 1;
+  if (phase === "listening") return 0.4;
+  return 0.55;
+}
+
+function edgeMood(phase: Phase): string {
+  if (phase === "thinking" || phase === "verifying") return "gt-edge-thinking";
+  if (phase === "speaking") return "gt-edge-speaking";
+  if (phase === "listening") return "gt-edge-listening";
+  return "gt-edge-calm";
+}
+
+/**
+ * Thin rainbow glow hugging the screen border while a session is active. Four mitred strips, each a
+ * long gradient band that slides under a fixed window, so the motion is a compositor-only transform
+ * (no repaint of a full-screen layer, no blur filter). The colour period divides the perimeter, and
+ * each strip is phased by its distance round the edge, so the colours run continuously through the
+ * corners. Speed follows the phase through the animations' playback rate, which never jumps.
+ */
+function EdgeGlow({ active, phase, width, height }: { active: boolean; phase: Phase; width: number; height: number }) {
+  const held = useRetained(active ? true : null, EDGE_FADE_MS + 100);
+  const mounted = held.value !== null;
+  const W = Math.max(1, width);
+  const H = Math.max(1, height);
+  const P = (2 * W + 2 * H) / 3;
+  const inners = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
+  const anims = useRef<Animation[]>([]);
+  // The mood (breathe, shimmer) stays as it was while fading out, so the glow does not flicker at the end.
+  const moodRef = useRef("gt-edge-calm");
+  if (active) moodRef.current = edgeMood(phase);
+
+  useEffect(() => {
+    if (!mounted) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+    const shifts = [`translateX(${P}px)`, `translateY(${P}px)`, `translateX(${-P}px)`, `translateY(${-P}px)`];
+    const made: Animation[] = [];
+    inners.current.forEach((el, i) => {
+      if (!el || typeof el.animate !== "function") return;
+      try {
+        made.push(el.animate([{ transform: "translate(0px, 0px)" }, { transform: shifts[i] }], {
+          duration: EDGE_FLOW_MS,
+          iterations: Infinity,
+          easing: "linear",
+        }));
+      } catch {
+        // A static glow is fine.
+      }
+    });
+    anims.current = made;
+    return () => {
+      made.forEach((a) => a.cancel());
+      anims.current = [];
+    };
+  }, [mounted, P]);
+
+  const rate = edgeRate(phase);
+  useEffect(() => {
+    if (!active) return;
+    for (const a of anims.current) {
+      try {
+        if (typeof a.updatePlaybackRate === "function") a.updatePlaybackRate(rate);
+        else a.playbackRate = rate;
+      } catch {
+        // Keep the current pace.
+      }
+    }
+  }, [rate, active, mounted, P]);
+
+  if (!mounted) return null;
+  const T = EDGE_T;
+  const strips: { cls: string; box: CSSProperties; inner: CSSProperties }[] = [
+    {
+      cls: "gt-edge-top",
+      box: { left: 0, top: 0, width: W, height: T },
+      inner: { left: -P, top: 0, width: W + P, height: T, backgroundSize: `${P}px 100%`, backgroundPosition: "0px 0px" },
+    },
+    {
+      cls: "gt-edge-right",
+      box: { right: 0, top: 0, width: T, height: H },
+      inner: { left: 0, top: -P, width: T, height: H + P, backgroundSize: `100% ${P}px`, backgroundPosition: `0px ${-W}px` },
+    },
+    {
+      cls: "gt-edge-bottom",
+      box: { left: 0, bottom: 0, width: W, height: T },
+      inner: { left: 0, top: 0, width: W + P, height: T, backgroundSize: `${P}px 100%`, backgroundPosition: `${2 * W + H}px 0px` },
+    },
+    {
+      cls: "gt-edge-left",
+      box: { left: 0, top: 0, width: T, height: H },
+      inner: { left: 0, top: 0, width: T, height: H + P, backgroundSize: `100% ${P}px`, backgroundPosition: "0px 0px" },
+    },
+  ];
+  return (
+    <div className={`gt-edge${held.visible ? "" : " gt-edge-off"}`} aria-hidden="true">
+      <div className={`gt-edge-mood ${moodRef.current}`}>
+        {strips.map((s, i) => (
+          <div key={s.cls} className={`gt-edge-strip ${s.cls}`} style={s.box}>
+            <div ref={(el) => { inners.current[i] = el; }} className="gt-edge-band" style={s.inner} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

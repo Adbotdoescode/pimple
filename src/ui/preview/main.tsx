@@ -274,7 +274,8 @@ function OverlayView({ fixture, upto, sidenote }: { fixture: string; upto: strin
 
       const next: SessionSnapshot = {
         ...INITIAL_SNAPSHOT,
-        phase: "speaking",
+        // `phase=` previews the phase-aware parts of the overlay (the screen-edge glow).
+        phase: isPhase(params.get("phase")) ? (params.get("phase") as Phase) : "speaking",
         mode: "click",
         capture,
         response,

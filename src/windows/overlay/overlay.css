@@ -70,3 +70,86 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .gt-focus-rim { animation: none; }
 }
+
+/* Screen-edge glow: a thin rainbow rim while a session is active (see EdgeGlow in OverlayRoot). */
+.gt-edge {
+  --gt-edge-stops: #4aa8ff 0%, #9b6bff 17%, #ff5fa2 34%, #ff9a4a 50%, #ffd24a 66%, #4fe0c8 83%, #4aa8ff 100%;
+  /* Across the strip: a 1.5 pt line at the very edge, then a soft falloff to nothing (no blur). */
+  --gt-edge-fall: rgba(0, 0, 0, 0.62) 0, rgba(0, 0, 0, 0.62) 1.5px, rgba(0, 0, 0, 0.32) 1.5px,
+    rgba(0, 0, 0, 0.15) 4.5px, rgba(0, 0, 0, 0) 9px;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 500ms ease;
+  animation: gt-edge-in 700ms ease-out backwards;
+}
+.gt-edge.gt-edge-off {
+  opacity: 0;
+}
+@keyframes gt-edge-in {
+  from { opacity: 0; }
+}
+
+.gt-edge-mood {
+  position: absolute;
+  inset: 0;
+  transition: opacity 400ms ease;
+}
+.gt-edge-calm { opacity: 0.7; }
+.gt-edge-speaking { opacity: 0.92; }
+.gt-edge-listening { animation: gt-edge-breathe 3.2s ease-in-out infinite alternate; }
+.gt-edge-thinking { animation: gt-edge-shimmer 1.25s ease-in-out infinite alternate; }
+@keyframes gt-edge-breathe {
+  from { opacity: 0.42; }
+  to { opacity: 1; }
+}
+@keyframes gt-edge-shimmer {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
+.gt-edge-strip {
+  position: absolute;
+  overflow: hidden;
+}
+.gt-edge-band {
+  position: absolute;
+  will-change: transform;
+}
+/* Mitred corners, so neighbouring strips meet without doubling up. */
+.gt-edge-top { clip-path: polygon(0 0, 100% 0, calc(100% - 9px) 100%, 9px 100%); }
+.gt-edge-right { clip-path: polygon(100% 0, 100% 100%, 0 calc(100% - 9px), 0 9px); }
+.gt-edge-bottom { clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 100%, 0 100%); }
+.gt-edge-left { clip-path: polygon(0 0, 100% 9px, 100% calc(100% - 9px), 0 100%); }
+
+.gt-edge-top .gt-edge-band {
+  background-image: linear-gradient(to right, var(--gt-edge-stops));
+  background-repeat: repeat-x;
+  -webkit-mask-image: linear-gradient(to bottom, var(--gt-edge-fall));
+  mask-image: linear-gradient(to bottom, var(--gt-edge-fall));
+}
+.gt-edge-right .gt-edge-band {
+  background-image: linear-gradient(to bottom, var(--gt-edge-stops));
+  background-repeat: repeat-y;
+  -webkit-mask-image: linear-gradient(to left, var(--gt-edge-fall));
+  mask-image: linear-gradient(to left, var(--gt-edge-fall));
+}
+.gt-edge-bottom .gt-edge-band {
+  background-image: linear-gradient(to left, var(--gt-edge-stops));
+  background-repeat: repeat-x;
+  -webkit-mask-image: linear-gradient(to top, var(--gt-edge-fall));
+  mask-image: linear-gradient(to top, var(--gt-edge-fall));
+}
+.gt-edge-left .gt-edge-band {
+  background-image: linear-gradient(to top, var(--gt-edge-stops));
+  background-repeat: repeat-y;
+  -webkit-mask-image: linear-gradient(to right, var(--gt-edge-fall));
+  mask-image: linear-gradient(to right, var(--gt-edge-fall));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gt-edge { animation: none; }
+  .gt-edge-listening,
+  .gt-edge-thinking { animation: none; opacity: 0.8; }
+}
