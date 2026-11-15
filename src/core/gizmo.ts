@@ -25,7 +25,7 @@ const SUFFIX = templateHtml.slice(SCRIPT_CLOSE);
 
 const MODEL = "claude-opus-5-5";
 const DEFAULT_TIMEOUT_MS = 45000;
-const RETRY_BEFORE_MS = 25000;
+const RETRY_BEFORE_MS = 20000;
 const MAX_QUANTITIES = 8;
 
 const SYSTEM =
@@ -37,7 +37,7 @@ const SYSTEM =
   "Build: 1–3 sections (Kit.section with circled numbers from 0), each a card; one main SVG diagram with in-diagram " +
   "colour-coded labels; at least one Kit.slider driving a draw(v) function that updates the SVG and a Kit.valuePanel of " +
   "live values; a Kit.playButton that animates the slider; and one Kit.equation strip whose coloured terms match the " +
-  "diagram colours. Call draw once at the end of setup. Keep the scene under 140 lines. " +
+  "diagram colours. Call draw once at the end of setup. Keep the scene under 100 lines; prefer one section with one card plus the equation strip; no comments in the code. " +
   "Ground every number in the provided quantities; label units. " +
   "Make the slider explore the key relationship of the concept (what changes when the parameter changes). " +
   "Must work at 400–1100 px wide." +
@@ -215,7 +215,7 @@ async function callModel(turns: Turn[], signal: AbortSignal): Promise<string> {
   const res = await client.beta.messages.create(
     {
       model: MODEL,
-      max_tokens: 6000,
+      max_tokens: 4000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium" },
