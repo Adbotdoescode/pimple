@@ -797,7 +797,7 @@ body,
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  margin: 0 14px 10px;
+  margin: 2px 0 10px; /* sits in the body, right under the caption */
   padding: 7px 8px 7px 12px;
   border-radius: 14px;
   border: 1px solid var(--chip-border);
@@ -871,4 +871,11 @@ body,
     color: var(--text-1);
     background: none;
   }
+}
+
+/* While the card switches palette to follow the page under it (cardLens.ts), ease the tokens. */
+:root.theme-fading .card-native,
+:root.theme-fading .card-native * {
+  transition: color 300ms ease, background-color 300ms ease, border-color 300ms ease,
+    box-shadow 300ms ease !important;
 }

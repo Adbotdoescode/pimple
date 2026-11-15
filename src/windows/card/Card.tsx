@@ -503,6 +503,63 @@ export function Card({
                 </div>
               )}
 
+              {gizmo !== "none" && (
+                <div className={`gizmo-row gizmo-${gizmo} fade-up`} role="status">
+                  {gizmo === "offered" && (
+                    <>
+                      <span className="gizmo-text">Want an interactive diagram for this?</span>
+                      <button
+                        type="button"
+                        className="gizmo-pill gizmo-yes"
+                        {...NO_FOCUS}
+                        onClick={(e) => {
+                          if (e.detail === 0 || clickTooSoon()) return;
+                          blurActiveButton();
+                          onIntent({ type: "accept-gizmo" });
+                        }}
+                      >
+                        Yes
+                      </button>
+                      <button
+                        type="button"
+                        className="gizmo-pill"
+                        {...NO_FOCUS}
+                        onClick={(e) => {
+                          if (e.detail === 0 || clickTooSoon()) return;
+                          blurActiveButton();
+                          onIntent({ type: "decline-gizmo" });
+                        }}
+                      >
+                        No
+                      </button>
+                    </>
+                  )}
+                  {gizmo === "building" && <span className="gizmo-text gizmo-shimmer">Building your diagram…</span>}
+                  {gizmo === "ready" && (
+                    <>
+                      <span className="gizmo-text">Your diagram is ready</span>
+                      <button
+                        type="button"
+                        className="gizmo-pill gizmo-yes"
+                        {...NO_FOCUS}
+                        onClick={(e) => {
+                          if (e.detail === 0 || clickTooSoon()) return;
+                          blurActiveButton();
+                          try {
+                            invokeCmd("show_window", { label: "gizmo" }).catch(() => {});
+                          } catch {
+                            // Not inside Tauri (browser preview).
+                          }
+                        }}
+                      >
+                        Open diagram
+                      </button>
+                    </>
+                  )}
+                  {gizmo === "failed" && <span className="gizmo-text gizmo-muted">Couldn't build the diagram</span>}
+                </div>
+              )}
+
               {sourceText && (
                 <div className="source-row fade-up">
                   <span
@@ -582,63 +639,6 @@ export function Card({
             </>
           )}
         </div>
-
-        {gizmo !== "none" && (
-          <div className={`gizmo-row gizmo-${gizmo} fade-up`} role="status">
-            {gizmo === "offered" && (
-              <>
-                <span className="gizmo-text">Want an interactive diagram for this?</span>
-                <button
-                  type="button"
-                  className="gizmo-pill gizmo-yes"
-                  {...NO_FOCUS}
-                  onClick={(e) => {
-                    if (e.detail === 0 || clickTooSoon()) return;
-                    blurActiveButton();
-                    onIntent({ type: "accept-gizmo" });
-                  }}
-                >
-                  Yes
-                </button>
-                <button
-                  type="button"
-                  className="gizmo-pill"
-                  {...NO_FOCUS}
-                  onClick={(e) => {
-                    if (e.detail === 0 || clickTooSoon()) return;
-                    blurActiveButton();
-                    onIntent({ type: "decline-gizmo" });
-                  }}
-                >
-                  No
-                </button>
-              </>
-            )}
-            {gizmo === "building" && <span className="gizmo-text gizmo-shimmer">Building your diagram…</span>}
-            {gizmo === "ready" && (
-              <>
-                <span className="gizmo-text">Your diagram is ready</span>
-                <button
-                  type="button"
-                  className="gizmo-pill gizmo-yes"
-                  {...NO_FOCUS}
-                  onClick={(e) => {
-                    if (e.detail === 0 || clickTooSoon()) return;
-                    blurActiveButton();
-                    try {
-                      invokeCmd("show_window", { label: "gizmo" }).catch(() => {});
-                    } catch {
-                      // Not inside Tauri (browser preview).
-                    }
-                  }}
-                >
-                  Open diagram
-                </button>
-              </>
-            )}
-            {gizmo === "failed" && <span className="gizmo-text gizmo-muted">Couldn't build the diagram</span>}
-          </div>
-        )}
 
         {busy && (
           <div className="card-actions" role="group" aria-label="Pimple controls">

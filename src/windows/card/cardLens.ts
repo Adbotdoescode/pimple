@@ -84,6 +84,53 @@ void main() {
   gl_FragColor = vec4(clamp(col, 0.0, 1.0) * alpha, alpha);
 }`;
 
+/**
+ * The card follows what is under it: over a dark page it switches to its dark palette (light text,
+ * dark tint), over a light page back to light. Hysteresis keeps it from flickering on mid-tones.
+ * The choice is stamped as data-theme on the card window's root, which is what glass.css keys on;
+ * with no frames the stamp is absent and prefers-color-scheme decides.
+ */
+const DARK_BELOW = 0.35;
+const LIGHT_ABOVE = 0.45;
+const THEME_FADE_MS = 300;
+let autoTheme: "light" | "dark" | null = null;
+let fadeTimer: number | null = null;
+
+/** Mean luminance (0..1) of a BGRA frame, from a 16 x 16 grid of samples. */
+function frameLuminance(px: Uint8Array, w: number, h: number): number {
+  let sum = 0;
+  for (let j = 0; j < 16; j++) {
+    const y = Math.min(h - 1, Math.floor(((j + 0.5) / 16) * h));
+    for (let i = 0; i < 16; i++) {
+      const x = Math.min(w - 1, Math.floor(((i + 0.5) / 16) * w));
+      const o = (y * w + x) * 4;
+      sum += 0.0722 * px[o] + 0.7152 * px[o + 1] + 0.2126 * px[o + 2];
+    }
+  }
+  return sum / (256 * 255);
+}
+
+/** Returns true when the palette changed. */
+function followBackdrop(lum: number): boolean {
+  const current = autoTheme ?? (isDark() ? "dark" : "light");
+  const next = lum < DARK_BELOW ? "dark" : lum > LIGHT_ABOVE ? "light" : current;
+  if (next === autoTheme) return false;
+  const changed = next !== current;
+  autoTheme = next;
+  const root = document.documentElement;
+  if (changed) {
+    // Crossfade the tokens (text, chips, hairlines) instead of snapping.
+    root.classList.add("theme-fading");
+    if (fadeTimer !== null) window.clearTimeout(fadeTimer);
+    fadeTimer = window.setTimeout(() => {
+      fadeTimer = null;
+      root.classList.remove("theme-fading");
+    }, THEME_FADE_MS + 60);
+  }
+  root.dataset.theme = next;
+  return changed;
+}
+
 function isDark(): boolean {
   const forced = document.documentElement.dataset.theme;
   if (forced === "dark") return true;
@@ -161,6 +208,24 @@ export function useCardLens(
     let scale = window.devicePixelRatio || 2;
     let winPos: { x: number; y: number } | null = null; // window top-left, global points
 
+    let tintT = isDark() ? 1 : 0;   // 0 light tint .. 1 dark tint
+    let tintRaf: number | null = null;
+    const easeTint = () => {
+      const target = isDark() ? 1 : 0;
+      if (tintRaf !== null || tintT === target) return;
+      const from = tintT;
+      const t0 = performance.now();
+      const step = (now: number) => {
+        tintRaf = null;
+        if (dead) return;
+        const u = Math.min(1, (now - t0) / THEME_FADE_MS);
+        tintT = from + (target - from) * (u * u * (3 - 2 * u));
+        draw();
+        if (u < 1) tintRaf = requestAnimationFrame(step);
+      };
+      tintRaf = requestAnimationFrame(step);
+    };
+
     const draw = () => {
       if (dead || !hasFrame) return;
       const w = panel.clientWidth, h = panel.clientHeight;
@@ -175,8 +240,15 @@ export function useCardLens(
       const radius = parseFloat(getComputedStyle(panel).borderTopLeftRadius) || 18;
       gl.uniform2f(uSize, w, h);
       gl.uniform1f(uRadius, Math.min(radius, w / 2, h / 2));
-      if (isDark()) gl.uniform4f(uTint, 0.105, 0.115, 0.14, 0.7);
-      else gl.uniform4f(uTint, 0.972, 0.976, 0.988, 0.8);
+      // Blend between the light and the dark readability tint (tintT eases over the crossfade).
+      const k = tintT;
+      gl.uniform4f(
+        uTint,
+        0.972 + (0.1 - 0.972) * k,
+        0.976 + (0.11 - 0.976) * k,
+        0.988 + (0.135 - 0.988) * k,
+        0.8 + (0.72 - 0.8) * k,
+      );
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -216,8 +288,12 @@ export function useCardLens(
               gl.bindTexture(gl.TEXTURE_2D, tex);
               gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, fw, fh, 0, gl.RGBA, gl.UNSIGNED_BYTE,
                 bytes.subarray(8, 8 + fw * fh * 4));
+              const first = !hasFrame;
               hasFrame = true;
               fails = 0;
+              const changed = followBackdrop(frameLuminance(bytes.subarray(8), fw, fh));
+              if (first) tintT = isDark() ? 1 : 0;   // no fade for the very first frame
+              else if (changed) easeTint();
               draw();
             }
           }
@@ -230,6 +306,10 @@ export function useCardLens(
           unsupported = true;
           dead = true;
           delete canvas.dataset.live;
+          if (autoTheme !== null) {
+            autoTheme = null;
+            delete document.documentElement.dataset.theme; // back to prefers-color-scheme
+          }
           return;
         }
       } finally {
@@ -264,12 +344,13 @@ export function useCardLens(
     });
     ro.observe(panel);
     const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-    const onTheme = () => draw();
+    const onTheme = () => easeTint();
     mq?.addEventListener?.("change", onTheme);
 
     return () => {
       dead = true;
       if (timer !== null) window.clearTimeout(timer);
+      if (tintRaf !== null) cancelAnimationFrame(tintRaf);
       unMoved?.();
       ro.disconnect();
       mq?.removeEventListener?.("change", onTheme);
