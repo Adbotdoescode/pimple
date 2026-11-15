@@ -4,7 +4,7 @@ import { getAnthropic } from "./anthropic";
 import { VERIFIER_SEGMENT_PROMPT, VERIFIER_SYSTEM_PROMPT, imageBlock } from "./prompts";
 
 const VERIFIER_TIMEOUT_MS = 4000;
-const SEGMENT_TIMEOUT_MS = 2500;
+const SEGMENT_TIMEOUT_MS = 3000;
 const PASS: VerifierResult = { verdict: "pass", unsupported_claims: [] };
 
 function shapeLabel(s: Shape): string {
@@ -123,7 +123,7 @@ export async function verifyResponse(a: {
 }
 
 /**
- * Haiku check of ONE sentence before it is spoken. Hard 2.5 s cap. Fails open: on timeout or any
+ * Haiku check of ONE sentence before it is spoken. Hard 3 s cap. Fails open: on timeout or any
  * error returns ran: false, ok: true, so speech is never held up by the verifier.
  */
 export async function verifySegment(a: {

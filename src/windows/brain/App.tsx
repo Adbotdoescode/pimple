@@ -2,12 +2,32 @@
 import { useEffect } from "react";
 import { info, warn, error } from "@tauri-apps/plugin-log";
 import { startBrain } from "@/core/brain";
+import { getSnapshot } from "@/core/store";
 
-// Never hot-patch the brain: a partial HMR re-run would stack duplicate listeners. Reload the window instead.
+// Never hot-patch the brain mid-session: a partial HMR re-run would stack duplicate listeners, and a
+// reload mid-answer kills the live turn. Only updates to brain modules (src/core, src/windows/brain,
+// shared) or a Vite error schedule a reload, and the reload waits until the session is idle.
+// Until then the already-running controller keeps working (startBrain is guarded against re-runs).
+const BRAIN_PATH = /\/(src\/core|src\/windows\/brain|shared)\//;
+// Module instances re-run on HMR; keep the FIRST instance's phase getter (the live store) and flag globally.
+const gr = globalThis as unknown as { __gtPhase?: () => string; __gtReloadPending?: boolean };
+gr.__gtPhase ??= () => getSnapshot().phase;
+function scheduleReload(why: string) {
+  if (gr.__gtReloadPending) return;
+  gr.__gtReloadPending = true;
+  console.info(`[brain] reload scheduled (${why}); waiting for idle`);
+  const tick = () => {
+    if (gr.__gtPhase?.() === "idle") location.reload();
+    else setTimeout(tick, 500);
+  };
+  setTimeout(tick, 400);
+}
 if (import.meta.hot) {
-  // Let Vite finish writing the update first, then reload the whole window.
-  import.meta.hot.on("vite:beforeUpdate", () => setTimeout(() => location.reload(), 400));
-  import.meta.hot.on("vite:error", () => setTimeout(() => location.reload(), 1500));
+  import.meta.hot.on("vite:beforeUpdate", (p: { updates: { path: string; acceptedPath: string }[] }) => {
+    const hit = p.updates.find((u) => BRAIN_PATH.test(u.path) || BRAIN_PATH.test(u.acceptedPath));
+    if (hit) scheduleReload(hit.path);
+  });
+  import.meta.hot.on("vite:error", () => scheduleReload("vite error"));
 }
 
 // The brain window is hidden, so mirror its console into the Rust log (/tmp/glass-tutor-dev.log).

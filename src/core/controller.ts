@@ -700,6 +700,8 @@ function onGatedSegment(t: Turn, g: Gate, base: TutorCallInput, seg: Segment): v
   g.entries.push(entry);
   g.byId.set(seg.id, entry);
   const previous = g.entries.slice(0, index).map((e) => e.seg);
+  // Synthesise speech while the verifier runs, so a passing sentence plays without a synth delay.
+  player.warm([seg]);
   void verifySegment({
     capture: base.capture,
     question: base.question,
@@ -719,12 +721,15 @@ function onGatedVerdict(
   r: { ran: boolean; ok: boolean; claims: string[]; ms: number },
 ): void {
   if (!live(t, g)) return;
-  entry.state = r.ok ? "ok" : "dropped";
+  // Only an unspoken first sentence is regenerated. Later flagged sentences are kept (the verifier has
+  // false positives on derivable claims) and the card shows the fail badge instead.
+  const regen = !r.ok && index === 0 && g.allowRegen;
+  entry.state = regen ? "dropped" : "ok";
   g.ranAny = g.ranAny || r.ran;
   g.droppedAny = g.droppedAny || !r.ok;
   g.maxMs = Math.max(g.maxMs, r.ms);
   publishVerifier(g);
-  if (!r.ok) console.info("[brain] dropped segment", entry.seg.id, r.claims);
+  if (!r.ok) console.info("[brain] verifier flagged segment", entry.seg.id, regen ? "(regenerating)" : "(kept)", r.claims);
 
   // Nothing has been spoken while the first segment is pending, so regenerate once from scratch.
   if (!r.ok && index === 0 && g.allowRegen) {
