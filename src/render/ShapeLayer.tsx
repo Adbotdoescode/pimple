@@ -32,7 +32,7 @@ export interface ShapeLayerProps {
 
 const STEP_MS = 120;   // stagger between shapes that appear together
 const DRAW_MS = 260;   // stroke-draw duration
-const STROKE_W = 3;
+const STROKE_W = 3.5;
 const LABEL_OFFSET = 14;
 
 /** Per-shape rendering context. `delay` is the stroke start time in ms. */
@@ -71,7 +71,7 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
     <g className={side ? "gt-root gt-sidenote" : "gt-root"} style={{ opacity }}>
       <defs>
         <filter id={`gt-shadow-${uid}`} x="-15%" y="-15%" width="130%" height="140%">
-          <feDropShadow dx={0} dy={1} stdDeviation={1.2} floodColor="#000000" floodOpacity={0.25} />
+          <feDropShadow dx={0} dy={1.5} stdDeviation={1.6} floodColor="#000000" floodOpacity={0.28} />
         </filter>
         <filter id={`gt-blur-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation={2.5} />
@@ -138,7 +138,7 @@ function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing }: S
     <g
       className={side ? "gt-side-shape" : undefined}
       style={side ? { animationDelay: `${ctx.delay}ms` } : undefined}
-      filter={`url(#gt-shadow-${uid})`}
+      filter={side ? undefined : `url(#gt-shadow-${uid})`}
     >
       {glow}
       {built.nodes}
@@ -287,8 +287,8 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
   if (!frame) return null;
 
   const isVector = kind === "vector";
-  const width = isVector ? 3.5 : STROKE_W;
-  const head = kind === "line" ? null : arrowHead(a, b, isVector ? 14 : 12, isVector ? 11 : 10);
+  const width = isVector ? 4 : STROKE_W;
+  const head = kind === "line" ? null : arrowHead(a, b, 15, 12);
   const d = linePath(a, head ? head.shaftEnd : b);
 
   const nodes: ReactNode[] = strokeNodes(d, c, width);
@@ -297,8 +297,8 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
   if (isVector) {
     const text = combineLabel(s.label, s.magnitude);
     const [ux, uy] = frame.u;
-    const tx = b[0] + ux * 16;
-    const ty = b[1] + uy * 16 + (uy > 0.35 ? 14 : uy < -0.35 ? -6 : 5);
+    const tx = b[0] + ux * 26;
+    const ty = b[1] + uy * 26 + (uy > 0.35 ? 14 : uy < -0.35 ? -6 : 5);
     const anchor = ux > 0.35 ? "start" : ux < -0.35 ? "end" : "middle";
     nodes.push(labelEl("label", text, tx, ty, anchor, c));
     if (s.components) {

@@ -59,12 +59,12 @@
 /* Labels: 15 px bold, with a paint-order halo for legibility. */
 .gt-label {
   font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.1px;
   paint-order: stroke;
   stroke-linejoin: round;
-  stroke-width: 4px;
+  stroke-width: 5px;
 }
 .gt-label-sm {
   font-size: 12px;

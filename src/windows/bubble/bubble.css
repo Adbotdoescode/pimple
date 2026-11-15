@@ -77,7 +77,7 @@ html:has(.gt-stage) #root {
 
 .gt-glow {
   opacity: 0;
-  box-shadow: 0 0 14px 4px rgba(60, 210, 255, 0.55), 0 0 30px 10px rgba(60, 210, 255, 0.2);
+  box-shadow: 0 0 10px 3px rgba(60, 210, 255, 0.5), 0 0 16px 4px rgba(60, 210, 255, 0.18);
   transition: opacity 200ms ease;
 }
 .gt-bubble[data-state="listen"] .gt-glow,
@@ -86,11 +86,11 @@ html:has(.gt-stage) #root {
   transition: none;
 }
 .gt-bubble[data-state="check"] .gt-glow {
-  box-shadow: 0 0 14px 4px rgba(255, 184, 77, 0.5), 0 0 30px 10px rgba(255, 170, 60, 0.18);
+  box-shadow: 0 0 10px 3px rgba(255, 184, 77, 0.45), 0 0 16px 4px rgba(255, 170, 60, 0.16);
 }
 .gt-bubble[data-state="interrupt"] .gt-glow {
   opacity: 0.9;
-  box-shadow: 0 0 12px 3px rgba(255, 170, 50, 0.6), 0 0 26px 8px rgba(255, 150, 40, 0.25);
+  box-shadow: 0 0 10px 3px rgba(255, 170, 50, 0.55), 0 0 16px 5px rgba(255, 150, 40, 0.2);
 }
 
 /* ───────── Speaking pulse rings (emanate from the edge) ───────── */
@@ -124,32 +124,34 @@ html:has(.gt-stage) #root {
   50% { transform: scale(1.025); }
 }
 
-/* Outer shadow. Box-shadow only paints outside the circle, so the body stays clear. */
+/* Outer shadow and hairline. Box-shadow only paints outside the circle, so the body stays clear. */
 .gt-shadow {
   box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.22),
-    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 6px 16px rgba(0, 0, 0, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.12),
     0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 
-/* Body: highlight-to-edge radial over a faint dark base so it reads on white. */
+/* Body: mostly clear in the middle, material concentrated toward the edge. */
 .gt-body {
-  background-color: rgba(20, 24, 32, 0.18);
+  background-color: rgba(20, 24, 32, 0.06);
   background-image: radial-gradient(
-    circle at 50% 35%,
-    rgba(255, 255, 255, 0.3),
-    rgba(255, 255, 255, 0.1) 55%,
-    rgba(120, 140, 170, 0.18) 100%
+    circle at 50% 42%,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.05) 52%,
+    rgba(255, 255, 255, 0.22) 82%,
+    rgba(255, 255, 255, 0.42) 100%
   );
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   backdrop-filter: blur(18px) saturate(180%);
 }
 
-/* Inner shadow: bottom darkening and a top lip of light. */
+/* Edge lensing: crisp inner rim, soft light band, faint bottom darkening. */
 .gt-inner {
   box-shadow:
-    inset 0 -8px 14px rgba(0, 0, 0, 0.14),
-    inset 0 2px 3px rgba(255, 255, 255, 0.55);
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.7),
+    inset 0 0 8px 1px rgba(255, 255, 255, 0.35),
+    inset 0 -10px 16px -6px rgba(0, 0, 0, 0.1);
 }
 
 /* Diagonal light sweep, clipped to the circle. Runs in think and verify. */
@@ -208,18 +210,19 @@ html:has(.gt-stage) #root {
   to { transform: rotate(360deg); }
 }
 
-/* Chromatic edge: magenta and cyan rings offset ±0.8px, screen-blended. */
+/* Chromatic edge: magenta and cyan rims offset ±0.6px, clipped to a 1.5px band at the edge.
+   Normal blend so it shows on white too. Intensifies with --motion. */
 .gt-chroma {
-  mix-blend-mode: screen;
-  opacity: calc(0.25 + 0.6 * var(--motion, 0));
+  --rw: 1.5px;
+  opacity: calc(0.35 + 0.5 * var(--motion, 0));
 }
 .gt-chroma-m {
-  background: radial-gradient(closest-side, transparent 88%, rgba(255, 60, 170, 0.95) 97%, transparent 100%);
-  transform: translateX(-0.8px);
+  background: rgba(255, 60, 170, 1);
+  transform: translateX(-0.6px);
 }
 .gt-chroma-c {
-  background: radial-gradient(closest-side, transparent 88%, rgba(40, 200, 255, 0.95) 97%, transparent 100%);
-  transform: translateX(0.8px);
+  background: rgba(40, 200, 255, 1);
+  transform: translateX(0.6px);
 }
 
 /* Specular rim: 1.5px ring, brightest top-left, fading right, brighter on hover. */
@@ -254,30 +257,30 @@ html:has(.gt-stage) #root {
   opacity: 1;
 }
 
-/* Gloss: soft ellipse over the top ~45%. */
+/* Gloss: smaller, softer ellipse over the top third. */
 .gt-gloss {
   position: absolute;
-  top: 7%;
-  left: 12%;
-  right: 12%;
+  top: 9%;
+  left: 16%;
+  right: 16%;
   bottom: auto;
-  height: 42%;
+  height: 35%;
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0));
   pointer-events: none;
 }
 
 /* Tiny specular dot near the top-left. */
 .gt-spec {
   position: absolute;
-  top: 16%;
-  left: 24%;
-  width: 7px;
-  height: 5px;
+  top: 17%;
+  left: 25%;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 5px 1px rgba(255, 255, 255, 0.9);
-  filter: blur(0.4px);
+  box-shadow: 0 0 3px 1px rgba(255, 255, 255, 0.8);
+  filter: blur(0.5px);
   pointer-events: none;
 }
 
@@ -341,12 +344,17 @@ html:has(.gt-stage) #root {
 
 /* Waveform: five 3px bars, heights driven from Bubble via rAF. */
 .gt-bars {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   gap: 3px;
   height: 26px;
   opacity: 0;
   transition: opacity 200ms ease;
+  pointer-events: none;
 }
 .gt-bubble[data-state="listen"] .gt-bars,
 .gt-bubble[data-state="check"] .gt-bars {

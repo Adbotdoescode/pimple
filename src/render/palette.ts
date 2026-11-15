@@ -17,7 +17,7 @@ const DARK_BG: Record<ColorRole, string> = {
 const SIDENOTE_LIGHT = "#7C3AED";
 const SIDENOTE_DARK = "#C4A1FF";
 const WHITE_HALO = "rgba(255,255,255,0.92)";
-const INK_HALO = "rgba(10,14,24,0.88)";
+const INK_HALO = "rgba(10,14,24,0.85)";
 
 function parseHex(hex: string): [number, number, number] {
   let h = hex.trim().replace("#", "");
@@ -62,8 +62,7 @@ export function contrastRatio(l1: number, l2: number): number {
 
 /** Legibility halo for a label drawn in `stroke`: white-ish for dark strokes, near-black for light ones. */
 export function labelHaloFor(stroke: string): string {
-  const L = relLumFromHex(stroke);
-  return contrastRatio(L, 1) > contrastRatio(L, 0) ? WHITE_HALO : INK_HALO;
+  return relLumFromHex(stroke) < 0.35 ? WHITE_HALO : INK_HALO;
 }
 
 function pick(role: ColorRole, light: boolean, variant: "main" | "sidenote"): string {

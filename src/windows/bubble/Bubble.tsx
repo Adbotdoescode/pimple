@@ -116,8 +116,8 @@ export function Bubble({ phase, onIntent, diameter = 56, motion = 0, gestures }:
             <span className="gt-sweep" />
           </span>
           <span className="gt-layer gt-ring gt-spin" />
-          <span className="gt-layer gt-chroma gt-chroma-m" />
-          <span className="gt-layer gt-chroma gt-chroma-c" />
+          <span className="gt-layer gt-ring gt-chroma gt-chroma-m" />
+          <span className="gt-layer gt-ring gt-chroma gt-chroma-c" />
           <span className="gt-layer gt-ring gt-rim" />
           <span className="gt-layer gt-ring gt-amber" />
           <span className="gt-gloss" />

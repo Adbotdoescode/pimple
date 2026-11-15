@@ -10,8 +10,12 @@ use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, P
 
 use super::capture::RectPts;
 
-pub const BUBBLE_SIZE: f64 = 72.0;
-pub const BUBBLE_MARGIN: f64 = 8.0;
+/// Bubble window (larger than the visible circle so CSS shadows/glow/pulse are not clipped).
+pub const BUBBLE_SIZE: f64 = 104.0;
+/// Visible glass circle, drawn by CSS centred in the bubble window.
+pub const BUBBLE_DIAMETER: f64 = 56.0;
+/// Gap between the visible circle and the screen's right edge.
+pub const BUBBLE_EDGE_GAP: f64 = 12.0;
 pub const CARD_SIZE: (f64, f64) = (380.0, 260.0);
 
 /// Panel levels: overlay sits above normal apps; bubble and card above the overlay.
@@ -61,7 +65,7 @@ pub fn main_display_frame(app: &AppHandle) -> RectPts {
 
 pub fn create_all(app: &AppHandle) {
     let d = main_display_frame(app);
-    let bubble_x = d.x + d.w - BUBBLE_SIZE - BUBBLE_MARGIN;
+    let bubble_x = d.x + d.w - BUBBLE_EDGE_GAP - BUBBLE_DIAMETER - (BUBBLE_SIZE - BUBBLE_DIAMETER) / 2.0;
     let bubble_y = d.y + (d.h - BUBBLE_SIZE) / 2.0;
 
     // brain: hidden controller webview; never shown; timers + Web Audio must keep running.
@@ -157,13 +161,6 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
                 .resizable(false)
                 .accept_first_mouse(true)
                 .always_on_top(true)
-                .effects(
-                    EffectsBuilder::new()
-                        .effect(Effect::HudWindow)
-                        .state(EffectState::Active)
-                        .radius(BUBBLE_SIZE / 2.0)
-                        .build(),
-                )
         })
         .collection_behavior(
             CollectionBehavior::new()
@@ -179,17 +176,20 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
     }
 
     // card: glass panel under/next to the bubble; can become key (typed-question box).
+    // Card sits directly below the visible bubble circle, right-aligned with it.
     let (cw, ch) = CARD_SIZE;
+    let circle_right = d.x + d.w - BUBBLE_EDGE_GAP;
+    let circle_bottom = bubble_y + (BUBBLE_SIZE + BUBBLE_DIAMETER) / 2.0;
     match PanelBuilder::<_, GlassKeyPanel>::new(app, "card")
         .url(url("card"))
         .title("Glass Tutor Card")
         .position(tauri::Position::Logical(LogicalPosition {
-            x: bubble_x - cw - 12.0,
-            y: bubble_y + BUBBLE_SIZE / 2.0 - ch / 2.0,
+            x: circle_right - cw,
+            y: circle_bottom + 10.0,
         }))
         .size(tauri::Size::Logical(LogicalSize { width: cw, height: ch }))
         .level(PanelLevel::Custom(BUBBLE_LEVEL))
-        .has_shadow(false)
+        .has_shadow(true)
         .transparent(true)
         .no_activate(true)
         .corner_radius(0.0)
@@ -197,10 +197,17 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
         .with_window(|w| {
             w.decorations(false)
                 .transparent(true)
-                .shadow(false)
+                .shadow(true)
                 .skip_taskbar(true)
                 .resizable(false)
                 .accept_first_mouse(true)
+                .effects(
+                    EffectsBuilder::new()
+                        .effect(Effect::Popover)
+                        .state(EffectState::Active)
+                        .radius(18.0)
+                        .build(),
+                )
         })
         .collection_behavior(
             CollectionBehavior::new()

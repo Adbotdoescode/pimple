@@ -1,0 +1,60 @@
+/* Preview-harness layout only. Component styles come from their own CSS files. */
+html, body, #root { margin: 0; padding: 0; min-height: 100%; }
+body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; overflow: hidden; }
+
+.pv-page { position: fixed; inset: 0; overflow: hidden; background: #ffffff; color: #3a3a3c; }
+.pv-page[data-bg="dark"] { background: #1c1c1e; }
+
+.pv-doc { position: absolute; left: 6%; top: 14%; width: 40%; }
+.pv-doc-title { height: 18px; width: 55%; border-radius: 4px; background: #c7c7cc; margin-bottom: 22px; }
+.pv-doc-line { height: 9px; border-radius: 4px; background: #d1d1d6; margin-bottom: 14px; }
+
+.pv-dark-blob {
+  position: absolute; right: 12%; top: 18%; width: 46%; height: 60%; border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #ff9f0a 0%, #ff375f 45%, transparent 72%);
+  filter: blur(30px); opacity: 0.55;
+}
+
+.pv-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.pv-zoom-4 { zoom: 4; }
+.pv-zoom-25 { zoom: 2.5; }
+/* bubble.css makes .gt-stage a full-viewport fixed layer; inside a zoomed box it must shrink to the bubble. */
+.pv-zoom-4 .gt-stage, .pv-zoom-25 .gt-stage {
+  position: relative; inset: auto; width: var(--d); height: var(--d); overflow: visible;
+}
+
+.pv-page-grid { overflow: auto; }
+.pv-grid {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 28px 12px; padding: 36px 28px; box-sizing: border-box;
+}
+.pv-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 240px; }
+.pv-cell-label { font: 600 13px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.02em; color: #3a3a3c; }
+.pv-page[data-bg="dark"] .pv-cell-label { color: #d1d1d6; }
+
+.pv-wallpaper {
+  position: fixed; inset: 0; overflow: hidden;
+  background: linear-gradient(135deg, #2d3a6b 0%, #7a4f8c 50%, #d98a6c 100%);
+}
+.pv-wallpaper[data-bg="light"] { background: linear-gradient(135deg, #bcd7ff 0%, #e7c6ff 50%, #ffd6b8 100%); }
+.pv-blur { position: absolute; inset: -80px; filter: blur(60px); }
+.pv-blob { position: absolute; border-radius: 50%; opacity: 0.85; }
+.pv-card-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.pv-card-slot { width: 380px; }
+
+.pv-overlay-page { position: relative; width: 1728px; height: 1117px; overflow: hidden; background: #000; }
+.pv-overlay-bg { position: absolute; left: 0; top: 0; width: 1728px; height: 1117px; display: block; }
+.pv-error {
+  position: absolute; left: 16px; bottom: 16px; padding: 10px 14px; border-radius: 8px;
+  background: #ff453a; color: #fff; font: 600 13px system-ui, sans-serif;
+}
+
+.pv-settings-page {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: #e8e8ed;
+}
+.pv-settings-page[data-bg="dark"] { background: #101012; }
+.pv-settings-frame {
+  position: relative; width: 560px; height: 620px; overflow: hidden; border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
