@@ -730,7 +730,7 @@ function CreditRow() {
     credit.status === "ok" && credit.limit > 0 ? Math.min(100, (credit.used / credit.limit) * 100) : 0;
   const tone = pct > 90 ? "red" : pct > 75 ? "amber" : "";
 
-  // limit 0 means there is nothing to meter (no key, or the macOS voice is speaking).
+  // limit 0 means there is nothing to meter (the synthesiser resolved to the macOS voice or off).
   const metered = credit.status === "ok" && credit.limit > 0;
   let text: string;
   if (credit.status === "loading") text = "Checking…";
@@ -739,7 +739,7 @@ function CreditRow() {
     text =
       credit.provider === "elevenlabs"
         ? "No credit information for this key yet"
-        : "The macOS voice is speaking, so no credit is being spent";
+        : "Speech isn't using ElevenLabs right now, so no credit is being spent";
   else
     text = `${credit.used.toLocaleString("en-US")} of ${credit.limit.toLocaleString("en-US")} characters used`;
 
