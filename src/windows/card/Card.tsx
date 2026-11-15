@@ -311,7 +311,15 @@ function VerifierBadge({ snapshot }: { snapshot: SessionSnapshot | null }) {
     );
   }
   if (v?.ran && v.verdict === "fail") {
-    return <span className="chip chip-warn">Revised after check</span>;
+    return (
+      <span
+        className="chip chip-warn"
+        title="A second model couldn't confirm one statement against the screen"
+      >
+        <AlertTriangle size={12} strokeWidth={2.25} aria-hidden="true" />
+        Check flagged a claim
+      </span>
+    );
   }
   if (!snapshot.settings.verifierEnabled) {
     return <span className="chip chip-muted">Verifier off</span>;
