@@ -159,6 +159,13 @@ export function Card({
         stamp();
         const d = drag.current;
         if (!d.dragging) return;
+        // No pointer event tells us the OS drag ended, so a long silence ends it: a later move
+        // (the dock, in the next session) must not be reported as the learner's.
+        const last = Math.max(d.movedAt, d.draggedAt);
+        if (Date.now() - last > 1200) {
+          d.dragging = false;
+          return;
+        }
         d.movedAt = Date.now();
         const pos = { x: Math.round(e.payload.x / scale), y: Math.round(e.payload.y / scale) };
         const send = () => {
