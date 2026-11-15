@@ -269,11 +269,19 @@ function publishCheck(t: Turn): void {
 /** Whiteboard surface: show the window once per turn, never otherwise. */
 function maybeShowWhiteboard(t: Turn, surface: TutorResponse["surface"] | undefined): void {
   if (surface !== "whiteboard" || t.whiteboardShown || !isCurrent(t)) return;
+  // A follow-up keeps the previous answer up until its first segment: opening now would show an old or empty board.
+  // takeOverResponse opens it once the new answer is in the store.
+  if (t.replaceResponse && st().response?.surface !== "whiteboard") return;
   t.whiteboardShown = true;
   console.info("[brain] surface whiteboard: showing the whiteboard window");
   invoke(CMD.showWindow, { label: "whiteboard" }).catch((err) =>
     console.warn("[brain] show whiteboard failed:", errMsg(err)),
   );
+}
+
+/** Side notes are drawn on the main answer's surface: they open the board only when the main answer is on it. */
+function maybeShowWhiteboardForSide(t: Turn, surface: TutorResponse["surface"] | undefined): void {
+  maybeShowWhiteboard(t, st().response?.surface === "whiteboard" ? surface : undefined);
 }
 
 /** Record the answer's surface; apply it to the store unless an old response is still shown (follow-up). */
@@ -291,6 +299,7 @@ function takeOverResponse(t: Turn): void {
   // The new answer starts with the meta that streamed before it, and keeps its surface (emptyResponse defaults to overlay).
   st().setMeta({ ...t.pendingMeta, ...(t.surface ? { surface: t.surface } : {}) });
   t.pendingMeta = {};
+  maybeShowWhiteboard(t, t.surface ?? undefined);
 }
 
 /**
@@ -417,7 +426,7 @@ function sideHandlers(t: Turn, alive: () => boolean): TutorStreamHandlers {
       if (m.concept) concept = m.concept;
       if (m.topic_changed === true && t.stage === "feedback") onFeedbackTopicChanged(t, concept);
       if (m.parked) patch({ parked: mergeUnique(st().parked, m.parked) });
-      maybeShowWhiteboard(t, m.surface);
+      maybeShowWhiteboardForSide(t, m.surface);
     },
     onSegment: (seg) => {
       if (!alive()) return;
@@ -636,6 +645,11 @@ const ACCEPT_RE = /^(yes|yeah|yep|sure|please|ok(ay)?|go ahead|do it)\b/i;
 const DECLINE_RE = /^(no|nah|nope|not now|skip)\b/i;
 const VOICE_KIND_RE = /(interactive|gizmo|simulation|animat)\w*.*(diagram|this|it)?/i;
 const VOICE_VERB_RE = /(make|build|show|give|create)/i;
+/** The student asked for the whiteboard ("use a whiteboard", "draw me a whiteboard", "on the white board"). */
+const WHITEBOARD_RE = /\bwhite[\s-]?boards?\b/i;
+/** ...unless they said not to ("no whiteboard", "don't use the whiteboard", "close the whiteboard"). */
+const NO_WHITEBOARD_RE =
+  /\b(?:no|not|don['’]?t|do not|without|stop|close)\s+(?:(?:use|using|need|want|open|show|draw|on|the|a|any|that)\s+){0,3}white[\s-]?boards?\b/i;
 
 /** The build in flight. Aborted by card-close and by a new capture. */
 let gizmoAc: AbortController | null = null;
@@ -652,6 +666,10 @@ function gizmoLog(state: string): void {
 
 function isVoiceRequest(text: string): boolean {
   return VOICE_KIND_RE.test(text) && VOICE_VERB_RE.test(text);
+}
+
+function wantsWhiteboard(text: string): boolean {
+  return WHITEBOARD_RE.test(text) && !NO_WHITEBOARD_RE.test(text);
 }
 
 /** Per-capture offer state. A build that is running is not touched here. */
@@ -754,6 +772,14 @@ function answerOffer(t: Turn, text: string): void {
   cancelMicTimer();
   if (t.stage === "gizmoSpeech") player.stop(); // a press during the offer line cuts it short
   const a = text.trim();
+  if (a && wantsWhiteboard(a) && !isEcho(a)) {
+    // "Use the whiteboard" is neither a yes nor a no: skip the diagram and answer on the board.
+    t.pendingOffer = false;
+    declineGizmo();
+    gizmoLog("offer skipped: whiteboard requested");
+    void ask(a);
+    return;
+  }
   if (ACCEPT_RE.test(a)) {
     const r = st().response;
     if (r) acceptGizmo(r, t.question);
@@ -1098,7 +1124,7 @@ async function handleObjection(t: Turn, ix: Interruption, text: string): Promise
     if (!isCurrent(t) || t.interruption !== ix) return;
     ix.streamDone = true;
     ix.finalCheck = final.check_question ?? "";
-    maybeShowWhiteboard(t, final.surface);
+    maybeShowWhiteboardForSide(t, final.surface);
     advance(t);
   } catch (err) {
     fail(t, err);
@@ -1165,6 +1191,12 @@ async function handleCheckAnswer(t: Turn, answer: string): Promise<void> {
     endSession(t);
     return;
   }
+  if (wantsWhiteboard(answer) && st().response?.surface !== "whiteboard") {
+    console.info("[brain] whiteboard requested in a check answer: answering it as a follow-up");
+    freezeMain();
+    await ask(answer);
+    return;
+  }
   t.stage = "feedback";
   t.streamDone = false;
   t.followUp = null;
@@ -1189,7 +1221,7 @@ async function handleCheckAnswer(t: Turn, answer: string): Promise<void> {
     const next = (final.check_question ?? "").trim();
     // At most one follow-up: only when the new question differs and this is the first feedback round.
     t.followUp = next && next !== check && t.checkRounds < 2 ? next : null;
-    maybeShowWhiteboard(t, final.surface);
+    maybeShowWhiteboardForSide(t, final.surface);
     t.streamDone = true;
     advance(t);
   } catch (err) {
@@ -1425,12 +1457,14 @@ async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}):
     timings: { captureAt: st().timings.captureAt }, // keep the capture time, drop per-answer timings
   });
   setPhase("thinking");
+  const hint = opts.surfaceHint ?? (wantsWhiteboard(q) ? "whiteboard" : undefined);
+  if (hint === "whiteboard" && !opts.surfaceHint) console.info("[brain] whiteboard requested: forcing surface whiteboard");
   const input: TutorCallInput = {
     capture: cap,
     question: q,
     settings: st().settings,
     signal: t.ac.signal,
-    surfaceHint: opts.surfaceHint,
+    surfaceHint: hint,
     previousConcept: keep && prev ? prev.concept || undefined : undefined,
     followUp: followUp
       ? {
@@ -1711,6 +1745,8 @@ export async function startController(): Promise<() => void> {
           const yesNo = ACCEPT_RE.test(raw) || DECLINE_RE.test(raw);
           if (yesNo && words <= 4) {
             answerOffer(t, raw);
+          } else if (wantsWhiteboard(raw)) {
+            answerOffer(t, raw);
           } else {
             console.info("[brain] ignored offer reply (not a short yes/no):", raw);
             scheduleMic(() => patch({ error: MIC_DOWN }));
@@ -1736,8 +1772,14 @@ export async function startController(): Promise<() => void> {
           scheduleMic(() => patch({ error: MIC_DOWN })); // the diagram builds while we keep listening
           return;
         }
-        if (objection && t?.interruption) void run(handleObjection(t, t.interruption, raw));
-        else if (raw) void run(ask(raw));
+        if (objection && t?.interruption) {
+          if (wantsWhiteboard(raw) && st().response?.surface !== "whiteboard") {
+            // A side note is drawn on the main answer's surface: a whiteboard request becomes a follow-up answer on the board.
+            console.info("[brain] whiteboard requested during an interruption: answering it as a follow-up");
+            freezeMain();
+            void run(ask(raw));
+          } else void run(handleObjection(t, t.interruption, raw));
+        } else if (raw) void run(ask(raw));
         else resumeOrIdle();
       }
     }),

@@ -4,7 +4,7 @@ import { Whiteboard, visibleSegmentsFor } from "./Whiteboard";
 import { useSession } from "@/lib/sessionMirror";
 import { CMD, EV, emitEvent, invokeCmd } from "@/lib/ipc";
 import { Effect, EffectState, Window as TauriWindow, currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 
 /** One answer as drawn: kept after the session moves on so the board can stay dimmed. */
@@ -168,6 +168,23 @@ export default function App() {
     };
   }, []);
 
+  // Rust shows the sheet without focusing it and says so: play the spring (it also clears a finished close) and report the rect.
+  useEffect(() => {
+    const off = listen<string>("window:shown", (e) => {
+      if (e.payload !== "whiteboard") return;
+      playOpen();
+      void announceRect(true);
+    });
+    return () => {
+      void off.then((u) => u());
+    };
+  }, []);
+
+  // A capture hides this window without telling anyone: on every phase change a hidden board reports itself gone.
+  useEffect(() => {
+    void getCurrentWindow().isVisible().then((v) => { if (!v) void announceRect(false); }, () => undefined);
+  }, [snap.phase]);
+
   // Auto-open: show the window once for each new whiteboard answer. The first value seen at mount is a
   // baseline, so an answer that already exists when the window loads does not pop it open.
   const seenKey = useRef<string | null | undefined>(undefined);
@@ -218,31 +235,30 @@ export default function App() {
     [boardResponse, snap.sourceLabel, snap.sideNote],
   );
 
-  // Keep the last drawing: a new session dims it rather than blanking the board, and a spoken-only
-  // turn is captioned over the drawing that is already up.
-  const [kept, setKept] = useState<Drawing | null>(null);
-  const keptCapture = useRef<number | null>(null);
+  // Keep the last drawing while its capture lasts: a spoken-only turn is captioned over the drawing
+  // that is already up. Each drawing is tagged with the capture it was drawn for.
+  const [kept, setKept] = useState<{ drawing: Drawing; capturedAt: number | null } | null>(null);
   const capturedAt = snap.capture?.capturedAt ?? null;
   useEffect(() => {
     if (!live) return;
-    setKept(live);
-    keptCapture.current = capturedAt;
+    setKept({ drawing: live, capturedAt });
   }, [live, capturedAt]);
 
   // The tutor moved to a different topic mid-session: the brain cleared the answer while the capture stayed
-  // the same. The old drawing goes (the board crossfades it out) instead of staying dimmed. A new session
-  // (new capture) keeps it dimmed until its own answer arrives.
+  // the same. The old drawing goes (the board crossfades it out).
   useEffect(() => {
     if (snap.response !== null || snap.phase === "idle" || capturedAt === null) return;
-    if (kept && keptCapture.current === capturedAt) setKept(null);
+    if (kept && kept.capturedAt === capturedAt) setKept(null);
   }, [snap.response, snap.phase, capturedAt, kept]);
 
-  const shown = live ?? kept;
-  const pending = snap.response === null && kept !== null && snap.phase !== "idle";
+  // A drawing from another session, or from after the card closed, never comes back: a new session starts on a clean board.
+  const keptNow = kept !== null && capturedAt !== null && kept.capturedAt === capturedAt ? kept.drawing : null;
+  const shown = live ?? keptNow;
+  const pending = snap.response === null && keptNow !== null && snap.phase !== "idle";
   const visibleIds = live
     ? visibleSegmentsFor(snap)
-    : kept
-      ? kept.response.segments.map((seg) => seg.id)
+    : keptNow
+      ? keptNow.response.segments.map((seg) => seg.id)
       : [];
 
   const onToggleTheme = () => {
@@ -260,6 +276,15 @@ export default function App() {
       void announceRect(false);
     }, CLOSE_MS);
   };
+
+  // Closing the card ends the session (the capture is dropped): the board closes with it.
+  const hadCapture = useRef(false);
+  useEffect(() => {
+    const had = hadCapture.current;
+    hadCapture.current = capturedAt !== null;
+    if (!had || capturedAt !== null || snap.phase !== "idle") return;
+    void getCurrentWindow().isVisible().then((v) => { if (v) onClose(); }, () => undefined);
+  }, [capturedAt, snap.phase]);
 
   return (
     <Whiteboard

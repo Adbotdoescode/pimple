@@ -3,7 +3,7 @@
 use serde::Serialize;
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::window::{Effect, EffectState, EffectsBuilder};
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, PanelLevel, StyleMask};
@@ -282,7 +282,15 @@ fn is_panel(label: &str) -> bool {
     matches!(label, "bubble" | "overlay" | "card")
 }
 
+/// Sheets float over the student's work and are shown without activating the app: activating an
+/// accessory app raises its other windows too (a backgrounded settings window would jump forward).
+fn is_sheet(label: &str) -> bool {
+    matches!(label, "whiteboard" | "gizmo")
+}
+
 /// invoke("show_window", {label}) → void. Panels: orderFrontRegardless, no activation.
+/// Sheets (whiteboard, gizmo) are floated and ordered front without activating the app. Other
+/// windows (settings) activate the app and take focus.
 #[tauri::command]
 pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -299,9 +307,12 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
         .get_webview_window(&label)
         .ok_or_else(|| format!("no window '{label}'"))?;
     if label != "brain" {
-        // Accessory app: unhide and activate the app first, or the window stays behind the frontmost app.
         #[cfg(target_os = "macos")]
-        {
+        let sheet = is_sheet(&label);
+        // Normal windows (settings): unhide and activate the accessory app first, or the window
+        // stays behind the frontmost app. Sheets skip this so they don't raise the app's other windows.
+        #[cfg(target_os = "macos")]
+        if !sheet {
             let _ = app.show();
             activate_ns_app(&app);
         }
@@ -319,6 +330,13 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
         let _ = w.unminimize();
         #[cfg(target_os = "macos")]
         let _ = w.set_always_on_top(true);
+        #[cfg(target_os = "macos")]
+        if sheet {
+            order_front_regardless(&app, &w);
+        } else {
+            let _ = w.set_focus();
+        }
+        #[cfg(not(target_os = "macos"))]
         let _ = w.set_focus();
         #[cfg(target_os = "macos")]
         if let Some(slot) = grow {
@@ -333,6 +351,9 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
                 let _ = w2.set_always_on_top(false);
             });
         }
+        // The window's web content listens for this to play its opening animation and report its
+        // rect (a window shown without focus gets no focus event).
+        let _ = app.emit("window:shown", label.clone());
     } else {
         w.show().map_err(|e| e.to_string())?;
     }
@@ -424,6 +445,23 @@ fn activate_ns_app(app: &AppHandle) {
         if let Some(mtm) = objc2::MainThreadMarker::new() {
             let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
             ns_app.activate();
+        }
+    });
+}
+
+/// Orders the window to the front of its level without activating the app (like the panels do).
+#[cfg(target_os = "macos")]
+fn order_front_regardless(app: &AppHandle, w: &tauri::WebviewWindow) {
+    use objc2::runtime::AnyObject;
+    let w = w.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Ok(ptr) = w.ns_window() else { return };
+        let ns = ptr as *mut AnyObject;
+        if ns.is_null() {
+            return;
+        }
+        unsafe {
+            let _: () = objc2::msg_send![ns, orderFrontRegardless];
         }
     });
 }

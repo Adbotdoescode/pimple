@@ -117,8 +117,8 @@ export function buildTutorUserText(input: TutorCallInput): string {
 
   if (input.surfaceHint === "whiteboard") {
     parts.push(
-      `Use surface "whiteboard". Draw the picture from scratch on the blank 1600×1000 board, in board coordinates; ` +
-        `the screenshot is context only, so never trace it or reuse its pixel positions.`,
+      `WHITEBOARD. Set surface "whiteboard": the student asked for the whiteboard (or the app chose it), and that overrides every other surface rule. ` +
+        `Draw the picture from scratch on the blank 1600×1000 board, in board coordinates; the screenshot is context only, so never trace it or reuse its pixel positions.`,
     );
   } else if (input.surfaceHint === "overlay" && (input.interruption || input.checkAnswer)) {
     parts.push(`Use surface "overlay", like your main answer: shape coordinates are pixels of the image.`);
