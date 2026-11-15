@@ -105,7 +105,7 @@ Expected: speech pauses (or the pending answer is dropped if it was still thinki
 ## 8. Whiteboard
 
 Steps:
-1. Ask something the screen can't show, e.g. on `incline.html`: "How does a pulley system reduce the force I need to lift something?" (verified 14:24: it opened by itself and drew a pulley from scratch), or ask "can you draw this on the whiteboard?". Or open it from the tray menu: Glass Tutor → Whiteboard.
+1. Ask something the screen can't show, e.g. on `incline.html`: "How does a pulley system reduce the force I need to lift something?" (verified 14:24: it opened by itself and drew a pulley from scratch), or ask "can you draw this on the whiteboard?". Or open it from the tray menu: Pimple → Whiteboard.
 2. Canned version (no API call): `scripts/gt-debug.sh shapes=/Users/adam/Developer/glass-tutor/demo/fixtures/canned-whiteboard.json`.
 3. Drag the "Angle θ" slider; click the moon/sun icon.
 
