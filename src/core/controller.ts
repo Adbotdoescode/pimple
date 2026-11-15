@@ -103,6 +103,7 @@ interface Turn {
   sideSpeechStarted: boolean;
   whiteboardShown: boolean;
   gate: Gate | null;
+  audioStarted: boolean; // first-audio latency recorded for this turn
 }
 
 let player: Player;
@@ -167,6 +168,7 @@ function beginTurn(question: string, stage: Stage = "generating"): Turn {
     sideSpeechStarted: false,
     whiteboardShown: false,
     gate: null,
+    audioStarted: false,
   };
   turn = t;
   return t;
@@ -956,7 +958,9 @@ async function handleIntent(i: UiIntent): Promise<void> {
 }
 
 function onSegmentStarted(id: string): void {
-  if (!turn) return;
+  const t = turn;
+  if (!t) return;
+  recordFirstAudio(t, id);
   if (id === "back") patch({ sideNote: null }); // views fade the side note out as "Back to where we were" starts
   const before = st();
   patch({
@@ -978,21 +982,32 @@ function onPlayerIdle(): void {
   advance(turn);
 }
 
-function onFirstAudio(): void {
+/**
+ * Latency for the card: first spoken word of this turn's main answer, or the summary sentence when it is the
+ * first audio after a capture (the capture→first word target). Recorded once per turn.
+ */
+function recordFirstAudio(t: Turn, id: string): void {
+  if (t.audioStarted) return;
+  const s = st();
+  const isSummary = t.stage === "summary" && id === "summary" && s.timings.firstAudioAt === undefined;
+  const isMain = t.stage === "generating" && !t.speakingSide && !t.interruption && !SPECIAL_IDS.has(id);
+  if (!isSummary && !isMain) return;
+  t.audioStarted = true;
   const now = Date.now();
-  const tm = st().timings;
+  const tm = s.timings;
   patch({ timings: { ...tm, firstAudioAt: now } });
   const delta = (a?: number, b?: number) => (a !== undefined && b !== undefined ? `${a - b}ms` : "n/a");
   console.info(
     "[brain] first audio:",
+    isSummary ? "(summary)" : "(answer)",
     "capture→audio",
     delta(now, tm.captureAt),
     "ask→token",
-    delta(turn?.firstTokenAt, turn?.askedAt),
+    delta(t.firstTokenAt, t.askedAt),
     "ask→first segment",
-    delta(turn?.firstSegmentAt, turn?.askedAt),
+    delta(t.firstSegmentAt, t.askedAt),
     "ask→audio",
-    delta(now, turn?.askedAt),
+    delta(now, t.askedAt),
   );
 }
 
@@ -1002,7 +1017,6 @@ export async function startController(): Promise<() => void> {
     getVoiceId: () => st().settings.voiceId,
     getProviderOverride: () => runOverride,
     onFallback: (reason) => console.warn("[brain] tts fallback:", reason),
-    onFirstAudio,
   });
   const offStarted = player.onSegmentStarted(onSegmentStarted);
   const offIdle = player.onIdle(onPlayerIdle);
