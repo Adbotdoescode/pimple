@@ -83,8 +83,8 @@ pub fn create_all(app: &AppHandle) {
     }
 
     for (label, title, w, h) in [
-        ("whiteboard", "Glass Tutor — Whiteboard", 1200.0, 780.0),
-        ("settings", "Glass Tutor — Settings", 560.0, 620.0),
+        ("whiteboard", "Pimple — Whiteboard", 1200.0, 780.0),
+        ("gizmo", "Pimple — Diagram", 1100.0, 820.0),
     ] {
         if let Err(e) = WebviewWindowBuilder::new(app, label, url(label))
             .title(title)
@@ -94,6 +94,34 @@ pub fn create_all(app: &AppHandle) {
             .build()
         {
             log::error!("create {label}: {e}");
+        }
+    }
+
+    // settings: THE app window. Transparent liquid glass over native vibrancy; the title bar is
+    // an overlay (traffic lights kept, title hidden) so the web content draws the whole surface.
+    {
+        let b = WebviewWindowBuilder::new(app, "settings", url("settings"))
+            .title("Pimple")
+            .inner_size(760.0, 660.0)
+            .min_inner_size(640.0, 560.0)
+            .visible(false)
+            .transparent(true)
+            .accept_first_mouse(true)
+            .effects(
+                EffectsBuilder::new()
+                    .effect(Effect::HudWindow)
+                    .state(EffectState::Active)
+                    .radius(26.0)
+                    .build(),
+            )
+            .center();
+        #[cfg(target_os = "macos")]
+        let b = b
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true)
+            .traffic_light_position(tauri::Position::Logical(LogicalPosition { x: 20.0, y: 24.0 }));
+        if let Err(e) = b.build() {
+            log::error!("create settings: {e}");
         }
     }
 
@@ -145,7 +173,7 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
     // bubble: small non-activating glass panel at the right edge, vertically centred.
     match PanelBuilder::<_, GlassPassivePanel>::new(app, "bubble")
         .url(url("bubble"))
-        .title("Glass Tutor")
+        .title("Pimple")
         .position(tauri::Position::Logical(LogicalPosition { x: bubble_x, y: bubble_y }))
         .size(tauri::Size::Logical(LogicalSize { width: BUBBLE_SIZE, height: BUBBLE_SIZE }))
         .level(PanelLevel::Custom(BUBBLE_LEVEL))
@@ -298,7 +326,7 @@ pub fn hide_window(app: AppHandle, label: String) -> Result<(), String> {
     let w = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("no window '{label}'"))?;
-    if label == "whiteboard" {
+    if label == "whiteboard" || label == "gizmo" {
         let _ = w.set_always_on_top(false);
     }
     w.hide().map_err(|e| e.to_string())
