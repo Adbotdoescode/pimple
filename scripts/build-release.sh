@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reproducible standalone release build of Glass Tutor (macOS).
-# Output: dist/release/ ("Glass Tutor.app", plus the .dmg when it builds).
+# Output: dist/release/ (Pimple.app, the .dmg when it builds, and Pimple.app.zip).
 # Log: /tmp/glass-tutor-release.log. Does not launch the app.
 source ~/.zshrc >/dev/null 2>&1 || true
 set -euo pipefail
@@ -25,8 +25,15 @@ main() {
     echo "SDKROOT=$SDKROOT"
   fi
 
-  # Clear the previous frontend output, keeping dist/backup and dist/release.
-  find "$ROOT/dist" -mindepth 1 -maxdepth 1 ! -name backup ! -name release -exec rm -rf {} +
+  # dist/ is the frontend bundle that Tauri embeds into the binary, so nothing else may sit in it
+  # during the build: move dist/backup and dist/release aside and put them back afterwards.
+  STASH="$ROOT/.release-stash"
+  mkdir -p "$STASH"
+  for d in backup release; do
+    if [ -e "$ROOT/dist/$d" ]; then rm -rf "$STASH/$d"; mv "$ROOT/dist/$d" "$STASH/$d"; fi
+  done
+  trap 'for d in backup release; do if [ -e "$STASH/$d" ] && [ ! -e "$ROOT/dist/$d" ]; then mkdir -p "$ROOT/dist"; mv "$STASH/$d" "$ROOT/dist/$d"; fi; done' EXIT
+  find "$ROOT/dist" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
 
   DMG_SKIPPED=0
   if ! bun run tauri build --bundles app,dmg --config "$BUILD_OVERRIDE"; then
@@ -54,7 +61,9 @@ main() {
     exit 1
   fi
 
-  rm -rf "$OUT"
+  # Restore dist/backup now (the build is done); the old dist/release is replaced below.
+  if [ -e "$STASH/backup" ]; then mv "$STASH/backup" "$ROOT/dist/backup"; fi
+  rm -rf "$STASH/release" "$OUT"
   mkdir -p "$OUT"
   ditto "$APP" "$OUT/$APP_NAME"
   for dmg in "$BUNDLE_DIR"/dmg/*.dmg; do
@@ -62,6 +71,8 @@ main() {
       cp "$dmg" "$OUT/"
     fi
   done
+
+  ( cd "$OUT" && ditto -c -k --keepParent "$APP_NAME" "$APP_NAME.zip" )
 
   echo
   echo "== Output"
