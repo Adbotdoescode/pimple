@@ -176,7 +176,7 @@ export function useCardLens(
       gl.uniform2f(uSize, w, h);
       gl.uniform1f(uRadius, Math.min(radius, w / 2, h / 2));
       if (isDark()) gl.uniform4f(uTint, 0.105, 0.115, 0.14, 0.7);
-      else gl.uniform4f(uTint, 0.972, 0.976, 0.988, 0.74);
+      else gl.uniform4f(uTint, 0.972, 0.976, 0.988, 0.8);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
