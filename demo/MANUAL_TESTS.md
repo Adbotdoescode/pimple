@@ -9,14 +9,16 @@ Wear headphones: the microphone otherwise hears the tutor's own voice through th
 ## How to use (quick reference)
 
 - Mode A, whole screen: click the glass bubble (or press ctrl+option+space anywhere). The mic opens; ask your question and pause for about 1 s, and the turn ends on its own.
-- Mode B, a region: drag the bubble over what you mean; a lens follows it. Release (or press Return) to commit. The tutor says one sentence about what it sees and "What do you want to ask?", then the mic opens.
+- Mode B, a region: drag the bubble over what you mean; a lens follows it. Release (or press Return) to commit. The mic opens straight away (no summary); just ask. The region is the focus, and the full screen is sent as context.
 - Mode C, lasso: while dragging the bubble, circle around the thing you mean (one full loop); the trail shows the loop. Release (or Return) to commit.
 - Typed fallback: type into "Type a question instead…" in the card and press Return.
-- Space tap during an answer: pauses, pulses the current shapes, asks "Which part?", then listens.
+- Space tap at ANY moment (thinking, checking, drawing, speaking): pauses, pulses the current shapes, says "go ahead" / "Which part?", then listens. The card's Interrupt button does the same.
 - Space hold during an answer: pauses and listens while you hold; release to send your objection. You get a short side answer (dashed), then "Back to where we were…" and it resumes. The point is listed under "Points you questioned".
 - Check question: after an answer the card shows "Check yourself"; answer it by voice and you get short feedback.
 - Off-topic questions are parked under "Parked for later" in the card; click one to ask it later.
-- Esc (or ctrl+option+space again) cancels the session; the bubble returns to its edge.
+- Shut up: Esc while it is thinking, speaking or checking, or the red Stop button in the card: audio stops at once, the drawings stay, and the mic opens for your next question.
+- Card buttons: minimise (–) collapses the card to a small pill (click to expand); close (×) ends the session, clears the drawings and sends the bubble back to its edge. ctrl+option+space while a session runs also ends it.
+- If your screen does not show enough to answer (e.g. "how does a pulley system work?" on the incline page), the whiteboard opens by itself on the side away from the bubble and draws from scratch, marked "Drawn from scratch".
 
 Test pages: `incline.html` (physics problem + free-body diagram), `dense-paragraph.html` (economics textbook text), `dark-equation.html` (dark mode, equations, spring diagram), `colourful.html` (saturated water-cycle page), `supply-demand.html` (economics graph).
 
@@ -33,14 +35,14 @@ Expected: the card shows "Thinking…", then the tutor speaks 2–4 short senten
 
 ## 2. Mode B: drag the bubble onto a paragraph (lens)
 
-Feature: drag-to-target a region; the tutor summarises what it sees in one sentence and asks what you want to know.
+Feature: drag-to-target a region; the mic opens immediately (no summary) and the answer focuses on the region, with the full screen as context.
 
 Steps:
 1. Open `dense-paragraph.html`.
 2. Drag the bubble onto the third paragraph ("The principle of comparative advantage…") and release.
-3. Listen for the one-sentence summary and "What do you want to ask?", then say: "What does comparative advantage mean here, in plain words?"
+3. As soon as the card says "Listening…", say: "What does this mean in plain words?"
 
-Expected: a lens outline follows the bubble while dragging; after release the summary is about that paragraph only. The answer is 2–4 sentences, uses the page's Atlantis/Borealia numbers, and the shapes (underline, box) land on that paragraph.
+Expected: a lens outline follows the bubble while dragging; after release a soft glass rim marks the region and the card goes straight to "Listening…". The answer is 2–4 sentences about that paragraph, may use the page's Atlantis/Borealia table as context, and the shapes (underline on the definition, circles on the table) land in the right places. Verified with injected events 14:48.
 
 ## 3. Mode C: lasso a part of the diagram
 
@@ -74,12 +76,15 @@ Steps:
 
 Expected: a short spoken feedback (right / not quite + one sentence why), at most one follow-up.
 
-## 5c. Cancel
+## 5c. Shut up, minimise, close
 
 Steps:
-1. Start any question, then press Esc while it is thinking or speaking.
+1. Start any question; while it speaks press Esc (or click the red Stop button).
+2. Ask a follow-up out loud.
+3. Click the card's minimise (–) button, then the pill to expand it again.
+4. Click the card's close (×) button.
 
-Expected: speech stops at once, shapes fade, the card closes and the bubble springs back to its edge.
+Expected: (1) audio stops immediately, the shapes stay, the card shows "Listening…" (verified 14:49). (2) The follow-up is answered with the same screen as context. (3) The card collapses to a pill and comes back. (4) The session ends, the drawings clear, the bubble returns to its edge. Known issue (being fixed): without headphones the mic can pick up the end of the tutor's voice right after Stop and start a new turn on its own.
 
 ## 6. Interrupt by holding space
 
@@ -89,18 +94,18 @@ Steps:
 
 Expected: speech fades out within about 150 ms, the mic opens, the side answer is drawn in a distinct dashed style, then the tutor says "Back to where we were…" and resumes at the interrupted sentence. Your objection appears under "Points you questioned".
 
-## 7. Interrupt by tapping space ("which part?")
+## 7. Interrupt by tapping space ("which part?"), also while it is still thinking
 
 Steps:
-1. During an answer, tap the space bar once.
+1. During an answer, or even while the card still says "Thinking…", tap the space bar once (or click Interrupt).
 2. When it asks "Which part?", say "that part" or name it.
 
-Expected: speech pauses, the current sentence's shapes pulse gently, it asks "Which part?", answers briefly, then resumes.
+Expected: speech pauses (or the pending answer is dropped if it was still thinking), the card says "Paused — go ahead", the current shapes pulse, it listens, answers your new words briefly with the same screen as context, then resumes if there was an answer in progress (interrupt-while-thinking verified 14:49).
 
 ## 8. Whiteboard
 
 Steps:
-1. Ask something that needs a drawing from scratch, e.g. on `dense-paragraph.html`: "Can you draw this on the whiteboard?" Or open it from the tray menu: Glass Tutor → Whiteboard.
+1. Ask something the screen can't show, e.g. on `incline.html`: "How does a pulley system reduce the force I need to lift something?" (verified 14:24: it opened by itself and drew a pulley from scratch), or ask "can you draw this on the whiteboard?". Or open it from the tray menu: Glass Tutor → Whiteboard.
 2. Canned version (no API call): `scripts/gt-debug.sh shapes=/Users/adam/Developer/glass-tutor/demo/fixtures/canned-whiteboard.json`.
 3. Drag the "Angle θ" slider; click the moon/sun icon.
 
