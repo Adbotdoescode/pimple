@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Phase, SessionSnapshot, UiIntent } from "@shared/contracts";
 import { invokeCmd } from "../../lib/ipc";
+import { useCardLens } from "./cardLens";
 import "../../ui/glass.css";
 import "./card.css";
 
@@ -125,6 +126,7 @@ export function Card({
   autoMinimise?: { minimise: boolean; n: number } | null;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const lensRef = useRef<HTMLCanvasElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const heightCb = useRef(onHeightChange);
   const [draft, setDraft] = useState("");
@@ -302,6 +304,8 @@ export function Card({
   const caption = s?.caption ?? "";
   const error = s?.error ?? null;
   const gizmo = s?.gizmo?.status ?? "none";
+  // Live refraction of the desktop under the card, while the card is on screen.
+  useCardLens(panelRef, lensRef, phase !== "idle" || !!error, minimised);
   // Landing in the contract shortly; read defensively until the type has it.
   const noticeRaw = (s as { notice?: unknown } | null)?.notice;
   const notice = typeof noticeRaw === "string" && noticeRaw.trim() ? noticeRaw.trim() : null;
@@ -366,6 +370,7 @@ export function Card({
     return (
       <div className="card-shell card-shell-mini">
         <section ref={panelRef} className="glass-panel card-mini" aria-label="Pimple card, minimised" {...dragProps}>
+          <canvas ref={lensRef} className="liquid-lens" aria-hidden="true" />
           <i className="liquid" aria-hidden="true" />
           <button
             type="button"
@@ -424,6 +429,7 @@ export function Card({
   return (
     <div className="card-shell">
       <section ref={panelRef} className="glass-panel card" aria-label="Pimple card" {...dragProps}>
+        <canvas ref={lensRef} className="liquid-lens" aria-hidden="true" />
         <i className="liquid" aria-hidden="true" />
         <header className="card-header">
           <div className="card-header-left">

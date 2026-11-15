@@ -252,6 +252,12 @@ function edgeMood(phase: Phase): string {
   return "gt-edge-calm";
 }
 
+/** Height of the menu bar in points: the screen's visible frame when the webview reports it, else 30. */
+function menuBarInset(): number {
+  const t = typeof window !== "undefined" ? (window.screen as Screen & { availTop?: number }).availTop : undefined;
+  return typeof t === "number" && t >= 20 && t <= 60 ? Math.round(t) : 30;
+}
+
 /**
  * Thin rainbow glow hugging the screen border while a session is active. Four mitred strips, each a
  * long gradient band that slides under a fixed window, so the motion is a compositor-only transform
@@ -262,8 +268,10 @@ function edgeMood(phase: Phase): string {
 function EdgeGlow({ active, phase, width, height }: { active: boolean; phase: Phase; width: number; height: number }) {
   const held = useRetained(active ? true : null, EDGE_FADE_MS + 100);
   const mounted = held.value !== null;
+  // The top edge starts below the menu bar, so the glow never draws over it.
+  const top0 = menuBarInset();
   const W = Math.max(1, width);
-  const H = Math.max(1, height);
+  const H = Math.max(1, height - top0);
   const P = (2 * W + 2 * H) / 3;
   const inners = useRef<(HTMLDivElement | null)[]>([null, null, null, null]);
   const anims = useRef<Animation[]>([]);
@@ -334,7 +342,7 @@ function EdgeGlow({ active, phase, width, height }: { active: boolean; phase: Ph
     },
   ];
   return (
-    <div className={`gt-edge${held.visible ? "" : " gt-edge-off"}`} aria-hidden="true">
+    <div className={`gt-edge${held.visible ? "" : " gt-edge-off"}`} style={{ top: top0 }} aria-hidden="true">
       <div className={`gt-edge-mood ${moodRef.current}`}>
         {strips.map((s, i) => (
           <div key={s.cls} className={`gt-edge-strip ${s.cls}`} style={s.box}>
