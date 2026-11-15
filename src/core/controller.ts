@@ -116,6 +116,7 @@ interface Turn {
   frozenMicPending: boolean; // open the mic once the "Which part?" line has played
   pendingOffer: boolean; // a gizmo offer is waiting for the student's answer
   replaceResponse: boolean; // a follow-up keeps the old shapes until the new answer's first segment is released
+  surface: TutorResponse["surface"] | null; // the answer's surface as soon as the stream reports it
 }
 
 /** Context for the student's next question after an interrupt or shut-up. */
@@ -207,6 +208,7 @@ function beginTurn(question: string, stage: Stage = "generating"): Turn {
     frozenMicPending: false,
     pendingOffer: false,
     replaceResponse: false,
+    surface: null,
   };
   turn = t;
   return t;
@@ -270,11 +272,19 @@ function maybeShowWhiteboard(t: Turn, surface: TutorResponse["surface"] | undefi
   );
 }
 
+/** Record the answer's surface; apply it to the store unless an old response is still shown (follow-up). */
+function noteSurface(t: Turn, surface: TutorResponse["surface"] | undefined): void {
+  if (!surface || !isCurrent(t)) return;
+  t.surface = surface;
+  if (!t.replaceResponse) st().setMeta({ surface });
+}
+
 /** The first new segment of a follow-up replaces the kept response (and its shapes). */
 function takeOverResponse(t: Turn): void {
   if (!t.replaceResponse) return;
   t.replaceResponse = false;
   patch({ response: null, sideNote: null });
+  if (t.surface) st().setMeta({ surface: t.surface }); // the new answer keeps its surface (emptyResponse defaults to overlay)
 }
 
 function commitResponse(t: Turn, r: TutorResponse): void {
@@ -304,20 +314,21 @@ function applyMeta(t: Turn, m: Partial<TutorResponse>, mode: "buffered" | "strea
   if (!isCurrent(t)) return;
   const label = sourceLabelFor(m.grounding);
   if (mode === "buffered") {
-    // Buffered mode shows only the concept and source while the answer is held for verification.
+    // Buffered mode shows only the concept, source and surface while the answer is held for verification.
     st().setMeta({ concept: m.concept });
     if (label) patch({ sourceLabel: label });
+    noteSurface(t, m.surface);
     maybeShowWhiteboard(t, m.surface);
     return;
   }
   // Segments and shapes arrive through onSegment/onShape, so they are not taken from meta.
   st().setMeta({
     concept: m.concept,
-    surface: m.surface,
     grounding: m.grounding,
     gizmo_offer: m.gizmo_offer,
     summary_sentence: m.summary_sentence,
   });
+  noteSurface(t, m.surface);
   if (label) patch({ sourceLabel: label });
   if (m.parked) patch({ parked: mergeUnique(st().parked, m.parked) });
   maybeShowWhiteboard(t, m.surface);
@@ -1007,6 +1018,7 @@ async function handleObjection(t: Turn, ix: Interruption, text: string): Promise
         question: t.question,
         settings: st().settings,
         signal: t.ac.signal,
+        surfaceHint: st().response?.surface,
         interruption: {
           segmentId: ix.pp.segmentId,
           segmentText,
@@ -1101,6 +1113,7 @@ async function handleCheckAnswer(t: Turn, answer: string): Promise<void> {
         question: t.question,
         settings: st().settings,
         signal: t.ac.signal,
+        surfaceHint: st().response?.surface,
         checkAnswer: { checkQuestion: check, answer },
       },
       sideHandlers(t, () => isCurrent(t) && t.stage === "feedback"),

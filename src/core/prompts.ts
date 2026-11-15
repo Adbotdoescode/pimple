@@ -104,7 +104,12 @@ export function buildTutorUserText(input: TutorCallInput): string {
   }
 
   if (input.surfaceHint === "whiteboard") {
-    parts.push(`Use surface "whiteboard" (1600×1000 board coordinates).`);
+    parts.push(
+      `Use surface "whiteboard". Draw the picture from scratch on the blank 1600×1000 board, in board coordinates; ` +
+        `the screenshot is context only, so never trace it or reuse its pixel positions.`,
+    );
+  } else if (input.surfaceHint === "overlay" && (input.interruption || input.checkAnswer)) {
+    parts.push(`Use surface "overlay", like your main answer: shape coordinates are pixels of the image.`);
   }
 
   return parts.join("\n\n");

@@ -6,7 +6,7 @@ import type { Pt, Shape } from "@shared/contracts";
 
 export interface Box { x: number; y: number; w: number; h: number }
 export interface BoardSize { w: number; h: number }
-/** grow: scale small compositions up to fill the board (whiteboard answers; off for overlay backdrops). */
+/** grow: scale small compositions up to fill the board. */
 export interface FitOptions { grow?: boolean }
 
 const DEFAULT_BOARD: BoardSize = { w: 1600, h: 1000 };
@@ -339,34 +339,6 @@ export function fitShapes(
     if (!b) return s;
     return translateAll([s], shiftFor(b.x, b.x + b.w, x0, x1), shiftFor(b.y, b.y + b.h, y0, y1))[0];
   });
-}
-
-/**
- * Where a captured image (imgW × imgH px) sits on the board: contained, centred, with a margin.
- * Returns [x, y, w, h] in board units.
- */
-export function imageRectOnBoard(
-  imgW: number,
-  imgH: number,
-  board: BoardSize = DEFAULT_BOARD,
-  margin = 24,
-): [number, number, number, number] {
-  if (!(imgW > 0) || !(imgH > 0)) return [0, 0, board.w, board.h];
-  const k = Math.min((board.w - 2 * margin) / imgW, (board.h - 2 * margin) / imgH);
-  const w = imgW * k, h = imgH * k;
-  return [(board.w - w) / 2, (board.h - h) / 2, w, h];
-}
-
-/**
- * Overlay responses use pixels of the captured image. Map them into board units using the same
- * transform as imageRectOnBoard, so they line up with the drawn screenshot. Pure: returns new shapes.
- */
-export function mapImageShapesToBoard(shapes: Shape[], imgW: number, imgH: number): Shape[] {
-  if (!(imgW > 0) || !(imgH > 0)) return shapes.map((s) => ({ ...s }));
-  const [x0, y0, w] = imageRectOnBoard(imgW, imgH);
-  const k = w / imgW;
-  const f = (p: Pt): Pt => [x0 + p[0] * k, y0 + p[1] * k];
-  return shapes.map((s) => mapShape(s, f, k));
 }
 
 /**

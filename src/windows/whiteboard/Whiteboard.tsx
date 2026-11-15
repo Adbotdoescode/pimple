@@ -12,17 +12,13 @@ import type {
 import { ShapeLayer } from "@/render/ShapeLayer";
 import { boardStyle } from "@/render/palette";
 import { graphMapper } from "@/render/geometry";
-import { VIEW_SCALE, composeBoard, contentBox, fitShapes, imageRectOnBoard, mapImageShapesToBoard, type Box } from "./layout";
+import { VIEW_SCALE, composeBoard, contentBox, type Box } from "./layout";
 import "./whiteboard.css";
-
-/** A captured screenshot the overlay response's coordinates refer to (pixels of the image). */
-export interface Backdrop { src: string; w: number; h: number }
 
 export interface WhiteboardProps {
   response: TutorResponse | null;
   /** Retained drawing shown dimmed while a new answer is pending (no caption text except "Thinking…"). */
   pending?: boolean;
-  backdrop?: Backdrop | null;
   visibleSegmentIds: string[];
   currentSegmentId: string | null;
   pulseShapeIds: string[];
@@ -232,7 +228,6 @@ interface BoardProps {
   theme: "light" | "dark";
   width: number;
   height: number;
-  backdrop: Backdrop | null;
 }
 
 interface SliderItem {
@@ -247,7 +242,7 @@ interface SliderItem {
  * (one CSS transform) glides to frame what has been drawn so far, so each step is large and centred
  * and the finished picture fills the sheet. Keyed by concept in the parent: a new answer starts fresh.
  */
-function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width, height, backdrop }: BoardProps) {
+function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width, height }: BoardProps) {
   const s = V;
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({});
   const [dragging, setDragging] = useState<string | null>(null);
@@ -264,17 +259,12 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
     };
   }, [dragging]);
 
-  // Overlay (image-pixel) coordinates are mapped onto the board over the screenshot; whiteboard
-  // answers are only tidied (composeBoard never moves geometry, so streaming never reshuffles it).
-  const prep = (shapes: Shape[]) =>
-    backdrop
-      ? fitShapes(mapImageShapesToBoard(shapes, backdrop.w, backdrop.h), undefined, 0, { grow: false })
-      : composeBoard(shapes);
-  const baseMain = useMemo(() => prep(response?.shapes ?? []), [response?.shapes, backdrop]);
-  const baseSide = useMemo(() => prep(sideNote?.shapes ?? []), [sideNote?.shapes, backdrop]);
+  // Whiteboard answers are only tidied: composeBoard never moves geometry, so streaming never reshuffles it.
+  const prep = (shapes: Shape[]) => composeBoard(shapes);
+  const baseMain = useMemo(() => prep(response?.shapes ?? []), [response?.shapes]);
+  const baseSide = useMemo(() => prep(sideNote?.shapes ?? []), [sideNote?.shapes]);
   const mainShapes = useMemo(() => applySliders(baseMain, sliderValues), [baseMain, sliderValues]);
   const sideShapes = useMemo(() => applySliders(baseSide, sliderValues), [baseSide, sliderValues]);
-  const imgRect = backdrop ? imageRectOnBoard(backdrop.w, backdrop.h) : null;
   const sideIds = useMemo(() => sideNote?.segments.map((seg) => seg.id) ?? [], [sideNote]);
 
   const toView = useMemo(() => (p: Pt): Pt => [p[0] * s, p[1] * s], [s]);
@@ -283,14 +273,13 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
   // What the camera frames: everything drawn so far (the first step while nothing is drawn yet).
   const firstSegId = response?.segments[0]?.id;
   const focus = useMemo<Box>(() => {
-    if (imgRect) return { x: imgRect[0], y: imgRect[1], w: imgRect[2], h: imgRect[3] };
     const placedShapes = baseMain.filter((sh) => sh.kind !== "slider" || sh.rect);
     let seen = placedShapes.filter((sh) => visible.has(sh.segment_id));
     if (baseSide.length > 0) seen = [...seen, ...baseSide.filter((sh) => sh.kind !== "slider" || sh.rect)];
     if (seen.length === 0) seen = placedShapes.filter((sh) => sh.segment_id === firstSegId);
     if (seen.length === 0) seen = placedShapes;
     return contentBox(seen) ?? DEFAULT_FRAME;
-  }, [baseMain, baseSide, visible, firstSegId, imgRect?.[0], imgRect?.[1], imgRect?.[2], imgRect?.[3]]);
+  }, [baseMain, baseSide, visible, firstSegId]);
   const cam = frameBox(focus, width, height);
   const camCss = `translate(${cam.x.toFixed(1)}px, ${cam.y.toFixed(1)}px) scale(${cam.z.toFixed(4)})`;
 
@@ -352,40 +341,7 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
           </pattern>
         </defs>
         <g className={camClass} style={{ transform: camCss }}>
-          {!backdrop && <rect x={-4000} y={-4000} width={10000} height={9000} fill="url(#wb-grid)" />}
-          {backdrop && imgRect && (
-            <>
-              <defs>
-                <clipPath id="wb-backdrop-clip">
-                  <rect
-                    x={imgRect[0] * s}
-                    y={imgRect[1] * s}
-                    width={imgRect[2] * s}
-                    height={imgRect[3] * s}
-                    rx={12 * s}
-                  />
-                </clipPath>
-              </defs>
-              <image
-                href={backdrop.src}
-                x={imgRect[0] * s}
-                y={imgRect[1] * s}
-                width={imgRect[2] * s}
-                height={imgRect[3] * s}
-                preserveAspectRatio="none"
-                opacity={0.92}
-                clipPath="url(#wb-backdrop-clip)"
-              />
-              <rect
-                className="wb-backdrop-edge"
-                x={imgRect[0] * s}
-                y={imgRect[1] * s}
-                width={imgRect[2] * s}
-                height={imgRect[3] * s}
-                rx={12 * s}
-              />
-            </>
-          )}
+          <rect x={-4000} y={-4000} width={10000} height={9000} fill="url(#wb-grid)" />
           <ShapeLayer
             shapes={mainDraw}
             visibleSegmentIds={visibleSegmentIds}
@@ -499,7 +455,6 @@ export function Whiteboard(props: WhiteboardProps) {
     onToggleTheme,
     onClose,
     pending = false,
-    backdrop = null,
     frameless = false,
     openSeq = 0,
     closing = false,
@@ -539,7 +494,6 @@ export function Whiteboard(props: WhiteboardProps) {
                 theme={theme}
                 width={stage.w}
                 height={stage.h}
-                backdrop={backdrop}
               />
             </div>
           )}
