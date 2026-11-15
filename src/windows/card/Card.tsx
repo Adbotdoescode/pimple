@@ -517,7 +517,7 @@ export function Card({
                 <div className={`gizmo-row gizmo-${gizmo} fade-up`} role="status">
                   {gizmo === "offered" && (
                     <>
-                      <span className="gizmo-text">Want an interactive diagram for this?</span>
+                      <span className="gizmo-text">Interactive diagram</span>
                       <button
                         type="button"
                         className="gizmo-pill gizmo-yes"
