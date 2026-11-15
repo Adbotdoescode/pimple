@@ -3,6 +3,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   imagePxToScreen,
   type CaptureResult,
+  type Phase,
   type Pt,
   type SessionSnapshot,
   type Shape,
@@ -18,6 +19,11 @@ const MAIN_FADE_MS = 400;
 const SIDE_FADE_MS = 450;
 const SIDE_DIM = 0.3;
 const FLAT_BG = { lum: 0.9, hue: 0 };
+const TARGET_FADE_MS = 200;
+/** Phases in which the debug fixture backdrop may show. Never while the user is aiming. */
+const FIXTURE_PHASES = new Set<Phase>([
+  "summarising", "listening", "thinking", "verifying", "speaking", "interrupted", "checking",
+]);
 
 interface Layer {
   capture: CaptureResult;
@@ -94,13 +100,23 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
     };
   }, [imagePath]);
 
+  // Window size in view points, so the shape layers can keep labels on screen.
+  const [viewport, setViewport] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  useEffect(() => {
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const current = snapshot?.currentSegmentId ?? null;
-  const phase = snapshot?.phase ?? "idle";
+  const phase: Phase = snapshot?.phase ?? "idle";
+  // Entering a drag: the previous session's shapes fade out quickly, and the backdrop hides at once.
+  const inTarget = phase === "targeting" || phase === "capturing";
 
   const main = useMemo<Layer | null>(() => {
     const cap = snapshot?.capture;
     const resp = snapshot?.response;
-    if (!snapshot || phase === "idle" || !cap || !resp || resp.surface !== "overlay") return null;
+    if (!snapshot || phase === "idle" || inTarget || !cap || !resp || resp.surface !== "overlay") return null;
     const visibleIds = [...snapshot.spokenSegmentIds, ...(current ? [current] : [])];
     return {
       capture: cap,
@@ -108,12 +124,12 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       visibleIds,
       pulseIds: snapshot.pulseShapeIds,
     };
-  }, [snapshot, phase, current]);
+  }, [snapshot, phase, inTarget, current]);
 
   const side = useMemo<Layer | null>(() => {
     const cap = snapshot?.capture;
     const sn = snapshot?.sideNote;
-    if (!snapshot || phase === "idle" || !cap || !sn || snapshot.response?.surface === "whiteboard") return null;
+    if (!snapshot || phase === "idle" || inTarget || !cap || !sn || snapshot.response?.surface === "whiteboard") return null;
     const spoken = new Set([...snapshot.spokenSegmentIds, ...(current ? [current] : [])]);
     const matching = sn.segments.filter((s) => spoken.has(s.id)).map((s) => s.id);
     return {
@@ -122,7 +138,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       visibleIds: matching.length > 0 ? matching : sn.segments.map((s) => s.id),
       pulseIds: snapshot.pulseShapeIds,
     };
-  }, [snapshot, phase, current]);
+  }, [snapshot, phase, inTarget, current]);
 
   // Debug fixture backdrop: the raw capture drawn under the shapes, so a headless preview can
   // check alignment. Forced on by `?fixtureBackdrop=1` or by the snapshot's isFixture flag.
@@ -132,12 +148,15 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
   );
   const isFixture = (snapshot as (SessionSnapshot & { isFixture?: boolean }) | null)?.isFixture === true;
   const backdrop = useMemo<CaptureResult | null>(() => {
-    if (!snapshot || phase === "idle" || !snapshot.capture) return null;
+    if (!snapshot || !FIXTURE_PHASES.has(phase) || !snapshot.capture) return null;
     return isFixture || forcedByUrl ? snapshot.capture : null;
   }, [snapshot, phase, isFixture, forcedByUrl]);
 
-  const mainHeld = useRetained(main, MAIN_FADE_MS);
-  const sideHeld = useRetained(side, SIDE_FADE_MS);
+  // Fade lengths: 200 ms when a drag starts, 400 ms at session end, 450 ms for a side note cleared mid-session.
+  const mainFadeMs = inTarget ? TARGET_FADE_MS : MAIN_FADE_MS;
+  const sideFadeMs = inTarget ? TARGET_FADE_MS : phase === "idle" ? MAIN_FADE_MS : SIDE_FADE_MS;
+  const mainHeld = useRetained(main, mainFadeMs);
+  const sideHeld = useRetained(side, sideFadeMs);
   const backdropHeld = useRetained(backdrop, MAIN_FADE_MS);
 
   const pixelScale = mainHeld.value?.capture.pixelScale ?? sideHeld.value?.capture.pixelScale ?? 1;
@@ -161,7 +180,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
         background: "transparent",
       }}
     >
-      {backdropHeld.value && (
+      {backdropHeld.value && !inTarget && (
         <g style={{ opacity: backdropHeld.visible ? 1 : 0, transition: `opacity ${MAIN_FADE_MS}ms ease` }}>
           <g className="gt-fixture-in">
             <FixtureBackdrop capture={backdropHeld.value} origin={origin} />
@@ -169,7 +188,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
         </g>
       )}
       {mainLayer && (
-        <g style={{ opacity: mainHeld.visible ? 1 : 0, transition: `opacity ${MAIN_FADE_MS}ms ease` }}>
+        <g style={{ opacity: mainHeld.visible ? 1 : 0, transition: `opacity ${mainFadeMs}ms ease` }}>
           <ShapeLayer
             shapes={mainLayer.shapes}
             visibleSegmentIds={mainLayer.visibleIds}
@@ -179,11 +198,12 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
             scale={1 / mainLayer.capture.pixelScale}
             styleFor={mainStyle}
             opacity={dimMain ? SIDE_DIM : 1}
+            viewport={viewport}
           />
         </g>
       )}
       {sideLayer && (
-        <g style={{ opacity: sideHeld.visible ? 1 : 0, transition: `opacity ${SIDE_FADE_MS}ms ease` }}>
+        <g style={{ opacity: sideHeld.visible ? 1 : 0, transition: `opacity ${sideFadeMs}ms ease` }}>
           <ShapeLayer
             shapes={sideLayer.shapes}
             visibleSegmentIds={sideLayer.visibleIds}
@@ -192,6 +212,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
             toView={toViewFor(sideLayer.capture, origin)}
             scale={1 / sideLayer.capture.pixelScale}
             styleFor={sideStyle}
+            viewport={viewport}
           />
         </g>
       )}

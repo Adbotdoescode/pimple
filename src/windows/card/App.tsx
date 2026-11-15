@@ -115,9 +115,17 @@ export default function App() {
 
   useEffect(() => {
     if (phase === "capturing" || phase === "targeting") {
-      // The app hides itself for screenshots; the next show-phase must call show again.
+      // Hide at once so the old card does not cover the screen being aimed at.
+      // The next show-phase calls show again.
       clearHide();
-      visibleRef.current = false;
+      if (visibleRef.current) {
+        visibleRef.current = false;
+        try {
+          invokeCmd("hide_window", { label: "card" }).catch((e) => logErr("hide_window", e));
+        } catch (e) {
+          logErr("hide_window", e);
+        }
+      }
       return;
     }
     if (SHOW_PHASES.has(phase) || (phase === "idle" && hasError)) showCard();

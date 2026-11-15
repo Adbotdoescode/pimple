@@ -1,6 +1,6 @@
 import { useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Pt, Shape } from "@shared/contracts";
-import { labelHaloFor, type ShapeStyle } from "./palette";
+import type { ShapeStyle } from "./palette";
 import {
   arrowHead,
   boxOverlapArea,
@@ -56,7 +56,6 @@ interface Ctx {
   style: ShapeStyle;
   side: boolean;
   delay: number;
-  labelStroke: string;
   placements: Map<string, LabelPlacement>;
 }
 
@@ -103,10 +102,10 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
   return (
     <g className={side ? "gt-root gt-sidenote" : "gt-root"} style={{ opacity }}>
       <defs>
-        <filter id={`gt-shadow-${uid}`} x="-15%" y="-15%" width="130%" height="140%">
+        <filter id={`gt-shadow-${uid}`} filterUnits="userSpaceOnUse" x={-5000} y={-5000} width={20000} height={20000}>
           <feDropShadow dx={0} dy={1.5} stdDeviation={1.6} floodColor="#000000" floodOpacity={0.28} />
         </filter>
-        <filter id={`gt-blur-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+        <filter id={`gt-blur-${uid}`} filterUnits="userSpaceOnUse" x={-5000} y={-5000} width={20000} height={20000}>
           <feGaussianBlur stdDeviation={2.5} />
         </filter>
       </defs>
@@ -147,7 +146,6 @@ function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing, pla
     style,
     side,
     delay: index * STEP_MS,
-    labelStroke: labelHaloFor(style.stroke),
     placements,
   };
   let built: Built | null;
@@ -479,7 +477,7 @@ function headNodes(d: string, c: Ctx, tag: string): ReactNode[] {
 }
 
 function labelStyle(c: Ctx): { fill: string; stroke: string } {
-  return { fill: c.style.stroke, stroke: c.labelStroke };
+  return { fill: c.style.stroke, stroke: c.style.labelHalo ?? "none" };
 }
 
 /** Text label. Fades in after the stroke, unless it is a sidenote (the group handles entrance). */

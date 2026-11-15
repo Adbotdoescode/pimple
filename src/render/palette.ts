@@ -1,6 +1,11 @@
 import type { ColorRole } from "@shared/contracts";
 
-export interface ShapeStyle { stroke: string; halo?: string; fill?: string }
+export interface ShapeStyle {
+  stroke: string;
+  halo?: string;       // underlay behind the stroke
+  labelHalo?: string;  // halo behind label text; undefined means no label halo
+  fill?: string;
+}
 
 const LIGHT_BG: Record<ColorRole, string> = {
   primary: "#1D4ED8",
@@ -84,7 +89,11 @@ export function adaptiveStyle(
   const dh = Math.abs(hueFromRgb(r, g, b) - sampledBg.hue) % 360;
   const hueDiff = Math.min(dh, 360 - dh);
   const needsHalo = ratio < 3 || (hueDiff < 25 && ratio < 4.5);
-  return needsHalo ? { stroke, halo: labelHaloFor(stroke) } : { stroke };
+  const haloStyle = needsHalo ? { halo: labelHaloFor(stroke) } : {};
+  const labelHalo = ratio < 3
+    ? labelHaloFor(stroke)
+    : sampledBg.lum > 0.4 ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.5)";
+  return { stroke, labelHalo, ...haloStyle };
 }
 
 /** Style for a shape drawn on the whiteboard, which has a known theme and no halo. */
