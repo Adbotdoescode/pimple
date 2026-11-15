@@ -192,6 +192,7 @@ export const CMD = {
   sttCancel: "stt_cancel",                  // () → void. Discard, no stt:final
   sttModelStatus: "stt_model_status",       // () → SttModelStatus (starts download if missing)
   ttsSynthesize: "tts_synthesize",          // ({text, voiceId?}) → TtsSynthResult (disk-cached by hash(text,voice,model))
+  ttsVoices: "tts_voices",                  // v3: () → {voiceId, name, category, previewUrl, labels: Record<string,string>}[] (GET /v1/voices; cache 10 min)
   ttsCredit: "tts_credit",                  // () → {used: number, limit: number, provider: TtsProvider}
   getSecret: "get_secret",                  // ({name: SecretName}) → string | null   (never log the value)
   setSecret: "set_secret",                  // ({name, value}) → void (writes macOS Keychain)
@@ -281,6 +282,7 @@ export interface AppSettings {
   ttsProvider: TtsProvider;     // default from GT_TTS env, else "elevenlabs"
   voiceId: string;              // default "SAz9YHcvj6GT2YYXdXww" (River)
   bubbleEdge: "left" | "right"; // default right
+  bubbleY: number;              // v3: resting height as a fraction of the display height (0..1), default 0.5
   whiteboardTheme: "light" | "dark";
 }
 
@@ -315,6 +317,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttsProvider: "elevenlabs",
   voiceId: "SAz9YHcvj6GT2YYXdXww",
   bubbleEdge: "right",
+  bubbleY: 0.5,
   whiteboardTheme: "light",
 };
 
