@@ -48,6 +48,7 @@ export default defineConfig(async () => ({
       "@tauri-apps/plugin-opener",
       "@tauri-apps/plugin-os",
       "@tauri-apps/plugin-process",
+      "tauri-plugin-macos-permissions-api",
       "@anthropic-ai/sdk",
       "partial-json",
       "zod",
