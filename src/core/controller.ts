@@ -21,6 +21,8 @@ import { streamTutor, type TutorCallInput, type TutorStreamHandlers } from "./cl
 import { rewriteSentence, verifySegment } from "./verifier";
 import { createTtsPlayer } from "./ttsPlayer";
 import { wireToTutorResponse } from "./jsonStream";
+import { buildGizmoRequest, generateGizmo } from "./gizmo";
+import { gizmoSession } from "./prompts";
 import { sessionStore, type SessionData } from "./store";
 import { mergeSettings, saveSettings } from "./settingsStore";
 
@@ -34,6 +36,8 @@ type Stage =
   | "feedback" // streaming feedback for the check answer
   | "ending" // speaking the parked-questions sentence, then idle
   | "frozen" // stopped by an interrupt or shut-up: the mic is open for the student's next question
+  | "gizmoSpeech" // speaking "Want an interactive diagram for this?"
+  | "gizmoAsk" // mic open for the answer to that offer
   | "done";
 
 /** A space-bar interruption of the main explanation. */
@@ -110,6 +114,7 @@ interface Turn {
   audioStarted: boolean; // first-audio latency recorded for this turn
   freezeMode: "hold" | "tap" | "interrupt" | "shut" | null; // how a frozen turn's mic was opened
   frozenMicPending: boolean; // open the mic once the "Which part?" line has played
+  pendingOffer: boolean; // a gizmo offer is waiting for the student's answer
   replaceResponse: boolean; // a follow-up keeps the old shapes until the new answer's first segment is released
 }
 
@@ -131,7 +136,17 @@ let runOverride: DebugInject["tts"];
 /** Text of segments queued for speech, keyed by id. Covers the special ids (summary, check, back...). */
 const queuedText = new Map<string, string>();
 /** Ids that are not part of the main or side-note segment lists. */
-const SPECIAL_IDS = new Set(["whichpart", "back", "check", "summary", "prompt", "parked"]);
+const SPECIAL_IDS = new Set([
+  "whichpart",
+  "back",
+  "check",
+  "summary",
+  "prompt",
+  "parked",
+  "gizmo-offer",
+  "gizmo-ready",
+  "gizmo-fail",
+]);
 
 const st = () => sessionStore.getState();
 const patch = (p: Partial<SessionData>) => st().patch(p);
@@ -190,6 +205,7 @@ function beginTurn(question: string, stage: Stage = "generating"): Turn {
     audioStarted: false,
     freezeMode: null,
     frozenMicPending: false,
+    pendingOffer: false,
     replaceResponse: false,
   };
   turn = t;
@@ -488,6 +504,123 @@ function startCheckSpeech(t: Turn, check: string): void {
   queue(t, [{ id: "check", text: check }], "speak");
 }
 
+// ───── interactive diagram (gizmo, phase 2) ─────
+const ACCEPT_RE = /^(yes|yeah|yep|sure|please|ok(ay)?|go ahead|do it)\b/i;
+const DECLINE_RE = /^(no|nah|nope|not now|skip)\b/i;
+const VOICE_KIND_RE = /(interactive|gizmo|simulation|animat)\w*.*(diagram|this|it)?/i;
+const VOICE_VERB_RE = /(make|build|show|give|create)/i;
+
+/** The build in flight. Aborted by card-close and by a new capture. */
+let gizmoAc: AbortController | null = null;
+/** Question to retry on the whiteboard after a failed build, while the student's answer is pending. */
+let gizmoFailedQuestion: string | null = null;
+/** Open the mic once the speech queued without a turn (gizmo-fail) has finished. */
+let asideListen = false;
+
+function gizmoLog(state: string): void {
+  console.info("[brain] gizmo", state);
+}
+
+function isVoiceRequest(text: string): boolean {
+  return VOICE_KIND_RE.test(text) && VOICE_VERB_RE.test(text);
+}
+
+function resetGizmo(): void {
+  gizmoAc?.abort();
+  gizmoAc = null;
+  gizmoSession.offeredThisSession = false;
+  gizmoFailedQuestion = null;
+  asideListen = false;
+}
+
+/** Speech that is not part of a turn (gizmo-ready, gizmo-fail). It plays after whatever is queued. */
+function speakAside(id: string, text: string, listenAfter = false): void {
+  queuedText.set(id, text);
+  if (listenAfter) asideListen = true;
+  player.append([{ id, text }]);
+}
+
+function wantsGizmoOffer(): boolean {
+  return st().response?.gizmo_offer.recommended === true && !gizmoSession.offeredThisSession;
+}
+
+function startGizmoOffer(t: Turn): void {
+  gizmoSession.offeredThisSession = true;
+  patch({ gizmo: { status: "offered" } });
+  gizmoLog("offered");
+  t.stage = "gizmoSpeech";
+  setPhase("speaking");
+  queue(t, [{ id: "gizmo-offer", text: "Want an interactive diagram for this?" }], "speak");
+}
+
+/** The offer is settled: carry on with the check question as usual. */
+function continueAfterOffer(t: Turn): void {
+  t.pendingOffer = false;
+  t.stage = "generating";
+  t.streamDone = true;
+  t.playerIdle = true;
+  advance(t);
+}
+
+function declineGizmo(): void {
+  if (st().gizmo.status === "offered") {
+    patch({ gizmo: { status: "none" } });
+    gizmoLog("declined");
+  }
+}
+
+/** Starts the build without awaiting it. The speech path carries on; the result arrives later. */
+function acceptGizmo(resp: TutorResponse, question: string): void {
+  gizmoAc?.abort();
+  const ac = new AbortController();
+  gizmoAc = ac;
+  gizmoSession.offeredThisSession = true;
+  patch({ gizmo: { status: "building" } });
+  gizmoLog("building");
+  void generateGizmo(buildGizmoRequest(resp, question), { signal: ac.signal }).then((res) => {
+    if (ac.signal.aborted) return; // card closed or a new capture
+    if (gizmoAc === ac) gizmoAc = null;
+    if (res.ok && res.html) {
+      patch({ gizmo: { status: "ready", html: res.html } });
+      gizmoLog(`ready in ${res.ms} ms`);
+      invoke(CMD.showWindow, { label: "gizmo" }).catch((err) =>
+        console.warn("[brain] show gizmo window failed:", errMsg(err)),
+      );
+      speakAside("gizmo-ready", "Your diagram is ready.");
+    } else {
+      patch({ gizmo: { status: "failed" } });
+      gizmoLog(`failed after ${res.ms} ms: ${res.error ?? "unknown"}`);
+      gizmoFailedQuestion = question;
+      speakAside("gizmo-fail", "I couldn't build the diagram in time. Want me to draw it on the whiteboard instead?", true);
+    }
+  });
+}
+
+/** The student's answer to the offer. Empty or no answer counts as no. Any other question is a normal follow-up. */
+function answerOffer(t: Turn, text: string): void {
+  if (!isCurrent(t) || !t.pendingOffer) return;
+  const a = text.trim();
+  if (ACCEPT_RE.test(a)) {
+    const r = st().response;
+    if (r) acceptGizmo(r, t.question);
+    continueAfterOffer(t);
+    return;
+  }
+  if (a && !DECLINE_RE.test(a)) {
+    if (isEcho(a)) {
+      console.info("[brain] dropped echo transcript:", a);
+      scheduleMic(() => answerOffer(t, ""));
+      return;
+    }
+    t.pendingOffer = false;
+    gizmoLog("offer skipped: follow-up question");
+    void ask(a);
+    return;
+  }
+  declineGizmo();
+  continueAfterOffer(t);
+}
+
 /** Move the turn forward once the stream and the speech queue are both done. */
 function advance(t: Turn): void {
   if (!isCurrent(t) || !t.playerIdle) return;
@@ -514,6 +647,10 @@ function advance(t: Turn): void {
     case "generating":
     case "feedback": {
       if (!t.streamDone) return;
+      if (t.stage === "generating" && wantsGizmoOffer()) {
+        startGizmoOffer(t); // after the last main segment, before the check question
+        return;
+      }
       const next = nextCheck(t);
       if (next) startCheckSpeech(t, next);
       else endSession(t);
@@ -532,6 +669,12 @@ function advance(t: Turn): void {
     case "ending":
       t.stage = "done";
       setPhase("idle", "parked sentence done");
+      return;
+    case "gizmoSpeech":
+      t.stage = "gizmoAsk";
+      t.pendingOffer = true;
+      setPhase("listening");
+      scheduleMic(() => answerOffer(t, "")); // no mic: treat as no answer
       return;
     default:
       return;
@@ -730,6 +873,7 @@ function resumeOrIdle(): void {
 function closeCard(): void {
   cancelAll();
   pendingFollowUp = null;
+  resetGizmo();
   st().resetSession();
   patch({ notice: null }); // the notice lasts for the session only
   recentSpoken.length = 0;
@@ -1068,7 +1212,7 @@ function runGatedAttempt(t: Turn, base: TutorCallInput, allowRegen: boolean, car
     .finally(() => t.ac.signal.removeEventListener("abort", onTurnAbort));
 }
 
-async function ask(question: string): Promise<void> {
+async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}): Promise<void> {
   const q = question.trim();
   if (!q) return;
   cancelMicTimer(); // a reopen scheduled for a dropped utterance must not fire into this turn
@@ -1080,6 +1224,7 @@ async function ask(question: string): Promise<void> {
   }
   const followUp = pendingFollowUp;
   pendingFollowUp = null;
+  gizmoFailedQuestion = null;
   cancelAll();
   const t = beginTurn(q);
   t.replaceResponse = !!followUp;
@@ -1104,6 +1249,7 @@ async function ask(question: string): Promise<void> {
     question: q,
     settings: st().settings,
     signal: t.ac.signal,
+    surfaceHint: opts.surfaceHint,
     followUp: followUp
       ? {
           previousQuestion: followUp.previousQuestion,
@@ -1125,6 +1271,7 @@ async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolea
   cancelAll();
   st().resetSession(); // a new capture starts a new session: response, shapes, sideNote, pulse ids all cleared
   pendingFollowUp = null;
+  resetGizmo();
   setPhase("capturing");
   patch({ mode: req.mode, isFixture: !!fixture, timings: { captureAt: Date.now() } });
   try {
@@ -1204,6 +1351,18 @@ async function handleIntent(i: UiIntent): Promise<void> {
     case "typed-question": {
       if (!st().fullCapture && !(await runCapture({ mode: "click" }))) return;
       const t = turn;
+      if (t?.pendingOffer) {
+        answerOffer(t, i.text);
+        return;
+      }
+      if (gizmoFailedQuestion !== null) {
+        const q = gizmoFailedQuestion;
+        gizmoFailedQuestion = null;
+        if (ACCEPT_RE.test(i.text.trim())) {
+          await ask(q, { surfaceHint: "whiteboard" });
+          return;
+        }
+      }
       if (st().phase === "checking" && t?.stage === "awaitingAnswer") {
         await handleCheckAnswer(t, i.text); // a typed answer counts as the check answer
         return;
@@ -1236,8 +1395,18 @@ async function handleIntent(i: UiIntent): Promise<void> {
       saveSettings(next);
       return;
     }
-    case "accept-gizmo":
-    case "decline-gizmo":
+    case "accept-gizmo": {
+      const t = turn;
+      if (t?.pendingOffer) answerOffer(t, "yes");
+      else console.info("[brain] accept-gizmo with no pending offer");
+      return;
+    }
+    case "decline-gizmo": {
+      const t = turn;
+      if (t?.pendingOffer) answerOffer(t, "no");
+      else declineGizmo();
+      return;
+    }
     case "open-whiteboard":
       console.info("[brain] intent not handled in this milestone:", i.type);
       return;
@@ -1246,8 +1415,7 @@ async function handleIntent(i: UiIntent): Promise<void> {
 
 function onSegmentStarted(id: string): void {
   const t = turn;
-  if (!t) return;
-  recordFirstAudio(t, id);
+  if (t) recordFirstAudio(t, id);
   if (id === "back") patch({ sideNote: null }); // views fade the side note out as "Back to where we were" starts
   const before = st();
   const spokenText = textFor(id);
@@ -1269,7 +1437,15 @@ function onSegmentStarted(id: string): void {
 function onPlayerIdle(): void {
   patch({ currentSegmentId: null });
   // Ignore stale idle callbacks from a stopped queue while new speech is already playing.
-  if (!turn || player.isPlaying()) return;
+  if (player.isPlaying()) return;
+  if (asideListen) {
+    asideListen = false;
+    if (st().phase === "idle") {
+      setPhase("listening");
+      scheduleMic(() => patch({ error: MIC_DOWN }));
+    }
+  }
+  if (!turn) return;
   turn.playerIdle = true;
   advance(turn);
 }
@@ -1333,8 +1509,28 @@ export async function startController(): Promise<() => void> {
         return;
       }
       if (ph === "listening" || frozenListen || objection) {
+        // Yes/no answers to a gizmo offer or a whiteboard retry skip the short-word filter.
+        if (ph === "listening" && t?.pendingOffer) {
+          answerOffer(t, raw);
+          return;
+        }
+        if (ph === "listening" && gizmoFailedQuestion !== null) {
+          const q = gizmoFailedQuestion;
+          gizmoFailedQuestion = null;
+          if (ACCEPT_RE.test(raw)) {
+            void run(ask(q, { surfaceHint: "whiteboard" }));
+            return;
+          }
+        }
         if (raw && rejectUtterance(raw)) {
           scheduleMic(() => patch({ error: MIC_DOWN })); // stay listening, open the mic again once
+          return;
+        }
+        const r = st().response;
+        if (raw && !objection && r && isVoiceRequest(raw)) {
+          gizmoLog("requested by voice");
+          acceptGizmo(r, st().question ?? "");
+          scheduleMic(() => patch({ error: MIC_DOWN })); // the diagram builds while we keep listening
           return;
         }
         if (objection && t?.interruption) void run(handleObjection(t, t.interruption, raw));

@@ -51,6 +51,9 @@ export function imageBlock(capture: CaptureResult) {
   };
 }
 
+/** Session-level gizmo state the prompt reads. The controller sets it when a diagram is offered or built. */
+export const gizmoSession = { offeredThisSession: false };
+
 export function buildTutorUserText(input: TutorCallInput): string {
   const { capture } = input;
   const parts: string[] = [
@@ -58,6 +61,9 @@ export function buildTutorUserText(input: TutorCallInput): string {
     `Student question: "${input.question}"`,
   ];
 
+  if (gizmoSession.offeredThisSession) {
+    parts.push("An interactive diagram was already offered this session; keep gizmo_offer.recommended false.");
+  }
   if (input.followUp) {
     const f = input.followUp;
     const said = f.spokenSegments.map((s) => s.text).join(" ") || "nothing yet";

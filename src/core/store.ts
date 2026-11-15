@@ -78,14 +78,9 @@ function emptyResponse(): TutorResponse {
     segments: [],
     shapes: [],
     check_question: "",
-    gizmo_offer: { recommended: false, pitch: "" }, // phase 1: never recommended
+    gizmo_offer: { recommended: false, pitch: "" },
     parked: [],
   };
-}
-
-/** Phase 1: the gizmo offer is always off, whatever the model sent. */
-function normalizeResponse(r: TutorResponse): TutorResponse {
-  return { ...r, gizmo_offer: { ...r.gizmo_offer, recommended: false } };
 }
 
 function definedOnly<T extends object>(o: Partial<T>): Partial<T> {
@@ -98,10 +93,7 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
 
   setPhase: (phase) => set({ phase }),
 
-  patch: (partial) => {
-    if (partial.response) partial = { ...partial, response: normalizeResponse(partial.response) };
-    set(partial);
-  },
+  patch: (partial) => set(partial),
 
   // Every new session starts clean, including the TTS fallback notice.
   resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null }),
@@ -121,7 +113,7 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
   setMeta: (partial) =>
     set((s) => {
       const r = s.response ?? emptyResponse();
-      return { response: normalizeResponse({ ...r, ...definedOnly(partial) }) };
+      return { response: { ...r, ...definedOnly(partial) } };
     }),
 }));
 

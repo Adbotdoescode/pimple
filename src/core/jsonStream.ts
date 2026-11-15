@@ -76,7 +76,7 @@ function normalizeGrounding(g: unknown): Grounding {
 
 function normalizeGizmo(g: unknown): Gizmo {
   const pitch = isObj(g) && typeof g.pitch === "string" ? g.pitch : "";
-  return { recommended: false, pitch }; // phase 1: never offered
+  return { recommended: isObj(g) && g.recommended === true, pitch };
 }
 
 function normalizeParked(p: unknown): string[] {
@@ -85,7 +85,7 @@ function normalizeParked(p: unknown): string[] {
 
 /**
  * Normalises a whole (wire-format) response into a TutorResponse with safe defaults.
- * Invalid segments and shapes are dropped; gizmo_offer.recommended is always false.
+ * Invalid segments and shapes are dropped.
  */
 export function wireToTutorResponse(w: unknown): TutorResponse {
   const o = isObj(w) ? w : {};
