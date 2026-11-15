@@ -57,7 +57,22 @@ Built in four hours at a hackathon, on top of [Handy](https://github.com/cjpais/
 
 Contracts between the parts (response schema, capture, voice I/O, session snapshot, intents) live in `shared/contracts.ts`; the tutor's response schema is `shared/tutor_response.schema.json` and its system prompt is `shared/tutor_system_prompt.md`. More detail in `docs/ARCHITECTURE.md`.
 
-## Setup
+## Install (download)
+
+1. Download **Pimple_0.1.0_aarch64.dmg** (or **Pimple.app.zip**) from the [Releases](../../releases) page. Apple Silicon Macs (tested on macOS 26).
+2. Open the dmg and drag **Pimple** into **Applications**.
+3. The first time, right-click Pimple in Applications and choose **Open**, then **Open** again. The build is ad-hoc signed and not notarized, so macOS asks once. If macOS says the app is damaged, run:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Pimple.app
+   ```
+4. Pimple lives in the menu bar (no Dock icon). On first launch it opens a short setup:
+   - your **Anthropic API key** (required; get one at console.anthropic.com);
+   - an optional **ElevenLabs API key** (from elevenlabs.io; without it Pimple uses the Mac voice), then a voice;
+   - the macOS permissions it needs: **Screen Recording**, **Microphone** and **Accessibility**.
+   Keys are checked with one quick request and stored only in your macOS Keychain. They never leave your Mac except to call those APIs, and never live in this repo.
+5. The speech model (about 700 MB) downloads in the background on first launch. Then click the bubble and ask.
+
+## Setup (from source)
 
 Requirements: macOS on Apple Silicon, [Rust](https://rustup.rs), [Bun](https://bun.sh), Xcode Command Line Tools.
 
@@ -66,7 +81,7 @@ bun install
 bun run tauri dev          # or scripts/dev.sh (logs to /tmp/glass-tutor-dev.log)
 ```
 
-**API keys are never stored in the repo.** On first run, open the menu-bar icon → Keys… and paste:
+**API keys are never stored in the repo.** On first run Pimple opens its setup screen (or use the menu-bar icon → Keys… later; "Reset keys" clears them) and asks for:
 
 - an Anthropic API key (required);
 - an ElevenLabs API key and optionally a voice ID (optional; without them the macOS voice is used).

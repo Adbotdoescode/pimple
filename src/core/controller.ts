@@ -466,6 +466,30 @@ function tryMic(): Promise<boolean> {
   return micStarting;
 }
 
+/** First run: re-read whether the Anthropic key is set. A failed read counts as set up. */
+async function refreshNeedsSetup(): Promise<void> {
+  let needs = false;
+  try {
+    const keys = await invoke<Record<string, boolean>>(CMD.keysStatus);
+    needs = !keys?.anthropic;
+  } catch (err) {
+    console.warn("[brain] keys_status failed, assuming set up:", errMsg(err));
+  }
+  if (st().needsSetup !== needs) console.info("[brain] needsSetup:", needs);
+  patch({ needsSetup: needs });
+}
+
+/** While the key is missing, nothing captures and nothing calls Claude. The settings window opens instead. */
+function blockedForSetup(): boolean {
+  if (!st().needsSetup) return false;
+  console.info("[brain] blocked: needs setup");
+  patch({ error: "Set up Pimple first — add your Anthropic key" });
+  invoke(CMD.showWindow, { label: "settings" }).catch((err) =>
+    console.warn("[brain] show settings failed:", errMsg(err)),
+  );
+  return true;
+}
+
 /** Card-side hint when the mic will not open by itself (micAutoOpen off). */
 function holdToTalkHint(): void {
   console.info("[brain] mic waiting for Space (micAutoOpen off)");
@@ -1367,6 +1391,7 @@ async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolea
 }
 
 async function handleTargetCommit(i: Extract<UiIntent, { type: "target-commit" }>): Promise<void> {
+  if (blockedForSetup()) return;
   if (await runCapture({ mode: i.mode, region: i.region })) await startListening(); // mic opens straight away
 }
 
@@ -1387,6 +1412,7 @@ function parseRegion(v: unknown): RectPts | undefined {
 }
 
 async function handleDebugInject(d: DebugInject): Promise<void> {
+  if (blockedForSetup()) return;
   runOverride = d.tts;
   const region = parseRegion((d as { region?: unknown }).region);
   if (!(await runCapture({ mode: d.mode ?? "click", region }, d.capture))) return;
@@ -1416,6 +1442,7 @@ async function handleDebugInject(d: DebugInject): Promise<void> {
 async function handleIntent(i: UiIntent): Promise<void> {
   switch (i.type) {
     case "bubble-click":
+      if (blockedForSetup()) return;
       if (await runCapture({ mode: "click" })) await startListening();
       return;
     case "target-start":
@@ -1425,6 +1452,7 @@ async function handleIntent(i: UiIntent): Promise<void> {
       await handleTargetCommit(i);
       return;
     case "typed-question": {
+      if (blockedForSetup()) return;
       if (!st().fullCapture && !(await runCapture({ mode: "click" }))) return;
       const t = turn;
       if (t?.pendingOffer) {
@@ -1469,6 +1497,7 @@ async function handleIntent(i: UiIntent): Promise<void> {
       const next = mergeSettings(st().settings, i.settings);
       patch({ settings: next });
       saveSettings(next);
+      void refreshNeedsSetup();
       return;
     }
     case "accept-gizmo": {
@@ -1644,6 +1673,8 @@ export async function startController(): Promise<() => void> {
       console.warn("[brain] tts fallback:", reason);
       patch({ notice: `ElevenLabs unavailable — using the Mac voice${reason ? ` (${reason})` : ""}` });
     }),
+    listen("keys:changed", () => void refreshNeedsSetup()),
+    listen("onboarding:show", () => void refreshNeedsSetup()),
     listen(EV.spaceTap, () => void run(onInterrupt("tap"))),
     listen(EV.spaceHoldStart, () => void run(onInterrupt("hold"))),
     listen(EV.spaceHoldEnd, () => onSpaceHoldEnd()),
@@ -1654,6 +1685,7 @@ export async function startController(): Promise<() => void> {
     }),
   ]);
 
+  void refreshNeedsSetup();
   return () => {
     offStarted();
     offIdle();

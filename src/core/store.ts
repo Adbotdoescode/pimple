@@ -24,6 +24,7 @@ export interface VerifierView {
  */
 export type BrainSnapshot = Omit<SessionSnapshot, "verifier"> & {
   isFixture: boolean;
+  needsSetup: boolean; // no Anthropic key yet: capture and Claude are blocked until keys are set
   micOpen: boolean; // the mic is open (or opening) on the Rust side; set only through the controller's setMicOpen
   notice: string | null;
   verifier: VerifierView | null;
@@ -47,6 +48,7 @@ export interface SessionStore extends SessionData {
 export function initialSnapshot(settings: AppSettings): BrainSnapshot {
   return {
     isFixture: false,
+    needsSetup: false,
     micOpen: false,
     notice: null,
     phase: "idle",
@@ -99,7 +101,7 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
 
   // Every new session starts clean, including the TTS fallback notice.
   // The gizmo survives a new capture; card-close clears it.
-  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null, gizmo: get().gizmo }),
+  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null, gizmo: get().gizmo, needsSetup: get().needsSetup }),
 
   appendSegment: (seg) =>
     set((s) => {
@@ -128,6 +130,7 @@ export function getSnapshot(): BrainSnapshot {
   const s = sessionStore.getState();
   return {
     isFixture: s.isFixture,
+    needsSetup: s.needsSetup,
     micOpen: s.micOpen,
     notice: s.notice,
     phase: s.phase,
