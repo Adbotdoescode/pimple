@@ -17,6 +17,8 @@ const TINT: Record<string, [number, number, number, number]> = {
   speak: [0.75, 0.9, 1, 0.55],
   interrupt: [1, 0.66, 0.2, 0.7],
 };
+/** Resting drop while the app still needs its key: a gentle amber, slowly breathing. */
+const SETUP_TINT: [number, number, number, number] = [1, 0.7, 0.24, 0.42];
 
 type BubbleState =
   | "idle"
@@ -56,10 +58,15 @@ export interface BubbleProps {
   motion?: number;
   /** Drag callbacks, wired later by the lead. onClick is owned by Bubble. */
   gestures?: Partial<Omit<BubbleGestureOptions, "onClick">>;
+  /** No key yet: the resting drop glows amber and a click opens the app window (the brain's job). */
+  needsSetup?: boolean;
+  /** Pointer entered / left the drop (used for the "Set up Pimple" hint). */
+  onHover?: (over: boolean) => void;
 }
 
-export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }: BubbleProps) {
+export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures, needsSetup = false, onHover }: BubbleProps) {
   const state: BubbleState = STATE_OF[phase] ?? "idle";
+  const setup = needsSetup && state === "idle";
   const listening = state === "listen" || state === "check";
 
   const level = useSttLevel(listening);
@@ -68,13 +75,15 @@ export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }:
 
   // Tint + breathing halo for the WebGL drop (speaking pulses, thinking breathes, mic follows level).
   useEffect(() => {
-    lensState.tint = TINT[state] ?? TINT.idle;
+    lensState.tint = setup ? SETUP_TINT : (TINT[state] ?? TINT.idle);
     let raf = 0;
     const t0 = performance.now();
     const tick = () => {
       const t = (performance.now() - t0) / 1000;
       lensState.pulse =
-        state === "speak"
+        setup
+          ? 0.35 + 0.3 * Math.sin(t * 1.7)
+          : state === "speak"
           ? 0.5 + 0.5 * Math.sin(t * 7)
           : state === "think" || state === "verify"
             ? 0.5 + 0.5 * Math.sin(t * 3)
@@ -83,10 +92,10 @@ export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }:
               : 0;
       raf = requestAnimationFrame(tick);
     };
-    if (state !== "idle" && state !== "target") raf = requestAnimationFrame(tick);
+    if (setup || (state !== "idle" && state !== "target")) raf = requestAnimationFrame(tick);
     else lensState.pulse = 0;
     return () => cancelAnimationFrame(raf);
-  }, [state]);
+  }, [state, setup]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
@@ -137,7 +146,10 @@ export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }:
         aria-label="Pimple"
         className="gt-bubble"
         data-state={state}
+        data-setup={setup ? "1" : undefined}
         onKeyDown={onKeyDown}
+        onPointerEnter={() => onHover?.(true)}
+        onPointerLeave={() => onHover?.(false)}
         {...pointer}
       >
         <span className="gt-layer gt-glow" aria-hidden="true" />

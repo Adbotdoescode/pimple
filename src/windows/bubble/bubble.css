@@ -257,6 +257,15 @@ html:has(.gt-stage) #root {
 .gt-bubble[data-state="interrupt"] .gt-amber {
   opacity: 1;
 }
+/* Not set up yet: a soft amber rim that breathes, so the resting drop asks to be clicked. */
+.gt-bubble[data-setup="1"] .gt-amber {
+  opacity: 0.55;
+  animation: gt-setup-breathe 3.6s ease-in-out infinite;
+}
+@keyframes gt-setup-breathe {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
 
 /* Gloss: smaller, softer ellipse over the top third. */
 .gt-gloss {

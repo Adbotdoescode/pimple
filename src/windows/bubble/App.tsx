@@ -1,4 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import { emitTo } from "@tauri-apps/api/event";
 import type { UiIntent } from "@shared/contracts";
 import { EV, emitEvent } from "../../lib/ipc";
 import { useSession } from "../../lib/sessionMirror";
@@ -11,6 +12,14 @@ import { startLiquidLens } from "./liquidLens";
 // the injected rule below sizes that stage to the wrapper (instead of the viewport) so the glow
 // filter and squash transform only touch a small layer, even when the window covers the display.
 // useBubbleMotion writes --lx/--ly/transform/filter/opacity straight to the DOM every frame.
+/** Sent to the overlay, which draws the "Set up Pimple" pill beside the resting drop for `ms`. */
+export const SETUP_HINT_EVENT = "bubble:setup-hint";
+const HINT_EVERY_MS = 20000;
+const HINT_SHOW_MS = 5200;
+function setupHint(ms: number): void {
+  emitTo("overlay", SETUP_HINT_EVENT, { ms }).catch(() => {});
+}
+
 const WRAP = 504;
 const WRAP_CSS = `.gt-wrap .gt-stage { width: 100%; height: 100%; }`;
 const WRAP_STYLE: CSSProperties = {
@@ -29,6 +38,23 @@ export default function App() {
   const edge = useSession((s) => s.settings?.bubbleEdge) ?? "right";
   const bubbleY = useSession((s) => s.settings?.bubbleY) ?? 0.5;
   const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase, edge, bubbleY);
+  // Until the Anthropic key is in, the resting drop glows amber and a small glass pill beside it
+  // says "Set up Pimple": once on arrival, then every 20 s, and whenever the pointer is over the drop.
+  const needsSetup = useSession((s) => (s as { needsSetup?: unknown }).needsSetup === true);
+  const hinting = needsSetup && phase === "idle";
+  useEffect(() => {
+    if (!hinting) {
+      setupHint(0);
+      return;
+    }
+    const first = window.setTimeout(() => setupHint(HINT_SHOW_MS + 1500), 900);
+    const every = window.setInterval(() => setupHint(HINT_SHOW_MS), HINT_EVERY_MS);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(every);
+      setupHint(0);
+    };
+  }, [hinting]);
   const lensRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = lensRef.current;
@@ -56,6 +82,10 @@ export default function App() {
           diameter={diameter}
           motion={motion}
           gestures={gestures}
+          needsSetup={needsSetup}
+          onHover={(over) => {
+            if (hinting) setupHint(over ? 60000 : 900);
+          }}
         />
       </div>
     </div>

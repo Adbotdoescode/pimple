@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { EV, type Pt, type TargetingUpdate } from "@shared/contracts";
 import { fmt, smoothPath } from "@/render/geometry";
+import { useSession } from "@/lib/sessionMirror";
 
 const CLEAR_MS = 200;
 const GRAD_ID = "gt-tgt-lasso-grad";
@@ -56,6 +57,8 @@ export function TargetingLayer({ origin }: { origin: Origin }) {
   const view = (p: Pt): Pt => [p[0] - origin.x, p[1] - origin.y];
 
   return (
+    <>
+    <SetupHint />
     <g style={{ opacity: live && target ? 1 : 0, transition: `opacity ${CLEAR_MS}ms ease-out` }}>
       <defs>
         <filter id={GLOW_ID} x="-30%" y="-30%" width="160%" height="160%">
@@ -81,6 +84,91 @@ export function TargetingLayer({ origin }: { origin: Origin }) {
         <Lens cx={target.cx - origin.x} cy={target.cy - origin.y} r={target.r} />
       )}
       {target?.kind === "lasso" && <Lasso pts={target.points.slice(-MAX_TRAIL).map(view)} closed={target.closed} />}
+    </g>
+    </>
+  );
+}
+
+const HINT_TEXT = "Set up Pimple";
+const HINT_W = 126;
+const HINT_H = 30;
+// The resting drop: centre 8 pt in from the display edge, 34 pt radius (see useBubbleMotion).
+const DROP_INSET = 8;
+const DROP_R = 34;
+
+/**
+ * "Set up Pimple": a small glass pill beside the resting drop while the app has no key yet. The
+ * bubble window is too small to hold it, so the bubble asks for it here ("bubble:setup-hint" {ms}:
+ * show for that long, 0 hides) on arrival, every 20 s and on hover. Never shown during a session.
+ */
+function SetupHint() {
+  const needsSetup = useSession((s) => (s as { needsSetup?: unknown }).needsSetup === true);
+  const idle = useSession((s) => s.phase === "idle");
+  const edge = useSession((s) => s.settings?.bubbleEdge) ?? "right";
+  const bubbleY = useSession((s) => s.settings?.bubbleY) ?? 0.5;
+  const [shown, setShown] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let dead = false;
+    let unlisten: (() => void) | undefined;
+    const stop = () => {
+      if (timer.current !== null) window.clearTimeout(timer.current);
+      timer.current = null;
+    };
+    listen<{ ms?: number }>("bubble:setup-hint", (e) => {
+      const ms = Number(e.payload?.ms) || 0;
+      stop();
+      if (ms <= 0) {
+        setShown(false);
+        return;
+      }
+      setShown(true);
+      timer.current = window.setTimeout(() => {
+        timer.current = null;
+        setShown(false);
+      }, ms);
+    })
+      .then((fn) => {
+        if (dead) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => console.warn("[SetupHint] listen failed", err));
+    return () => {
+      dead = true;
+      unlisten?.();
+      stop();
+    };
+  }, []);
+
+  const on = shown && needsSetup && idle;
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1440;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 900;
+  const right = edge !== "left";
+  const cy = Math.min(Math.max(Number.isFinite(bubbleY) ? bubbleY : 0.5, 0.08), 0.92) * vh;
+  const gap = 12;
+  const x = right ? vw - DROP_INSET - DROP_R - gap - HINT_W : DROP_INSET + DROP_R + gap;
+  const y = cy - HINT_H / 2;
+  const slide = right ? 10 : -10;
+  return (
+    <g
+      aria-hidden="true"
+      style={{
+        opacity: on ? 1 : 0,
+        transform: `translate(${on ? 0 : slide}px, 0px)`,
+        transition: "opacity 320ms ease, transform 420ms cubic-bezier(0.25, 1.3, 0.4, 1)",
+      }}
+    >
+      <rect x={x - 0.5} y={y + 2.5} width={HINT_W + 1} height={HINT_H} rx={HINT_H / 2} fill="rgba(20,24,40,0.16)" />
+      <rect x={x} y={y} width={HINT_W} height={HINT_H} rx={HINT_H / 2} fill="rgba(255,255,255,0.86)"
+        stroke="rgba(255,170,70,0.55)" strokeWidth={1} />
+      <path d={`M${x + 13} ${y + 1.4} H${x + HINT_W - 13}`} stroke="rgba(255,255,255,0.95)" strokeWidth={1} strokeLinecap="round" />
+      <circle cx={x + 16} cy={y + HINT_H / 2} r={4} fill="#FFA63D" />
+      <circle cx={x + 16} cy={y + HINT_H / 2} r={7} fill="none" stroke="rgba(255,166,61,0.35)" strokeWidth={1.5} />
+      <text x={x + 29} y={y + HINT_H / 2 + 4.4}
+        style={{ font: '600 12.5px -apple-system, "SF Pro Text", system-ui, sans-serif', fill: "#2A2D36" }}>
+        {HINT_TEXT}
+      </text>
     </g>
   );
 }
