@@ -97,8 +97,9 @@ html:has(.gt-stage) #root {
 
 .gt-pulse {
   opacity: 0;
-  border: 1.5px solid rgba(255, 255, 255, 0.8);
-  box-shadow: 0 0 8px rgba(150, 225, 255, 0.5);
+  border: 1.5px solid rgba(10, 132, 255, 0.45);
+  background: rgba(100, 210, 255, 0.08);
+  box-shadow: 0 0 8px rgba(100, 210, 255, 0.5);
 }
 .gt-bubble[data-state="speak"] .gt-pulse {
   animation: gt-pulse 1.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
@@ -186,11 +187,11 @@ html:has(.gt-stage) #root {
 
 /* Shimmer rim: rotating conic gradient, shown while thinking and verifying. */
 .gt-spin {
-  --rw: 2px;
-  --s1: #5ee7ff;
-  --s2: #a98bff;
-  --s3: #ff6ad5;
-  --s4: #ffc56b;
+  --rw: 2.5px;
+  --s1: rgba(0, 199, 255, 0.9);
+  --s2: rgba(123, 47, 255, 0.9);
+  --s3: rgba(255, 45, 149, 0.9);
+  --s4: rgba(255, 159, 10, 0.9);
   background: conic-gradient(from 0deg, var(--s1), var(--s2), var(--s3), var(--s4), var(--s1));
   opacity: 0;
   transition: opacity 200ms ease;
@@ -201,10 +202,10 @@ html:has(.gt-stage) #root {
   animation: gt-spin 1.6s linear infinite;
 }
 .gt-bubble[data-state="verify"] .gt-spin {
-  --s1: #7dffb4;
-  --s2: #3ddc97;
-  --s3: #c4ff6e;
-  --s4: #4ff0d0;
+  --s1: rgba(0, 210, 120, 0.9);
+  --s2: rgba(0, 170, 140, 0.9);
+  --s3: rgba(120, 220, 40, 0.9);
+  --s4: rgba(0, 200, 180, 0.9);
 }
 @keyframes gt-spin {
   to { transform: rotate(360deg); }
@@ -294,7 +295,7 @@ html:has(.gt-stage) #root {
 }
 @keyframes gt-flash {
   0% { opacity: 0; }
-  30% { opacity: 1; }
+  30% { opacity: 0.6; }
   100% { opacity: 0; }
 }
 
@@ -312,7 +313,7 @@ html:has(.gt-stage) #root {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #fff, #e6fbff 60%, rgba(200, 240, 255, 0.85));
+  background: radial-gradient(circle at 50% 50%, #bfeaff 0%, #7cc8ff 100%);
   box-shadow: 0 0 6px 2px rgba(120, 230, 255, 0.55), 0 0 16px 6px rgba(160, 120, 255, 0.35);
   opacity: 0;
   transform: scale(1);
@@ -331,7 +332,8 @@ html:has(.gt-stage) #root {
 }
 .gt-bubble[data-state="speak"] .gt-core {
   animation: gt-corepulse 1.2s ease-in-out infinite;
-  box-shadow: 0 0 10px 3px rgba(255, 255, 255, 0.9), 0 0 24px 8px rgba(170, 225, 255, 0.55);
+  background: radial-gradient(circle at 50% 50%, #fff 0%, #64d2ff 45%, #0a84ff 100%);
+  box-shadow: 0 0 8px 3px rgba(10, 132, 255, 0.6), 0 0 18px 6px rgba(100, 210, 255, 0.35);
 }
 .gt-bubble[data-state="interrupt"] .gt-core {
   background: radial-gradient(circle at 40% 35%, #fff6e0, #ffd08a 60%, #ffb35c);
@@ -363,15 +365,15 @@ html:has(.gt-stage) #root {
 .gt-bar {
   flex: none;
   display: block;
-  width: 3px;
+  width: 3.5px;
   height: 4px;
   border-radius: 2px;
-  background: linear-gradient(to top, #6fe3ff, #ffffff);
-  box-shadow: 0 0 4px rgba(110, 227, 255, 0.7);
+  background: linear-gradient(to top, #0a84ff, #64d2ff);
+  box-shadow: 0 0 6px rgba(10, 132, 255, 0.55);
 }
 .gt-bubble[data-state="check"] .gt-bar {
-  background: linear-gradient(to top, #ffb347, #fff1cf);
-  box-shadow: 0 0 4px rgba(255, 179, 71, 0.7);
+  background: linear-gradient(to top, #ff9f0a, #ffd60a);
+  box-shadow: 0 0 6px rgba(255, 159, 10, 0.55);
 }
 
 /* ───────── Reduced motion: no infinite animations ───────── */

@@ -505,6 +505,32 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* Native window (App.tsx wraps the card in .card-native) -------------
+ * macOS draws the vibrancy, the 18 pt rounded corners and the shadow, so the
+ * panel drops its outer margin, its CSS shadow and its backdrop blur. */
+
+.card-native .card-shell {
+  padding: 0;
+}
+
+.card-native .card {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.35);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .card-native .card {
+    background: rgba(30, 30, 34, 0.3);
+  }
+}
+
+:root[data-theme="dark"] .card-native .card {
+  background: rgba(30, 30, 34, 0.3);
+}
+
 /* Scrollbars and motion ---------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

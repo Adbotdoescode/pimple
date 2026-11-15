@@ -43,23 +43,26 @@ export function Card({
   snapshot,
   onIntent,
   onHeightChange,
+  onTypingChange,
 }: {
   snapshot: SessionSnapshot | null;
   onIntent: (i: UiIntent) => void;
   onHeightChange?: (px: number) => void;
+  /** True while the typed-question box is focused or holds text. */
+  onTypingChange?: (typing: boolean) => void;
 }) {
-  const shellRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const heightCb = useRef(onHeightChange);
   const [draft, setDraft] = useState("");
+  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
     heightCb.current = onHeightChange;
   }, [onHeightChange]);
 
-  // Report the shell's rendered height (card + its side and shadow margins) so the
-  // lead can size the transparent window to fit.
+  // Report the panel's exact rendered height so the window can be sized to it.
   useEffect(() => {
-    const el = shellRef.current;
+    const el = panelRef.current;
     if (!el) return;
     const report = () => heightCb.current?.(Math.ceil(el.offsetHeight));
     report();
@@ -89,6 +92,15 @@ export function Card({
       ? Math.max(0, (s.timings.firstAudioAt - s.timings.captureAt) / 1000).toFixed(1)
       : null;
   const canSend = draft.trim().length > 0;
+  const typing = focused || canSend;
+
+  const typingCb = useRef(onTypingChange);
+  useEffect(() => {
+    typingCb.current = onTypingChange;
+  }, [onTypingChange]);
+  useEffect(() => {
+    typingCb.current?.(typing);
+  }, [typing]);
 
   function submit() {
     const text = draft.trim();
@@ -105,8 +117,8 @@ export function Card({
   }
 
   return (
-    <div className="card-shell" ref={shellRef}>
-      <section className="glass-panel card" aria-label="Tutor card">
+    <div className="card-shell">
+      <section ref={panelRef} className="glass-panel card" aria-label="Tutor card">
         <header className="card-header">
           <span className="chip status" role="status" aria-live="polite">
             <span
@@ -223,6 +235,8 @@ export function Card({
               aria-label="Type a question"
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
             />
             <button
               type="button"
