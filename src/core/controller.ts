@@ -1501,18 +1501,18 @@ export async function startController(): Promise<() => void> {
     listen<UiIntent>(EV.uiIntent, (e) => void run(handleIntent(e.payload))),
     listen<DebugInject>(EV.debugInject, (e) => void run(handleDebugInject(e.payload))),
     listen<SttFinal>(EV.sttFinal, (e) => {
-      const raw = (e.payload?.text ?? "").trim();
+      let raw = (e.payload?.text ?? "").trim();
       const ph = st().phase;
       const t = turn;
       const frozenListen = ph === "interrupted" && t?.stage === "frozen";
       const objection = ph === "interrupted" && !frozenListen && !!t?.interruption && t.interruption.stage === "recording";
-      // Ambient speech: a long transcript is never a question (typed questions bypass this).
-      const words = normWords(raw).length;
-      if (words > 40 && (ph === "listening" || ph === "checking" || ph === "interrupted")) {
-        console.info(`[brain] ignored long transcript (${words} words)`);
-        scheduleMic(() => patch({ error: MIC_DOWN }));
-        return;
+      // Very long utterances are cut to their first 120 words, and the tutor still answers.
+      const parts = raw.split(/\s+/).filter(Boolean);
+      if (parts.length > 120) {
+        console.info("[brain] truncated transcript to 120 words");
+        raw = parts.slice(0, 120).join(" ");
       }
+      const words = normWords(raw).length;
       if (ph === "checking") {
         // One-word answers are valid in the check step, and it is where the tutor's own question is echoed back.
         if (t && t.stage === "awaitingAnswer") void run(handleCheckAnswer(t, raw));
