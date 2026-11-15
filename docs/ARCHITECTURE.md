@@ -40,6 +40,27 @@ Coordinates: everything on screen is macOS points in global desktop space. The m
 6. `checking`: speak `check_question`, listen, call the tutor again for short feedback (same schema).
 7. Off-topic → `parked`. End of session → `idle`, bubble springs back to its edge.
 
+## Render API (shared by overlay and whiteboard; Domain 1 builds it, Domain 3 imports it)
+
+```ts
+// src/render/ShapeLayer.tsx
+import type { Shape, Pt } from "@shared/contracts";
+export interface ShapeStyle { stroke: string; halo?: string; fill?: string }
+export interface ShapeLayerProps {
+  shapes: Shape[];
+  visibleSegmentIds: string[];      // shapes whose segment_id is listed are drawn; each animates on (150–300 ms stroke-dashoffset) the first time it appears
+  pulseShapeIds?: string[];         // gentle pulse (space-tap "Which part?")
+  variant?: "main" | "sidenote";    // sidenote: dashed strokes, distinct accent hue, fades out on resume
+  toView: (p: Pt) => Pt;            // shape coordinates → SVG user coordinates
+  scale: number;                    // shape units → view px, for radius and label sizes
+  styleFor: (shape: Shape) => ShapeStyle; // overlay: adaptive colour from capture pixels; whiteboard: fixed board palette
+}
+export function ShapeLayer(props: ShapeLayerProps): JSX.Element; // returns an <g>, caller owns the <svg>
+// src/render/palette.ts
+export function adaptiveStyle(role: ColorRole, sampledBg: {lum: number; hue: number}): ShapeStyle;
+export function boardStyle(role: ColorRole, theme: "light" | "dark"): ShapeStyle;
+```
+
 ## Ownership (who may edit what)
 
 | Path | Owner |

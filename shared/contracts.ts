@@ -60,6 +60,61 @@ export interface TutorResponse {
 }
 export interface VerifierResult { verdict: "pass" | "fail"; unsupported_claims: string[] }
 
+/**
+ * WIRE FORMAT. The API rejected the rich schema ("Schema is too complex"), so the model emits this
+ * flat shape (shared/tutor_response.schema.json): every field required, unused ones 0 / "" / [].
+ * The brain converts each completed wire shape with wireToShape() and stores the friendly Shape above.
+ * Views and renderers only ever see Shape / TutorResponse.
+ *  circle: points [[cx,cy]], radius, label          box: points [[x1,y1],[x2,y2]] (corners), label
+ *  line / arrow: points [[x1,y1],[x2,y2]], label     vector: points [[tail],[head]], magnitude, label, values [1] = draw components
+ *  stroke: points (≤ 32)                             text: points [[x,y]], label = the text
+ *  graph: points = placement corners; values = [x_min, x_max, y_min, y_max, px0, py0, px1, py1, …] (plotted data);
+ *         label = "x label|y label|series label"; magnitude = "line" | "points"
+ *  slider: values = [min, max, value, step]; magnitude = unit; label; target = id of the shape it drives
+ */
+export interface WireShape {
+  id: string; segment_id: string; kind: ShapeKind; color_role: ColorRole;
+  points: number[][]; radius: number; label: string; magnitude: string; values: number[]; target: string;
+}
+export interface WireResponse extends Omit<TutorResponse, "shapes" | "summary_sentence"> { shapes: WireShape[] }
+
+/** Returns null if the wire shape lacks the geometry its kind needs (drop it, never crash). */
+export function wireToShape(w: WireShape): Shape | null {
+  const pts = (w.points ?? []).filter((p) => Array.isArray(p) && p.length >= 2 && p.every(Number.isFinite)) as Pt[];
+  const base = { id: w.id, segment_id: w.segment_id, kind: w.kind, color_role: w.color_role,
+                 label: w.label || undefined, magnitude: w.magnitude || undefined };
+  const rectFrom = (a: Pt, b: Pt): [number, number, number, number] =>
+    [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])];
+  switch (w.kind) {
+    case "circle": return pts[0] && w.radius > 0 ? { ...base, center: pts[0], radius: w.radius } : null;
+    case "text":   return pts[0] && w.label ? { ...base, center: pts[0] } : null;
+    case "box":    return pts.length >= 2 ? { ...base, rect: rectFrom(pts[0], pts[1]) } : null;
+    case "line": case "arrow":
+      return pts.length >= 2 ? { ...base, from: pts[0], to: pts[1] } : null;
+    case "vector":
+      return pts.length >= 2 ? { ...base, from: pts[0], to: pts[1], components: w.values?.[0] === 1 } : null;
+    case "stroke": return pts.length >= 2 ? { ...base, points: pts.slice(0, 32) } : null;
+    case "graph": {
+      const v = w.values ?? [];
+      if (pts.length < 2 || v.length < 4) return null;
+      const [xl = "", yl = "", sl = ""] = (w.label || "").split("|");
+      const data: Pt[] = [];
+      for (let i = 4; i + 1 < v.length; i += 2) data.push([v[i], v[i + 1]]);
+      return { ...base, label: sl || undefined, rect: rectFrom(pts[0], pts[1]),
+        graph: { x_min: v[0], x_max: v[1], y_min: v[2], y_max: v[3], x_label: xl, y_label: yl,
+                 series: [{ label: sl, style: w.magnitude === "points" ? "points" : "line", points: data }] } };
+    }
+    case "slider": {
+      const v = w.values ?? [];
+      if (v.length < 3) return null;
+      return { ...base, rect: pts.length >= 2 ? rectFrom(pts[0], pts[1]) : undefined,
+        slider: { label: w.label, min: v[0], max: v[1], value: v[2], step: v[3] ?? (v[1] - v[0]) / 100,
+                  unit: w.magnitude, shape_id: w.target } };
+    }
+    default: return null;
+  }
+}
+
 // ───────────────────────── C2: capture ─────────────────────────
 
 export type CaptureMode = "click" | "region" | "lasso";
