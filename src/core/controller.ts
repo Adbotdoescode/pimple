@@ -222,7 +222,7 @@ function cancelAll(): void {
   turn = null;
   player.stop();
   cancelMicTimer();
-  markMicClosed();
+  setMicOpen(false);
   invoke(CMD.sttCancel).catch(() => undefined);
 }
 
@@ -424,7 +424,7 @@ function scheduleMic(onFail: () => void, force = false): void {
     holdToTalkHint(); // the phase is entered, but the mic waits for Space
     return;
   }
-  if (micOpen) return;
+  if (st().micOpen) return;
   const phase = st().phase;
   micTimer = setTimeout(() => {
     micTimer = null;
@@ -439,20 +439,20 @@ function scheduleMic(onFail: () => void, force = false): void {
 }
 
 /** Whether the mic is open (or opening). Set by a successful stt_start, cleared by any stt_cancel/stt_stop/final. */
-let micOpen = false;
 let micStarting: Promise<boolean> | null = null;
 
-function markMicClosed(): void {
-  micOpen = false;
+/** The only writer of micOpen. It patches the store, so the broadcast carries the same flag. */
+function setMicOpen(open: boolean): void {
+  if (st().micOpen !== open) patch({ micOpen: open });
 }
 
 /** One stt_start. Never called twice: an open or opening mic is not started again. No retry loop. */
 function tryMic(): Promise<boolean> {
-  if (micOpen) return Promise.resolve(true);
+  if (st().micOpen) return Promise.resolve(true);
   if (micStarting === null) {
     micStarting = invoke(CMD.sttStart)
       .then(() => {
-        micOpen = true;
+        setMicOpen(true);
         return true;
       })
       .catch((err: unknown) => {
@@ -475,7 +475,7 @@ function holdToTalkHint(): void {
 
 /** Explicit open from Space (hold) or the card's mic button: no echo delay, and it does nothing if already open. */
 function openMicNow(): void {
-  if (micOpen) return;
+  if (st().micOpen) return;
   cancelMicTimer();
   patch({ partialTranscript: "" });
   void tryMic().then((ok) => {
@@ -822,13 +822,15 @@ function onSpaceHoldEnd(): void {
     return;
   }
   if (holdingObjection || holdingFollowUp || st().phase === "listening") {
-    invoke(CMD.sttStop).catch((err) => console.warn("[brain] stt_stop failed:", errMsg(err)));
+    invoke(CMD.sttStop)
+      .then(() => setMicOpen(false))
+      .catch((err) => console.warn("[brain] stt_stop failed:", errMsg(err)));
   }
 }
 
 async function micCancel(): Promise<void> {
   await invoke(CMD.sttCancel).catch(() => undefined);
-  markMicClosed();
+  setMicOpen(false);
 }
 
 function openMicFrozen(t: Turn, force = false): void {
@@ -1572,7 +1574,7 @@ export async function startController(): Promise<() => void> {
     listen<UiIntent>(EV.uiIntent, (e) => void run(handleIntent(e.payload))),
     listen<DebugInject>(EV.debugInject, (e) => void run(handleDebugInject(e.payload))),
     listen<SttFinal>(EV.sttFinal, (e) => {
-      markMicClosed(); // the utterance ends the mic on the Rust side
+      setMicOpen(false); // the utterance ends the mic on the Rust side
       let raw = (e.payload?.text ?? "").trim();
       const ph = st().phase;
       const t = turn;
@@ -1632,7 +1634,7 @@ export async function startController(): Promise<() => void> {
     }),
     listen<SttError>(EV.sttError, (e) => {
       console.warn("[brain] stt error:", e.payload.message);
-      markMicClosed();
+      setMicOpen(false);
       patch({ error: MIC_DOWN });
       const ph = st().phase;
       if (ph === "checking" || ph === "interrupted") setPhase("listening");

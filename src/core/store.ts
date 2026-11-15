@@ -24,6 +24,7 @@ export interface VerifierView {
  */
 export type BrainSnapshot = Omit<SessionSnapshot, "verifier"> & {
   isFixture: boolean;
+  micOpen: boolean; // the mic is open (or opening) on the Rust side; set only through the controller's setMicOpen
   notice: string | null;
   verifier: VerifierView | null;
 };
@@ -46,6 +47,7 @@ export interface SessionStore extends SessionData {
 export function initialSnapshot(settings: AppSettings): BrainSnapshot {
   return {
     isFixture: false,
+    micOpen: false,
     notice: null,
     phase: "idle",
     mode: null,
@@ -126,6 +128,7 @@ export function getSnapshot(): BrainSnapshot {
   const s = sessionStore.getState();
   return {
     isFixture: s.isFixture,
+    micOpen: s.micOpen,
     notice: s.notice,
     phase: s.phase,
     mode: s.mode,
