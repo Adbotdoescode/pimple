@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { info } from "@tauri-apps/plugin-log";
 import {
@@ -15,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import type { Phase, SessionSnapshot, UiIntent } from "@shared/contracts";
+import { invokeCmd } from "../../lib/ipc";
 import "../../ui/glass.css";
 import "./card.css";
 
@@ -149,7 +151,28 @@ export function Card({
     stamp();
     try {
       const win = getCurrentWindow();
-      Promise.all([win.onMoved(stamp), win.onResized(stamp)])
+      let scale = window.devicePixelRatio || 2;
+      win.scaleFactor().then((f) => { scale = f; }).catch(() => {});
+      // While the learner drags the card, tell the dock where it went: the learner's position
+      // then wins for the rest of the session (no auto-dock, no auto-minimise).
+      const moved = (e: { payload: { x: number; y: number } }) => {
+        stamp();
+        const d = drag.current;
+        if (!d.dragging) return;
+        d.movedAt = Date.now();
+        const pos = { x: Math.round(e.payload.x / scale), y: Math.round(e.payload.y / scale) };
+        const send = () => {
+          d.sentAt = Date.now();
+          emitTo("bubble", "card:user-moved", pos).catch(() => {});
+        };
+        if (Date.now() - d.sentAt > 90) send();
+        if (d.timer !== null) window.clearTimeout(d.timer);
+        d.timer = window.setTimeout(() => {
+          d.timer = null;
+          send();
+        }, 140);
+      };
+      Promise.all([win.onMoved(moved), win.onResized(stamp)])
         .then((fns) => {
           if (cancelled) fns.forEach((f) => f());
           else unlisten = fns;
@@ -163,6 +186,57 @@ export function Card({
       unlisten.forEach((f) => f());
     };
   }, []);
+
+  /**
+   * Drag the card anywhere: press on the header, the body or the pill (not on a control or the
+   * text field), move a few points, and the OS takes over the window drag.
+   */
+  const drag = useRef<{
+    armed: boolean; x: number; y: number; dragging: boolean; movedAt: number; sentAt: number;
+    timer: number | null; draggedAt: number;
+  }>({ armed: false, x: 0, y: 0, dragging: false, movedAt: 0, sentAt: 0, timer: null, draggedAt: 0 });
+
+  function onDragDown(e: ReactPointerEvent<HTMLElement>) {
+    const d = drag.current;
+    d.dragging = false; // a fresh press inside the card means any earlier OS drag is over
+    if (e.button !== 0) return;
+    const t = e.target as Element | null;
+    if (t?.closest?.("input, textarea, a, summary, button:not(.mini-main)")) return;
+    d.armed = true;
+    d.x = e.screenX;
+    d.y = e.screenY;
+  }
+
+  function onDragMove(e: ReactPointerEvent<HTMLElement>) {
+    const d = drag.current;
+    if (!(e.buttons & 1)) {
+      d.armed = false;
+      d.dragging = false;
+      return;
+    }
+    if (!d.armed || Math.hypot(e.screenX - d.x, e.screenY - d.y) < 4) return;
+    d.armed = false;
+    d.dragging = true;
+    d.draggedAt = Date.now();
+    try {
+      getCurrentWindow().startDragging().catch(() => {});
+    } catch {
+      // Not inside Tauri (browser preview).
+    }
+  }
+
+  /** A press that turned into a drag must not also count as a click on the pill. */
+  function justDragged() {
+    return Date.now() - drag.current.draggedAt < 400 || Date.now() - drag.current.movedAt < 250;
+  }
+
+  const dragProps = {
+    onPointerDown: onDragDown,
+    onPointerMove: onDragMove,
+    onPointerUp: () => {
+      drag.current.armed = false;
+    },
+  };
 
   function setMini(next: boolean, by: "user" | "auto" = "user") {
     if (by === "user") {
@@ -220,6 +294,7 @@ export function Card({
   const response = s?.response ?? null;
   const caption = s?.caption ?? "";
   const error = s?.error ?? null;
+  const gizmo = s?.gizmo?.status ?? "none";
   // Landing in the contract shortly; read defensively until the type has it.
   const noticeRaw = (s as { notice?: unknown } | null)?.notice;
   const notice = typeof noticeRaw === "string" && noticeRaw.trim() ? noticeRaw.trim() : null;
@@ -283,16 +358,18 @@ export function Card({
     const snippet = displayCaption || liveLine || response?.concept || (err ? err.title : "");
     return (
       <div className="card-shell card-shell-mini">
-        <section ref={panelRef} className="glass-panel card-mini" aria-label="Tutor card, minimised">
+        <section ref={panelRef} className="glass-panel card-mini" aria-label="Pimple card, minimised" {...dragProps}>
+          <i className="liquid" aria-hidden="true" />
           <button
             type="button"
             className="mini-main"
             {...NO_FOCUS}
             onClick={() => {
+              if (justDragged()) return;
               blurActiveButton();
               setMini(false);
             }}
-            aria-label={`Expand tutor card. ${PHASE_LABEL[phase]}`}
+            aria-label={`Expand Pimple card. ${PHASE_LABEL[phase]}`}
           >
             <span
               className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
@@ -302,6 +379,7 @@ export function Card({
               {PHASE_LABEL[phase]}
             </span>
             {snippet && <span className="mini-caption ellipsis">{snippet}</span>}
+            {gizmo === "ready" && <span className="mini-gizmo-dot" title="Diagram ready" aria-label="Diagram ready" />}
           </button>
           {busy && (
             <button
@@ -327,7 +405,7 @@ export function Card({
               blurActiveButton();
               setMini(false);
             }}
-            aria-label="Expand tutor card"
+            aria-label="Expand Pimple card"
           >
             <Maximize2 size={13} strokeWidth={2.2} aria-hidden="true" />
           </button>
@@ -338,7 +416,8 @@ export function Card({
 
   return (
     <div className="card-shell">
-      <section ref={panelRef} className="glass-panel card" aria-label="Tutor card">
+      <section ref={panelRef} className="glass-panel card" aria-label="Pimple card" {...dragProps}>
+        <i className="liquid" aria-hidden="true" />
         <header className="card-header">
           <div className="card-header-left">
             <span className="chip status" role="status" aria-live="polite">
@@ -359,7 +438,7 @@ export function Card({
                 blurActiveButton();
                 setMini(true);
               }}
-              aria-label="Minimise tutor card"
+              aria-label="Minimise Pimple card"
               title="Minimise"
             >
               <Minus size={14} strokeWidth={2.4} aria-hidden="true" />
@@ -491,8 +570,65 @@ export function Card({
           )}
         </div>
 
+        {gizmo !== "none" && (
+          <div className={`gizmo-row gizmo-${gizmo} fade-up`} role="status">
+            {gizmo === "offered" && (
+              <>
+                <span className="gizmo-text">Want an interactive diagram for this?</span>
+                <button
+                  type="button"
+                  className="gizmo-pill gizmo-yes"
+                  {...NO_FOCUS}
+                  onClick={(e) => {
+                    if (e.detail === 0 || clickTooSoon()) return;
+                    blurActiveButton();
+                    onIntent({ type: "accept-gizmo" });
+                  }}
+                >
+                  Yes
+                </button>
+                <button
+                  type="button"
+                  className="gizmo-pill"
+                  {...NO_FOCUS}
+                  onClick={(e) => {
+                    if (e.detail === 0 || clickTooSoon()) return;
+                    blurActiveButton();
+                    onIntent({ type: "decline-gizmo" });
+                  }}
+                >
+                  No
+                </button>
+              </>
+            )}
+            {gizmo === "building" && <span className="gizmo-text gizmo-shimmer">Building your diagram…</span>}
+            {gizmo === "ready" && (
+              <>
+                <span className="gizmo-text">Your diagram is ready</span>
+                <button
+                  type="button"
+                  className="gizmo-pill gizmo-yes"
+                  {...NO_FOCUS}
+                  onClick={(e) => {
+                    if (e.detail === 0 || clickTooSoon()) return;
+                    blurActiveButton();
+                    try {
+                      invokeCmd("show_window", { label: "gizmo" }).catch(() => {});
+                    } catch {
+                      // Not inside Tauri (browser preview).
+                    }
+                  }}
+                >
+                  Open diagram
+                </button>
+              </>
+            )}
+            {gizmo === "failed" && <span className="gizmo-text gizmo-muted">Couldn't build the diagram</span>}
+          </div>
+        )}
+
         {busy && (
-          <div className="card-actions" role="group" aria-label="Tutor controls">
+          <div className="card-actions" role="group" aria-label="Pimple controls">
             <button
               type="button"
               className="action action-stop"

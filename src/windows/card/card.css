@@ -726,7 +726,7 @@ body,
 .card-native .card,
 .card-native .card-mini {
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.26);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--glass-inner);
@@ -771,4 +771,104 @@ body,
   line-height: 1.35;
   color: var(--text-2);
   letter-spacing: 0.1px;
+}
+
+/* Liquid glass on the card: the rims sit above the content edge, the rest behind the content. */
+.card,
+.card-mini {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.card .caption,
+.card .check,
+.card .ask-input,
+.card .error-raw {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.card-native .glass-panel::after {
+  display: none; /* the liquid layer draws the rim */
+}
+
+/* Interactive diagram offer ------------------------------------------- */
+
+.gizmo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: 0 14px 10px;
+  padding: 7px 8px 7px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--chip-border);
+  background: var(--glass-btn-bg);
+  box-shadow: inset 0 1px 0 var(--glass-specular), var(--glass-btn-shadow);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--text-1);
+}
+.gizmo-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+.gizmo-muted {
+  font-weight: 500;
+  color: var(--text-2);
+}
+.gizmo-pill {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--chip-border);
+  background: var(--glass-btn-bg);
+  box-shadow: inset 0 1px 0 var(--glass-specular), var(--glass-btn-shadow);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 120ms ease;
+}
+.gizmo-pill:hover {
+  background: var(--glass-btn-hover);
+}
+.gizmo-pill:active {
+  transform: scale(0.96);
+}
+.gizmo-yes {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+.gizmo-yes:hover {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+.gizmo-shimmer {
+  background: linear-gradient(90deg, var(--text-2) 0%, var(--text-1) 40%, var(--accent) 50%, var(--text-1) 60%, var(--text-2) 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gizmo-shimmer 1.8s linear infinite;
+}
+@keyframes gizmo-shimmer {
+  from { background-position: 110% 0; }
+  to { background-position: -110% 0; }
+}
+.mini-gizmo-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gizmo-shimmer {
+    animation: none;
+    color: var(--text-1);
+    background: none;
+  }
 }

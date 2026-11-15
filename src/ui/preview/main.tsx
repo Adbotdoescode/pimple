@@ -181,7 +181,10 @@ function CardView({ state, dark, mini = false }: { state: CardState; dark: boole
   // `notice=<text>` previews the service note line in the footer.
   const noticeParam = params.get("notice");
   const base = cardSnapshot(state);
-  const snap = noticeParam && base ? ({ ...base, notice: noticeParam } as typeof base) : base;
+  // `gizmo=offered|building|ready|failed` previews the interactive-diagram row.
+  const gizmoParam = (["offered", "building", "ready", "failed"] as const).find((g) => g === params.get("gizmo"));
+  const withNotice = noticeParam && base ? ({ ...base, notice: noticeParam } as typeof base) : base;
+  const snap = gizmoParam && withNotice ? { ...withNotice, gizmo: { status: gizmoParam } } : withNotice;
   return (
     <div className="pv-wallpaper" data-bg={dark ? "dark" : "light"}>
       <div className="pv-blur" aria-hidden="true">
