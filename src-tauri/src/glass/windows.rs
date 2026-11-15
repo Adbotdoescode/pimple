@@ -14,8 +14,9 @@ use super::capture::RectPts;
 pub const BUBBLE_SIZE: f64 = 104.0;
 /// Visible glass circle, drawn by CSS centred in the bubble window.
 pub const BUBBLE_DIAMETER: f64 = 56.0;
-/// Gap between the visible circle and the screen's right edge.
-pub const BUBBLE_EDGE_GAP: f64 = 12.0;
+/// Gap between the visible circle and the screen's right edge. Negative: the droplet is
+/// half-merged into the edge (its centre sits 20 pt inside the screen).
+pub const BUBBLE_EDGE_GAP: f64 = -8.0;
 pub const CARD_SIZE: (f64, f64) = (380.0, 260.0);
 
 /// Panel levels: overlay sits above normal apps; bubble and card above the overlay.
@@ -243,12 +244,42 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
     let w = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("no window '{label}'"))?;
-    w.show().map_err(|e| e.to_string())?;
     if label != "brain" {
+        // Accessory app: unhide and activate the app first, or the window stays behind the frontmost app.
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app.show();
+            activate_ns_app(&app);
+        }
+        w.show().map_err(|e| e.to_string())?;
         let _ = w.unminimize();
+        #[cfg(target_os = "macos")]
+        let _ = w.set_always_on_top(true);
         let _ = w.set_focus();
+        #[cfg(target_os = "macos")]
+        if label == "settings" {
+            // Briefly on top so it comes forward, then behave like a normal window.
+            let w2 = w.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                let _ = w2.set_always_on_top(false);
+            });
+        }
+    } else {
+        w.show().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Activates the NSApplication on the main thread (macOS 14+ `activate`).
+#[cfg(target_os = "macos")]
+fn activate_ns_app(app: &AppHandle) {
+    let _ = app.run_on_main_thread(|| {
+        if let Some(mtm) = objc2::MainThreadMarker::new() {
+            let ns_app = objc2_app_kit::NSApplication::sharedApplication(mtm);
+            ns_app.activate();
+        }
+    });
 }
 
 /// invoke("hide_window", {label}) → void
@@ -267,6 +298,9 @@ pub fn hide_window(app: AppHandle, label: String) -> Result<(), String> {
     let w = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("no window '{label}'"))?;
+    if label == "whiteboard" {
+        let _ = w.set_always_on_top(false);
+    }
     w.hide().map_err(|e| e.to_string())
 }
 
