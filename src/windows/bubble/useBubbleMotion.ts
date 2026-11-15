@@ -509,21 +509,17 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.
     setMode("parking", s.held ? "commit (held still)" : "commit");
     s.lensAt = 0;
     s.rT = R_REST;
-    // Spring to the screen edge AWAY from the target so the glass never covers its explanation.
-    const f = s.frame;
-    const away: Edge = region.x + region.w / 2 > f.x + f.w / 2 ? "left" : "right";
-    const p = edgeTarget(away);
+    // Spring to the screen edge NEAREST to where the glass was released, at the same height
+    // (edgeTarget clamps the y to the display).
+    const side = sideOf(s.pos.x);
+    const p = edgeTarget(side, s.pos.y);
     s.lastRegion = region;
     s.tx = p.x;
-    s.ty = clamp(
-      fin(region.y + region.h / 2, p.y),
-      f.y + EDGE_MARGIN_Y + R_REST,
-      f.y + f.h - EDGE_MARGIN_Y - R_REST,
-    );
-    blog(`[bubble] park at ${away} edge (${s.tx.toFixed(0)},${s.ty.toFixed(0)}), away from the target`);
+    s.ty = p.y;
+    blog(`[bubble] park at ${side} edge (${s.tx.toFixed(0)},${s.ty.toFixed(0)}), nearest to the release point`);
     void parkTarget;
     startLoop();
-  }, [clearLens, edgeTarget, parkTarget, resetLasso, setMode, startLoop]);
+  }, [clearLens, edgeTarget, parkTarget, resetLasso, setMode, sideOf, startLoop]);
 
   /** The resting y the settings ask for (global points); edgeTarget clamps it to the display. */
   const homeY = useCallback(() => {
