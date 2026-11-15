@@ -1005,3 +1005,210 @@ summary:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ───────── first-run onboarding ───────── */
+
+.onb {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 22px 18px;
+}
+/* Progress: a glass channel, one dot per step, and a droplet that slides along and overshoots. */
+.onb-progress {
+  position: relative;
+  flex: none;
+  height: 26px;
+  width: min(100% - 60px, 420px);
+  margin: 0 auto 6px;
+}
+.onb-track,
+.onb-fill {
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 999px;
+}
+.onb-track {
+  right: -8px;
+  background: var(--well-strong);
+  box-shadow: inset 0 1px 2.5px rgba(0, 0, 0, 0.22), inset 0 0 0 1px var(--hair);
+}
+.onb-fill {
+  width: calc(var(--f) * 100% + 16px);
+  background: var(--liquid);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: width 0.85s var(--spring);
+}
+.onb-dot {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: background-color 0.3s ease;
+}
+.onb-dot.past { background: rgba(255, 255, 255, 0.95); }
+.onb-drop {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--f) * 100%);
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 26%, #fff 0 8%, rgba(255, 255, 255, 0.4) 16%, transparent 32%),
+    radial-gradient(circle at 70% 80%, rgba(255, 255, 255, 0.55) 0, transparent 26%),
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.5) 30%, rgba(170, 200, 255, 0.55) 70%, rgba(80, 100, 200, 0.55) 100%);
+  box-shadow:
+    inset 2px 1px 3px rgba(60, 200, 255, 0.8),
+    inset -2px -1px 3px rgba(255, 80, 175, 0.7),
+    inset 0 -3px 5px rgba(255, 200, 70, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.75),
+    0 5px 10px -3px rgba(10, 20, 70, 0.5);
+  transition: left 0.85s var(--spring);
+  animation: breathe 5.5s ease-in-out infinite;
+}
+
+.onb-stage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 4px 16px;
+  margin: 0 -4px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 16px), transparent 100%);
+}
+.onb-stage::-webkit-scrollbar { display: none; }
+.onb-pane { max-width: 580px; min-height: 100%; justify-content: center; }
+.onb-pane.wide { max-width: 760px; justify-content: flex-start; }
+.onb-card { padding: 22px 24px 22px; }
+.onb-card .blob-head h2 { font-size: 19px; }
+.onb-card .blob-head p { font-size: 13.5px; }
+.onb-card .blob-head { margin-bottom: 16px; }
+
+.onb-welcome { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.onb-hero { position: relative; width: 80px; height: 80px; margin: 2px 0 12px; }
+.onb-hero .logo-glass { box-shadow:
+    inset 5px 2px 8px rgba(70, 200, 255, 0.7),
+    inset -5px -2px 8px rgba(255, 90, 180, 0.6),
+    inset 0 -8px 12px rgba(255, 196, 80, 0.4),
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.65),
+    0 14px 26px -8px rgba(30, 50, 120, 0.5); }
+.onb-hero-tick {
+  position: absolute;
+  right: -6px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #46e07f, #16a34a);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 10px rgba(20, 140, 70, 0.5);
+  animation: pop 0.7s var(--spring) 0.25s both;
+}
+.onb-title { margin: 0; font-family: var(--font-round); font-size: 27px; font-weight: 700; letter-spacing: -0.015em; }
+.onb-lede { margin: 4px 0 18px; font-size: 14.5px; color: var(--text-2); }
+.onb-note { margin: 0; max-width: 46ch; font-size: 12.5px; color: var(--text-2); }
+.onb-how { list-style: none; width: 100%; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; text-align: left; }
+.onb-how li {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 10px 14px;
+  border-radius: 22px 18px 24px 18px / 18px 24px 18px 22px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  transition: scale 0.55s var(--spring), border-radius 0.8s var(--spring);
+}
+.onb-how li:nth-child(even) { border-radius: 18px 24px 18px 22px / 22px 18px 24px 18px; }
+.onb-how li:hover { scale: 1.02; border-radius: 20px; }
+.onb-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font: 700 13px var(--font-round);
+  color: #fff;
+  background: var(--liquid);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 3px 8px -2px rgba(40, 80, 255, 0.5);
+}
+.onb-how b { display: block; font-size: 13.5px; font-weight: 650; }
+.onb-how li > div > span { font-size: 12.5px; color: var(--text-2); }
+
+.onb-saved {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 4px 14px 4px 16px;
+  border-radius: 999px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+.onb-mask { flex: 1; letter-spacing: 3px; color: var(--text-2); }
+.onb-get {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hair);
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.onb-get b { color: var(--text-1); font-weight: 650; -webkit-user-select: text; user-select: text; }
+.onb-fine { margin: 12px 0 0; font-size: 11.5px; color: var(--text-3); }
+.onb-card .flash { margin-top: 10px; }
+
+.onb-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 580px;
+  margin: 0 auto;
+  padding-top: 10px;
+}
+.onb-nav-right { display: flex; align-items: center; gap: 14px; }
+.onb-nav .btn { height: 38px; padding: 0 22px; font-size: 13.5px; }
+
+.btn.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--hair); color: var(--text-2); }
+.btn.danger {
+  color: #fff;
+  background: linear-gradient(135deg, #ff6b5e, #e0245e);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 5px 14px -4px rgba(224, 36, 94, 0.6);
+}
+.link.danger { color: var(--bad-ink); }
+
+.perm-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--text-3); }
+.perm-dot.ok { background: #30d158; box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.22); }
+.perm-dot.need { background: #ff9f0a; animation: pulse 1.6s ease-in-out infinite; }
+.perm-text { flex: 1; }
+
+.reset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}

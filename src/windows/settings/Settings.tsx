@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   CMD,
@@ -12,6 +13,7 @@ import {
 } from "@shared/contracts";
 import { loadSettings } from "../../core/settingsStore";
 import { BubbleMap } from "./BubbleMap";
+import { Onboarding, type OnbStep } from "./Onboarding";
 import { VoicePicker } from "./VoicePicker";
 import { CheckIcon, RefreshIcon, WarningIcon } from "./icons";
 import { atRest, makeLoop, prefersReducedMotion, spring, stepSpring } from "./spring";
@@ -104,6 +106,7 @@ export function Settings({
   initialSection,
   navNonce = 0,
   devTab,
+  devOnboard,
 }: {
   snapshot: SessionSnapshot | null;
   onIntent: (i: UiIntent) => void;
@@ -111,6 +114,8 @@ export function Settings({
   navNonce?: number;
   /** Dev-only scripted navigation (see App.tsx). */
   devTab?: string;
+  /** Dev-only: "<step>#<n>" opens the onboarding flow on that step, "off#<n>" leaves it. */
+  devOnboard?: string;
 }) {
   const [keys, setKeys] = useState<KeyStatus | null>(null);
   const [keysUnavailable, setKeysUnavailable] = useState(false);
@@ -158,13 +163,90 @@ export function Settings({
     void refreshKeys();
   }, [refreshKeys]);
 
-  // First run: if the Anthropic key is missing, open Keys once.
+  // First-run setup. Shown when Rust says so (onboarding_needed at mount, or its
+  // "onboarding:show" event), or when keys_status first reports the Anthropic key missing.
+  const [onboarding, setOnboarding] = useState(false);
+  const [onbStart, setOnbStart] = useState<OnbStep | undefined>(undefined);
+  const startOnboarding = useCallback((at: OnbStep = "welcome") => {
+    setOnbStart(at);
+    setOnboarding(true);
+  }, []);
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    invoke<boolean>("onboarding_needed")
+      .then((needed) => {
+        if (alive && needed === true) startOnboarding();
+      })
+      .catch(() => {
+        /* older build or browser preview: keys_status below decides */
+      });
+    try {
+      listen("onboarding:show", () => {
+        void refreshKeys();
+        startOnboarding();
+      })
+        .then((u) => {
+          if (alive) unlisten = u;
+          else u();
+        })
+        .catch(() => {});
+    } catch {
+      /* outside Tauri */
+    }
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [startOnboarding, refreshKeys]);
   const nudged = useRef(false);
   useEffect(() => {
     if (keys === null || nudged.current) return;
     nudged.current = true;
-    if (!keys.anthropic) go("keys");
-  }, [keys, go]);
+    if (!keys.anthropic) startOnboarding();
+  }, [keys, startOnboarding]);
+  useEffect(() => {
+    if (!devOnboard) return;
+    const stepName = devOnboard.split("#")[0];
+    if (stepName === "off") setOnboarding(false);
+    else startOnboarding(stepName as OnbStep);
+  }, [devOnboard, startOnboarding]);
+
+  const keysChanged = () => {
+    try {
+      emit("keys:changed", {}).catch(() => {});
+    } catch {
+      /* outside Tauri */
+    }
+  };
+  const finishOnboarding = () => {
+    keysChanged();
+    setOnboarding(false);
+    invoke(CMD.hideWindow, { label: "settings" }).catch(() => {});
+  };
+  const exitOnboarding = () => {
+    keysChanged();
+    setOnboarding(false);
+  };
+
+  // Keys tab: "Reset keys" removes both keys and the saved voice, then setup starts over.
+  const [resetAsk, setResetAsk] = useState(false);
+  const [resetError, setResetError] = useState(false);
+  const resetKeys = async () => {
+    setResetError(false);
+    try {
+      for (const name of ["anthropic", "elevenlabs", "voice_id"] as const) {
+        await invoke("delete_secret", { name });
+      }
+      setResetAsk(false);
+      keysChanged();
+      await refreshKeys();
+      startOnboarding();
+    } catch {
+      setResetError(true);
+      await refreshKeys();
+    }
+  };
 
   // Local copy for optimistic updates; the snapshot is the source of truth. Until the first real
   // snapshot arrives the mirror holds DEFAULT_SETTINGS (same object), so the persisted settings
@@ -244,6 +326,9 @@ export function Settings({
             <h1>Pimple</h1>
             <p>The tutor that rests on the edge of your screen</p>
           </div>
+          {onboarding ? (
+            <span className="status-pill">Setup</span>
+          ) : (
           <button
             type="button"
             className={`status-pill ${needsAnthropic ? "warn" : keys ? "ok" : ""}`}
@@ -254,8 +339,10 @@ export function Settings({
             <span className="dot" />
             {needsAnthropic ? "Needs a key" : keys ? "Ready" : keysUnavailable ? "Preview" : "Waking up"}
           </button>
+          )}
         </div>
 
+        {!onboarding && (
         <nav
           className="tabs"
           role="tablist"
@@ -277,6 +364,7 @@ export function Settings({
             </button>
           ))}
         </nav>
+        )}
 
         <svg className="meniscus" viewBox="0 0 1200 14" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0 7 C 100 0, 200 14, 300 7 S 500 0, 600 7 S 800 14, 900 7 S 1100 0, 1200 7" />
@@ -284,7 +372,20 @@ export function Settings({
         </svg>
       </header>
 
-      <main className="lg-body" ref={bodyRef}>
+      {onboarding && (
+        <Onboarding
+          keys={keys}
+          keysUnavailable={keysUnavailable}
+          refreshKeys={refreshKeys}
+          voiceId={settings.voiceId}
+          onSelectVoice={selectVoice}
+          onFinish={finishOnboarding}
+          onExit={exitOnboarding}
+          startStep={onbStart}
+        />
+      )}
+
+      <main className="lg-body" ref={bodyRef} hidden={onboarding}>
         <div key={tab} className="pane" role="tabpanel" style={{ ["--dir" as string]: dir }}>
           {tab === "bubble" && (
             <>
@@ -417,6 +518,33 @@ export function Settings({
                   />
                 </div>
               </Blob>
+              <div className="reset">
+                {resetAsk ? (
+                  <>
+                    <span>Remove both keys and the saved voice from your Keychain?</span>
+                    <button type="button" className="btn danger" onClick={() => void resetKeys()}>
+                      Remove keys
+                    </button>
+                    <button type="button" className="btn ghost" onClick={() => setResetAsk(false)}>
+                      Keep them
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="link" onClick={() => startOnboarding()}>
+                      Run setup again
+                    </button>
+                    <button type="button" className="link danger" onClick={() => setResetAsk(true)}>
+                      Reset keys…
+                    </button>
+                  </>
+                )}
+              </div>
+              {resetError && (
+                <div className="flash err" role="alert" style={{ textAlign: "center" }}>
+                  Couldn't remove every key. Check the Keys list above and try again.
+                </div>
+              )}
               <p className="footnote">
                 Keys live in your macOS Keychain and leave this Mac only to call the provider.
               </p>

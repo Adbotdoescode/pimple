@@ -71,6 +71,11 @@ export default function App() {
   // `devDrag: {x, y}` drags the mini bubble in-page, `devReload: true` reloads this webview. Example:
   //   scripts/gt-emit.sh ui:intent '{"type":"dev","devOpen":"voice"}'
   const [devTab, setDevTab] = useState<string | undefined>(undefined);
+  const [devOnboard, setDevOnboard] = useState<string | undefined>(() => {
+    // Browser preview: …/settings/index.html#onboard=<step>
+    const m = import.meta.env.DEV ? /^#onboard=(\w+)$/.exec(window.location.hash) : null;
+    return m ? `${m[1]}#0` : undefined;
+  });
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;
@@ -83,6 +88,9 @@ export default function App() {
         window.location.reload();
         return;
       }
+      // `devOnboard: "<step>"` opens the first-run flow on that step; "off" leaves it.
+      const onb = (p as { devOnboard?: unknown }).devOnboard;
+      if (typeof onb === "string") setDevOnboard(`${onb}#${Date.now()}`);
       const drag = (p as { devDrag?: { x: number; y: number; hold?: number } }).devDrag;
       if (drag && typeof drag.x === "number" && typeof drag.y === "number") devDragBead(drag.x, drag.y, drag.hold);
       const dev = (p as { devOpen?: unknown }).devOpen;
@@ -112,6 +120,6 @@ export default function App() {
   };
 
   return (
-    <Settings snapshot={snapshot} onIntent={send} initialSection={section} navNonce={nonce} devTab={devTab} />
+    <Settings snapshot={snapshot} onIntent={send} initialSection={section} navNonce={nonce} devTab={devTab} devOnboard={devOnboard} />
   );
 }
