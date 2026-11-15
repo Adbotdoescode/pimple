@@ -74,7 +74,8 @@ export default defineConfig(async () => ({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      // Agent worktrees under .claude/ and cargo target dirs must never trigger a reload of the running app.
+      ignored: ["**/src-tauri/**", "**/src-tauri/target*/**", "**/.claude/**"],
     },
   },
 }));

@@ -6,6 +6,8 @@ import { fmt } from "./geometry";
  * boxes drawn in one pass) and a pressure-style variable-width outline cut into short chunks.
  * Chunks are plain filled polygons revealed one after another, so the draw-on needs no mask or filter
  * (WKWebView rasterises those at low resolution on retina).
+ * The rigid variant (cornerPts, rigidInkGeom, rigidCircle, rigidHead) draws like a marker on a whiteboard:
+ * straight segments, corners kept with a few px of rounding, near-constant width.
  */
 
 /** Deterministic random stream from a shape id, so geometry is stable across renders. */
@@ -154,7 +156,166 @@ export function curvePts(pts: Pt[]): Pt[] {
   return out;
 }
 
-export interface InkChunk { d: string; t: number }
+/* ───────────── rigid (marker) ink ───────────── */
+
+function polyLen(p: Pt[]): number {
+  let L = 0;
+  for (let i = 1; i < p.length; i++) L += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+  return L;
+}
+
+/** Cuts `k` px of arc length off the end of a polyline. */
+function trimEnd(p: Pt[], k: number): Pt[] {
+  if (k >= polyLen(p)) return [p[0]];
+  let acc = 0;
+  for (let i = p.length - 1; i > 0; i--) {
+    const a = p[i - 1], b = p[i];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len > 0 && acc + len >= k) {
+      const t = (k - acc) / len;
+      return [...p.slice(0, i), [b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t]];
+    }
+    acc += len;
+  }
+  return p.slice();
+}
+
+/** Cuts `k` px of arc length off the start of a polyline. */
+function trimStart(p: Pt[], k: number): Pt[] {
+  return trimEnd(p.slice().reverse(), k).reverse();
+}
+
+/** Interior angle at b in degrees: 180 is straight on, small is a sharp corner. */
+function angleAt(a: Pt, b: Pt, c: Pt): number {
+  const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+  const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+  if (!(l1 > 0) || !(l2 > 0)) return 180;
+  const cos = Math.min(1, Math.max(-1, (v1x * v2x + v1y * v2y) / (l1 * l2)));
+  return (Math.acos(cos) * 180) / Math.PI;
+}
+
+/**
+ * Centreline that keeps its corners: straight runs stay straight, and each corner (interior angle below
+ * `cornerDeg`) is cut back by `radius` px and joined with a short quadratic curve.
+ */
+export function cornerPts(pts: Pt[], opts: { cornerDeg?: number; radius?: number } = {}): Pt[] {
+  const cornerDeg = opts.cornerDeg ?? 150;
+  const radius = opts.radius ?? 4;
+
+  let p: Pt[] = [];
+  for (const q of pts) {
+    const last = p[p.length - 1];
+    if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) >= 0.5) p.push([q[0], q[1]]);
+  }
+  if (p.length < 3) return p;
+
+  let n = p.length;
+  const closed = n >= 4 && Math.hypot(p[n - 1][0] - p[0][0], p[n - 1][1] - p[0][1]) <= 1.5;
+  if (closed) p[n - 1] = [p[0][0], p[0][1]];
+
+  let corner: boolean[] = new Array<boolean>(n).fill(false);
+  for (let i = 1; i < n - 1; i++) corner[i] = angleAt(p[i - 1], p[i], p[i + 1]) < cornerDeg;
+  if (closed && angleAt(p[n - 2], p[0], p[1]) < cornerDeg) {
+    // rotate so the seam sits mid-edge; the old start vertex becomes an ordinary corner
+    const m: Pt = [(p[0][0] + p[1][0]) / 2, (p[0][1] + p[1][1]) / 2];
+    p = [m, ...p.slice(1, n - 1), p[0], m];
+    corner = [false, ...corner.slice(1, n - 1), true, false];
+    n = p.length;
+  }
+
+  const bounds = [0];
+  for (let i = 1; i < n - 1; i++) if (corner[i]) bounds.push(i);
+  bounds.push(n - 1);
+  const runs: Pt[][] = [];
+  for (let k = 0; k + 1 < bounds.length; k++) {
+    const seg = p.slice(bounds[k], bounds[k + 1] + 1);
+    runs.push(seg.length === 2 ? seg : curvePts(seg));
+  }
+
+  // corner radius per join, from the untrimmed runs so trims never overlap
+  const lens = runs.map(polyLen);
+  const K: number[] = [];
+  for (let j = 0; j + 1 < runs.length; j++) K.push(Math.min(radius, 0.3 * lens[j], 0.3 * lens[j + 1]));
+  const segs = runs.map((run, r) => {
+    let s = run;
+    if (r > 0 && K[r - 1] > 0) s = trimStart(s, K[r - 1]);
+    if (r < K.length && K[r] > 0) s = trimEnd(s, K[r]);
+    return s;
+  });
+
+  const out: Pt[] = [];
+  const add = (q: Pt) => {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) > 0.01) out.push(q);
+  };
+  for (let r = 0; r < segs.length; r++) {
+    for (const q of segs[r]) add(q);
+    if (r + 1 < segs.length && K[r] > 0) {
+      const A = segs[r][segs[r].length - 1], B = segs[r + 1][0], V = p[bounds[r + 1]];
+      for (let s = 1; s <= 5; s++) {
+        const t = s / 6, u = 1 - t;
+        add([u * u * A[0] + 2 * u * t * V[0] + t * t * B[0], u * u * A[1] + 2 * u * t * V[1] + t * t * B[1]]);
+      }
+    }
+  }
+  return out;
+}
+
+/** Keeps every input point and splits each segment longer than `step` into equal pieces. */
+export function densify(poly: Pt[], step: number): Pt[] {
+  if (poly.length < 2) return poly.slice();
+  let total = 0;
+  for (let i = 1; i < poly.length; i++) {
+    total += Math.hypot(poly[i][0] - poly[i - 1][0], poly[i][1] - poly[i - 1][1]);
+  }
+  if (total / step > 1200) step = total / 1200;
+  const out: Pt[] = [poly[0]];
+  for (let i = 1; i < poly.length; i++) {
+    const a = poly[i - 1], b = poly[i];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 0.01) continue;
+    const m = Math.ceil(len / step);
+    for (let k = 1; k <= m; k++) {
+      out.push(k === m ? b : [a[0] + ((b[0] - a[0]) * k) / m, a[1] + ((b[1] - a[1]) * k) / m]);
+    }
+  }
+  return out;
+}
+
+/** A clean marker circle: exact radius, no spiral, a tiny overlap at the close. */
+export function rigidCircle(cx: number, cy: number, R: number, rnd: () => number): Pt[] {
+  const start = -Math.PI / 2 - 0.35 + rnd() * 0.2;
+  const sweep = Math.PI * 2 + 0.08;
+  const n = Math.max(32, Math.min(180, Math.ceil((R * sweep) / 4)));
+  const out: Pt[] = [];
+  for (let i = 0; i <= n; i++) {
+    const th = start + (sweep * i) / n;
+    out.push([cx + R * Math.cos(th), cy + R * Math.sin(th)]);
+  }
+  return out;
+}
+
+/**
+ * Symmetric straight-edged arrowhead for the rigid style. The tip is exactly at `tip`;
+ * `u` is the unit direction of travel.
+ */
+export function rigidHead(tip: Pt, u: [number, number], length: number, width: number): string {
+  const nx = -u[1], ny = u[0];
+  const hw = width / 2;
+  const back: Pt = [tip[0] - u[0] * length, tip[1] - u[1] * length];
+  const l: Pt = [back[0] + nx * hw, back[1] + ny * hw];
+  const r: Pt = [back[0] - nx * hw, back[1] - ny * hw];
+  const notch: Pt = [tip[0] - u[0] * length * 0.82, tip[1] - u[1] * length * 0.82];
+  const P = (p: Pt) => `${fmt(p[0])} ${fmt(p[1])}`;
+  return `M${P(tip)} L${P(l)} L${P(notch)} L${P(r)} Z`;
+}
+
+export interface InkChunk {
+  d: string;
+  t: number;
+  /** Rigid ink: when set, `d` is an open centreline piece to STROKE at this width (round caps and joins) instead of a filled outline. */
+  w?: number;
+}
 export interface InkCap { x: number; y: number; r: number; t: number }
 export interface InkGeom {
   pts: Pt[];          // evenly spaced centreline
@@ -224,6 +385,38 @@ export function inkGeom(poly: Pt[], width: number, rnd: () => number, opts: InkO
   const caps: InkCap[] = [
     { x: pts[0][0], y: pts[0][1], r: half[0], t: 0 },
     { x: pts[n - 1][0], y: pts[n - 1][1], r: half[n - 1], t: 1 },
+  ];
+  const s0 = Math.floor(n * 0.1), s1 = Math.max(s0 + 2, Math.ceil(n * 0.8));
+  const sheen = total > 40 ? polyD(pts.slice(s0, s1)) : "";
+  return { pts, d, sheen, chunks, caps, total };
+}
+
+/** Marker-style counterpart of inkGeom: near-constant width strokes, no taper, no pressure swell. */
+export function rigidInkGeom(poly: Pt[], width: number, rnd: () => number): InkGeom {
+  let pts = densify(poly, 3);
+  if (pts.length < 2) {
+    const p0: Pt = poly[0] ?? [0, 0];
+    pts = [p0, p0];
+  }
+  const n = pts.length;
+  let total = 0;
+  for (let i = 1; i < n; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  const d = polyD(pts);
+
+  const count = Math.max(3, Math.min(30, Math.round(total / 12)));
+  const per = Math.max(1, Math.ceil((n - 1) / count));
+  const phase = rnd() * Math.PI * 2;
+  const f = Math.max(0.6, total / 320);
+  const wAt = (t: number) => width * (1 + 0.06 * Math.sin(f * 2 * Math.PI * t + phase));
+  const chunks: InkChunk[] = [];
+  for (let i0 = 0; i0 < n - 1; i0 += per) {
+    const i1 = Math.min(n - 1, i0 + per);
+    const t = i0 / (n - 1);
+    chunks.push({ d: polyD(pts.slice(i0, i1 + 1)), t, w: wAt(t) });
+  }
+  const caps: InkCap[] = [
+    { x: pts[0][0], y: pts[0][1], r: wAt(0) / 2, t: 0 },
+    { x: pts[n - 1][0], y: pts[n - 1][1], r: wAt(1) / 2, t: 1 },
   ];
   const s0 = Math.floor(n * 0.1), s1 = Math.max(s0 + 2, Math.ceil(n * 0.8));
   const sheen = total > 40 ? polyD(pts.slice(s0, s1)) : "";

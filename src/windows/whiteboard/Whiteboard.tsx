@@ -349,6 +349,7 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
             visibleSegmentIds={visibleSegmentIds}
             pulseShapeIds={[...pulse]}
             variant="main"
+            inkStyle="rigid"
             toView={toView}
             scale={s}
             styleFor={styleFor}
@@ -360,6 +361,7 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
               visibleSegmentIds={sideIds}
               pulseShapeIds={pulseShapeIds}
               variant="sidenote"
+              inkStyle="rigid"
               toView={toView}
               scale={s}
               styleFor={styleFor}

@@ -18,7 +18,22 @@ import {
   type Box,
   type Seg,
 } from "./geometry";
-import { curvePts, handBox, handCircle, handHead, handLine, inkGeom, polyD, seedOf, textWidth, type InkOpts } from "./ink";
+import {
+  curvePts,
+  cornerPts,
+  handBox,
+  handCircle,
+  handHead,
+  handLine,
+  inkGeom,
+  polyD,
+  rigidCircle,
+  rigidHead,
+  rigidInkGeom,
+  seedOf,
+  textWidth,
+  type InkOpts,
+} from "./ink";
 import "./render.css";
 
 export type { ShapeStyle } from "./palette";
@@ -35,6 +50,8 @@ export interface ShapeLayerProps {
   opacity?: number;
   /** Visible area in SVG user coordinates. When given, labels are kept inside it. */
   viewport?: { width: number; height: number };
+  /** "rigid" draws like a marker on a whiteboard: straight segments, crisp corners, near-constant width. Default "organic" (hand-drawn). */
+  inkStyle?: "organic" | "rigid";
 }
 
 const STEP_MS = 120;   // stagger between shapes that appear together
@@ -54,6 +71,8 @@ interface Ctx {
   scale: number;
   style: ShapeStyle;
   side: boolean;
+  /** Marker-style ink on a whiteboard: straight segments, crisp corners, near-constant width. */
+  rigid: boolean;
   delay: number;
   placements: Map<string, LabelPlacement>;
 }
@@ -66,7 +85,7 @@ interface Built {
 interface Item { shape: Shape; index: number }
 
 export function ShapeLayer(props: ShapeLayerProps): ReactElement {
-  const { shapes, visibleSegmentIds, pulseShapeIds, variant = "main", toView, scale, styleFor, opacity = 1, viewport } = props;
+  const { shapes, visibleSegmentIds, pulseShapeIds, variant = "main", toView, scale, styleFor, opacity = 1, viewport, inkStyle = "organic" } = props;
   const side = variant === "sidenote";
   const pulseSet = new Set(pulseShapeIds ?? []);
 
@@ -118,6 +137,7 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
           scale={scale}
           style={styleFor(shape)}
           side={side}
+          rigid={inkStyle === "rigid"}
           pulsing={pulseSet.has(shape.id)}
           placements={placements}
         />
@@ -133,16 +153,18 @@ interface ShapeNodeProps {
   scale: number;
   style: ShapeStyle;
   side: boolean;
+  rigid: boolean;
   pulsing: boolean;
   placements: Map<string, LabelPlacement>;
 }
 
-function ShapeNode({ shape, index, toView, scale, style, side, pulsing, placements }: ShapeNodeProps): ReactElement | null {
+function ShapeNode({ shape, index, toView, scale, style, side, rigid, pulsing, placements }: ShapeNodeProps): ReactElement | null {
   const ctx: Ctx = {
     toView,
     scale,
     style,
     side,
+    rigid,
     delay: index * STEP_MS,
     placements,
   };
@@ -562,7 +584,7 @@ function inkNodes(
     const d = polyD(poly);
     return { d, nodes: [<Stroke key={tag} d={d} color={c.style.stroke} width={width} c={cc} opacity={o.opacity} />] };
   }
-  const g = inkGeom(poly, width, rnd, o);
+  const g = c.rigid ? rigidInkGeom(poly, width, rnd) : inkGeom(poly, width, rnd, o);
   // Underlays trail the ink slightly, so their round caps never poke out ahead of the pen tip.
   const under = { ...c, delay: delay + 35 };
   const nodes: ReactNode[] = [
@@ -573,7 +595,10 @@ function inkNodes(
     <g key={tag} fill={c.style.stroke} opacity={o.opacity}>
       <circle cx={fmt(g.caps[0].x)} cy={fmt(g.caps[0].y)} r={fmt(g.caps[0].r)} className="gt-ink"
         style={{ animationDelay: `${delay}ms` }} />
-      {g.chunks.map((ch, i) => (
+      {g.chunks.map((ch, i) => ch.w !== undefined ? (
+        <path key={i} d={ch.d} fill="none" stroke={c.style.stroke} strokeWidth={fmt(ch.w)} strokeLinecap="round" strokeLinejoin="round"
+          className="gt-ink" style={{ animationDelay: `${Math.round(delay + ch.t * DRAW_MS)}ms` }} />
+      ) : (
         <path key={i} d={ch.d} className="gt-ink" style={{ animationDelay: `${Math.round(delay + ch.t * DRAW_MS)}ms` }} />
       ))}
       <circle cx={fmt(g.caps[1].x)} cy={fmt(g.caps[1].y)} r={fmt(g.caps[1].r)} className="gt-ink"
@@ -726,7 +751,7 @@ function buildCircle(s: Shape, c: Ctx): Built | null {
   const g = circleGeom(s, c.toView, c.scale);
   if (!g) return null;
   const rnd = seedOf(s.id);
-  const ink = inkNodes(handCircle(g.cx, g.cy, g.R, rnd), c, rnd, { loop: true });
+  const ink = inkNodes(c.rigid ? rigidCircle(g.cx, g.cy, g.R, rnd) : handCircle(g.cx, g.cy, g.R, rnd), c, rnd, { loop: true });
   const lp = placedAt(c, s);
   return {
     main: ink.d,
@@ -741,7 +766,10 @@ function buildBox(s: Shape, c: Ctx): Built | null {
   const g = rectGeom(s.rect, c.toView);
   if (!g) return null;
   const rnd = seedOf(s.id);
-  const ink = inkNodes(handBox(g.L, g.T, g.W, g.H, rnd), c, rnd, { loop: true });
+  const box = c.rigid
+    ? cornerPts([[g.L, g.T], [g.L + g.W, g.T], [g.L + g.W, g.T + g.H], [g.L, g.T + g.H], [g.L, g.T]])
+    : handBox(g.L, g.T, g.W, g.H, rnd);
+  const ink = inkNodes(box, c, rnd, { loop: true });
   const lp = placedAt(c, s);
   return {
     main: ink.d,
@@ -762,11 +790,19 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
   const width = isVector ? 4.4 : STROKE_W;
   const rnd = seedOf(s.id);
   const head = kind === "line" ? null : arrowHead(a, b, isVector ? 17 : 15, isVector ? 14 : 12);
-  const ink = inkNodes(handLine(a, head ? head.shaftEnd : b, rnd), c, rnd, { width, taperEnd: !head });
+  const shaft = c.rigid
+    ? [a, head ? head.shaftEnd : b]
+    : handLine(a, head ? head.shaftEnd : b, rnd);
+  const ink = inkNodes(shaft, c, rnd, { width, taperEnd: !head });
   const d = ink.d;
 
   const nodes: ReactNode[] = ink.nodes;
-  if (head) nodes.push(...headNodes(handHead(b, g.u, isVector ? 17 : 15, isVector ? 14 : 12, rnd), c, "head"));
+  if (head) {
+    const headD = c.rigid
+      ? rigidHead(b, g.u, isVector ? 17 : 15, isVector ? 14 : 12)
+      : handHead(b, g.u, isVector ? 17 : 15, isVector ? 14 : 12, rnd);
+    nodes.push(...headNodes(headD, c, "head"));
+  }
 
   const lp = placedAt(c, s);
   if (isVector) {
@@ -794,7 +830,9 @@ function buildStroke(s: Shape, c: Ctx): Built | null {
   const pts = strokePts(s, c.toView);
   if (pts.length < 2) return null;
   const rnd = seedOf(s.id);
-  const ink = inkNodes(curvePts(pts), c, rnd);
+  // Corners stay sharp (a traced triangle stays a triangle); organic strokes use a stricter angle and softer rounding.
+  const poly = c.rigid ? cornerPts(pts) : cornerPts(pts, { cornerDeg: 135, radius: 6 });
+  const ink = inkNodes(poly, c, rnd);
   return { main: ink.d, nodes: ink.nodes };
 }
 
@@ -892,7 +930,7 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
       });
     } else if (pts.length >= 2) {
       nodes.push(
-        ...inkNodes(curvePts(pts), c, seedOf(`${s.id}/s${j}`), { width: 3.2, tag: `s${j}`, delay: base, opacity }).nodes,
+        ...inkNodes(c.rigid ? cornerPts(pts) : curvePts(pts), c, seedOf(`${s.id}/s${j}`), { width: 3.2, tag: `s${j}`, delay: base, opacity }).nodes,
       );
     }
     if (ser.label) {
