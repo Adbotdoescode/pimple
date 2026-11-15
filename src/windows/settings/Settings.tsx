@@ -29,7 +29,7 @@ const TABS: { value: Tab; label: string }[] = [
 type CreditState =
   | { status: "loading" }
   | { status: "error" }
-  | { status: "ok"; used: number; limit: number };
+  | { status: "ok"; used: number; limit: number; provider: string };
 
 /**
  * Liquid that reacts to the pointer: a soft specular glow trails the cursor across the pane
@@ -715,7 +715,7 @@ function CreditRow() {
     setCredit({ status: "loading" });
     try {
       const r = await invoke<{ used: number; limit: number; provider: string }>(CMD.ttsCredit);
-      setCredit({ status: "ok", used: r.used, limit: r.limit });
+      setCredit({ status: "ok", used: r.used, limit: r.limit, provider: r.provider });
     } catch {
       setCredit({ status: "error" });
     }
@@ -730,9 +730,16 @@ function CreditRow() {
     credit.status === "ok" && credit.limit > 0 ? Math.min(100, (credit.used / credit.limit) * 100) : 0;
   const tone = pct > 90 ? "red" : pct > 75 ? "amber" : "";
 
+  // limit 0 means there is nothing to meter (no key, or the macOS voice is speaking).
+  const metered = credit.status === "ok" && credit.limit > 0;
   let text: string;
   if (credit.status === "loading") text = "Checking…";
   else if (credit.status === "error") text = "Credit isn't available right now";
+  else if (!metered)
+    text =
+      credit.provider === "elevenlabs"
+        ? "No credit information for this key yet"
+        : "The macOS voice is speaking, so no credit is being spent";
   else
     text = `${credit.used.toLocaleString("en-US")} of ${credit.limit.toLocaleString("en-US")} characters used`;
 
@@ -754,7 +761,7 @@ function CreditRow() {
           <RefreshIcon className={loading ? "spin" : undefined} />
         </button>
       </div>
-      {credit.status === "ok" && (
+      {metered && (
         <div
           className="meter"
           role="progressbar"

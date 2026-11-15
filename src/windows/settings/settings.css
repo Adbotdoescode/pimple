@@ -902,8 +902,9 @@ body,
   cursor: pointer;
   border-radius: 12px;
 }
-.voice-top { display: flex; align-items: center; gap: 8px; max-width: 100%; }
+.voice-top { display: flex; align-items: center; gap: 8px; width: 100%; }
 .voice-name {
+  flex: 0 1 auto;
   min-width: 0;
   font-family: var(--font-round);
   font-size: 14.5px;
@@ -913,8 +914,8 @@ body,
   text-overflow: ellipsis;
 }
 .voice-chip {
-  flex: none;
-  max-width: 60%;
+  flex: 0 2 auto;
+  min-width: 44px;
   padding: 1px 8px;
   border-radius: 999px;
   font-size: 10.5px;
