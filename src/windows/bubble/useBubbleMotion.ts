@@ -263,14 +263,29 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
 
     const desc = (r: Rect) => `${r.x.toFixed(0)},${r.y.toFixed(0)},${r.w.toFixed(0)}x${r.h.toFixed(0)}`;
     blog(`[bubble] win ${s.win} → ${want} at ${desc(next)} (glass cx=${s.pos.x.toFixed(0)} cy=${s.pos.y.toFixed(0)})`);
-    s.hidden = true;
-    render();
-    await nextFrame();
-    await nextFrame();
-    try {
-      await w.setSize(new LogicalSize(next.w, next.h));
-    } catch (e) {
-      logErr("setSize", e);
+    if (want === "big") {
+      // Grow first with the drop still on screen (the window keeps its top-left corner, so the
+      // glass does not move), then hide only for the one native move. The drop stays visible
+      // while it peels off the edge.
+      try {
+        await w.setSize(new LogicalSize(next.w, next.h));
+      } catch (e) {
+        logErr("setSize", e);
+      }
+      s.geom = { ...s.geom, w: next.w, h: next.h };
+      s.hidden = true;
+      render();
+      await nextFrame();
+    } else {
+      s.hidden = true;
+      render();
+      await nextFrame();
+      await nextFrame();
+      try {
+        await w.setSize(new LogicalSize(next.w, next.h));
+      } catch (e) {
+        logErr("setSize", e);
+      }
     }
     try {
       await w.setPosition(new LogicalPosition(next.x, next.y));

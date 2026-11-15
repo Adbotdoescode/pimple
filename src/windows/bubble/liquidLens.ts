@@ -277,6 +277,7 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
   let speedK = 0;
   let prev = { x: NaN, y: NaN };
   let sized = 0;
+  let drawnHidden = false;
 
   const frame = (now: number) => {
     if (raf) cancelAnimationFrame(raf);
@@ -292,8 +293,8 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
     if (!Number.isFinite(J.x) || Math.hypot(s.cx - J.x, s.cy - J.y) > 420) {
       J.x = s.cx; J.y = s.cy; J.vx = 0; J.vy = 0;
     }
-    const K = 210;
-    const C = 2 * 0.24 * Math.sqrt(K);
+    const K = 300;
+    const C = 2 * 0.33 * Math.sqrt(K);
     let left = dt;
     while (left > 1e-6) {
       const h = Math.min(1 / 240, left);
@@ -307,7 +308,7 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
     const oy = s.cy - J.y;
     const om = Math.hypot(ox, oy);
     if (om > 0.6) axis = Math.atan2(oy, ox);
-    const stretch = Math.min(om / (s.r * 1.7 + 46), 0.46);
+    const stretch = Math.min(om / (s.r * 1.5 + 40), 0.4);
     phase += dt * (1.1 + 9 * stretch);
 
     // drag speed → dispersion
@@ -330,7 +331,8 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
       tr = 20 * (1 - Math.min(Math.max((dist - 22) / 120, 0), 1));
     }
 
-    const calm = atRest && om < 0.3 && speedK < 0.01;
+    const calm = atRest && om < 0.3 && speedK < 0.01 && s.hidden === drawnHidden;
+    drawnHidden = s.hidden;
     if (calm && now - lastDraw < 66) return; // idle shimmer at ~15 fps
     lastDraw = now;
 
