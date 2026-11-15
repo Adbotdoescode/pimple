@@ -18,6 +18,8 @@ const ORDER = [
 ];
 const AFTER_SEGMENTS = ["shapes", "check_question", "gizmo_offer", "parked"];
 const AFTER_SHAPES = ["check_question", "gizmo_offer", "parked"];
+// Partial parse with incomplete strings and numbers omitted (see push()).
+const STRICT_ALLOW = Allow.ALL & ~Allow.STR & ~Allow.NUM;
 
 const segmentSchema = z.object({ id: z.string().min(1), text: z.string().min(1) });
 
@@ -114,20 +116,33 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
   const metaSent = new Set<string>();
   let lastObj: Record<string, unknown> | null = null;
 
-  function process(obj: Record<string, unknown>, done: boolean): void {
+  /**
+   * `strict` is the same snapshot parsed with partial strings and numbers disallowed: an item
+   * appears in it only once its last field is complete (segment: text; shape: target).
+   */
+  function process(obj: Record<string, unknown>, done: boolean, strict: Record<string, unknown> | null): void {
     const has = (k: string) => k in obj;
 
     const segs: unknown[] = Array.isArray(obj.segments) ? obj.segments : [];
+    const strictSegs: unknown[] = strict && Array.isArray(strict.segments) ? strict.segments : [];
     const segsClosed = done || AFTER_SEGMENTS.some(has);
-    while (segCursor < segs.length && (segsClosed || segCursor < segs.length - 1)) {
+    while (segCursor < segs.length) {
+      const sIdx = strictSegs[segCursor];
+      const strictDone =
+        isObj(sIdx) && typeof sIdx.id === "string" && typeof sIdx.text === "string";
+      if (!(segsClosed || segCursor < segs.length - 1 || strictDone)) break;
       const seg = parseSegment(segs[segCursor]);
       segCursor++;
       if (seg) h.onSegment?.(seg);
     }
 
     const shapes: unknown[] = Array.isArray(obj.shapes) ? obj.shapes : [];
+    const strictShapes: unknown[] = strict && Array.isArray(strict.shapes) ? strict.shapes : [];
     const shapesClosed = done || AFTER_SHAPES.some(has);
-    while (shapeCursor < shapes.length && (shapesClosed || shapeCursor < shapes.length - 1)) {
+    while (shapeCursor < shapes.length) {
+      const sh = strictShapes[shapeCursor];
+      const strictDone = isObj(sh) && typeof sh.target === "string";
+      if (!(shapesClosed || shapeCursor < shapes.length - 1 || strictDone)) break;
       const shape = parseWireShape(shapes[shapeCursor], true);
       shapeCursor++;
       if (shape) h.onShape?.(shape);
@@ -166,6 +181,7 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
       } catch {
         // still streaming
       }
+      let strict: Record<string, unknown> | null = null;
       if (!done) {
         try {
           const partial: unknown = parse(snapshot, Allow.ALL);
@@ -173,10 +189,16 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
         } catch {
           return; // not parseable yet
         }
+        try {
+          const s: unknown = parse(snapshot, STRICT_ALLOW);
+          if (isObj(s)) strict = s;
+        } catch {
+          // strict parse failed; fall back to the closed-item rules
+        }
       }
       if (!obj) return;
       lastObj = obj;
-      process(obj, done);
+      process(obj, done, strict);
     },
 
     finish(finalText: string): TutorResponse {
@@ -196,7 +218,7 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
           // keep the last good snapshot
         }
       }
-      process(obj, complete);
+      process(obj, complete, null);
 
       const r = wireToTutorResponse(obj);
       const rest: Partial<TutorResponse> = {};
