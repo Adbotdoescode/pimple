@@ -1,18 +1,25 @@
-import { useId, useState, type ReactElement, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Pt, Shape } from "@shared/contracts";
 import { labelHaloFor, type ShapeStyle } from "./palette";
 import {
   arrowHead,
+  boxOverlapArea,
   circlePath,
   fmt,
   graphMapper,
+  inflate,
   isFiniteNum,
   isFinitePt,
   isRect,
   linePath,
+  polySegs,
+  rectSegs,
   roundedRectPath,
+  segHitsBox,
   smoothPath,
   unitAndUpNormal,
+  type Box,
+  type Seg,
 } from "./geometry";
 import "./render.css";
 
@@ -28,12 +35,19 @@ export interface ShapeLayerProps {
   styleFor: (shape: Shape) => ShapeStyle;
   /** Root opacity (0..1). Transitions over 400 ms. Used to dim main shapes behind a side note. */
   opacity?: number;
+  /** Visible area in SVG user coordinates. When given, labels are kept inside it. */
+  viewport?: { width: number; height: number };
 }
 
 const STEP_MS = 120;   // stagger between shapes that appear together
 const DRAW_MS = 260;   // stroke-draw duration
 const STROKE_W = 3.5;
 const LABEL_OFFSET = 14;
+const CHAR_W = 9.2;      // estimated advance per character at 16 px / 700
+const LABEL_ASCENT = 15;
+const LABEL_H = 20;
+
+interface LabelPlacement { x: number; y: number; anchor: "start" | "middle" | "end" }
 
 /** Per-shape rendering context. `delay` is the stroke start time in ms. */
 interface Ctx {
@@ -43,6 +57,7 @@ interface Ctx {
   side: boolean;
   delay: number;
   labelStroke: string;
+  placements: Map<string, LabelPlacement>;
 }
 
 interface Built {
@@ -50,22 +65,40 @@ interface Built {
   nodes: ReactNode[];
 }
 
+interface Item { shape: Shape; index: number }
+
 export function ShapeLayer(props: ShapeLayerProps): ReactElement {
-  const { shapes, visibleSegmentIds, pulseShapeIds, variant = "main", toView, scale, styleFor, opacity = 1 } = props;
+  const { shapes, visibleSegmentIds, pulseShapeIds, variant = "main", toView, scale, styleFor, opacity = 1, viewport } = props;
   const uid = useId().replace(/[^A-Za-z0-9_-]/g, "");
   const side = variant === "sidenote";
-  const visibleSet = new Set(visibleSegmentIds);
   const pulseSet = new Set(pulseShapeIds ?? []);
 
   // Only shapes in visible segments mount. Index within the segment drives the stagger.
-  const counters = new Map<string, number>();
-  const items: { shape: Shape; index: number }[] = [];
-  for (const shape of shapes) {
-    if (!visibleSet.has(shape.segment_id)) continue;
-    const index = counters.get(shape.segment_id) ?? 0;
-    counters.set(shape.segment_id, index + 1);
-    items.push({ shape, index });
-  }
+  const items = useMemo<Item[]>(() => {
+    const visibleSet = new Set(visibleSegmentIds);
+    const counters = new Map<string, number>();
+    const out: Item[] = [];
+    for (const shape of shapes) {
+      if (!visibleSet.has(shape.segment_id)) continue;
+      const index = counters.get(shape.segment_id) ?? 0;
+      counters.set(shape.segment_id, index + 1);
+      out.push({ shape, index });
+    }
+    return out;
+  }, [shapes, visibleSegmentIds]);
+
+  // Label placements. Cached per shape id so labels already on screen do not jump when others appear.
+  const cacheRef = useRef<Map<string, LabelPlacement>>(new Map());
+  const vpW = viewport?.width;
+  const vpH = viewport?.height;
+  const placements = useMemo(() => {
+    const vp = vpW !== undefined && vpH !== undefined ? { width: vpW, height: vpH } : undefined;
+    try {
+      return computePlacements(items, toView, scale, vp, cacheRef.current);
+    } catch {
+      return new Map<string, LabelPlacement>();
+    }
+  }, [items, toView, scale, vpW, vpH]);
 
   return (
     <g className={side ? "gt-root gt-sidenote" : "gt-root"} style={{ opacity }}>
@@ -88,6 +121,7 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
           side={side}
           uid={uid}
           pulsing={pulseSet.has(shape.id)}
+          placements={placements}
         />
       ))}
     </g>
@@ -103,9 +137,10 @@ interface ShapeNodeProps {
   side: boolean;
   uid: string;
   pulsing: boolean;
+  placements: Map<string, LabelPlacement>;
 }
 
-function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing }: ShapeNodeProps): ReactElement | null {
+function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing, placements }: ShapeNodeProps): ReactElement | null {
   const ctx: Ctx = {
     toView,
     scale,
@@ -113,6 +148,7 @@ function ShapeNode({ shape, index, toView, scale, style, side, uid, pulsing }: S
     side,
     delay: index * STEP_MS,
     labelStroke: labelHaloFor(style.stroke),
+    placements,
   };
   let built: Built | null;
   try {
@@ -159,6 +195,242 @@ function build(shape: Shape, c: Ctx): Built | null {
     case "slider": return buildSlider(shape, c);
     default: return null;
   }
+}
+
+/* ───────────── view geometry shared by builders, candidates and obstacles ───────────── */
+
+interface CircleG { cx: number; cy: number; R: number }
+function circleGeom(s: Shape, toView: (p: Pt) => Pt, scale: number): CircleG | null {
+  if (!isFinitePt(s.center) || !isFiniteNum(s.radius) || s.radius <= 0) return null;
+  const [cx, cy] = toView(s.center);
+  const R = s.radius * scale;
+  if (!isFiniteNum(cx) || !isFiniteNum(cy) || !isFiniteNum(R) || R <= 0) return null;
+  return { cx, cy, R };
+}
+
+interface RectG { L: number; T: number; W: number; H: number }
+function rectGeom(rect: unknown, toView: (p: Pt) => Pt): RectG | null {
+  if (!isRect(rect)) return null;
+  const [x, y, w, h] = rect;
+  const a = toView([x, y]);
+  const b = toView([x + w, y + h]);
+  if (!isFinitePt(a) || !isFinitePt(b)) return null;
+  const W = Math.abs(b[0] - a[0]);
+  const H = Math.abs(b[1] - a[1]);
+  if (!(W > 0 && H > 0)) return null;
+  return { L: Math.min(a[0], b[0]), T: Math.min(a[1], b[1]), W, H };
+}
+
+interface SegG { a: Pt; b: Pt; u: [number, number]; n: [number, number] }
+function segGeom(s: Shape, toView: (p: Pt) => Pt): SegG | null {
+  if (!isFinitePt(s.from) || !isFinitePt(s.to)) return null;
+  const a = toView(s.from);
+  const b = toView(s.to);
+  if (!isFinitePt(a) || !isFinitePt(b)) return null;
+  const frame = unitAndUpNormal(a, b);
+  if (!frame) return null;
+  return { a, b, u: frame.u, n: frame.n };
+}
+
+function strokePts(s: Shape, toView: (p: Pt) => Pt): Pt[] {
+  if (!Array.isArray(s.points)) return [];
+  return s.points.filter(isFinitePt).slice(0, 32).map((p) => toView(p)).filter(isFinitePt);
+}
+
+/* ───────────── label placement ───────────── */
+
+function combineLabel(label: string | undefined, magnitude: string | undefined): string | undefined {
+  if (label && magnitude) return label.includes("=") ? `${label} ${magnitude}` : `${label} = ${magnitude}`;
+  return label || magnitude || undefined;
+}
+
+/** Text that the placer moves. Text shapes and graphs never move. */
+function placeableText(s: Shape): string | undefined {
+  switch (s.kind) {
+    case "circle":
+    case "box":
+    case "line":
+    case "arrow":
+      return s.label || undefined;
+    case "vector":
+      return combineLabel(s.label, s.magnitude);
+    default:
+      return undefined;
+  }
+}
+
+function anchorForNormal(n: [number, number]): "start" | "middle" | "end" {
+  return Math.abs(n[0]) > 0.5 ? (n[0] < 0 ? "end" : "start") : "middle";
+}
+
+/** Label beside point p, pushed `dist` px along unit normal n, centred vertically on the offset point. */
+function sideLabel(px: number, py: number, n: [number, number], dist: number): LabelPlacement {
+  return { x: px + n[0] * dist, y: py + n[1] * dist + 5, anchor: anchorForNormal(n) };
+}
+
+/** Ordered candidate anchors per kind. The first is the default position. */
+function labelCandidates(s: Shape, toView: (p: Pt) => Pt, scale: number): LabelPlacement[] {
+  switch (s.kind) {
+    case "circle": {
+      const g = circleGeom(s, toView, scale);
+      if (!g) return [];
+      const { cx, cy, R } = g;
+      const k = Math.SQRT1_2;
+      return [
+        { x: cx + R * k + 6, y: cy - R * k - 4, anchor: "start" },   // upper-right
+        { x: cx - R * k - 6, y: cy - R * k - 4, anchor: "end" },     // upper-left
+        { x: cx + R + 6, y: cy + 5, anchor: "start" },               // right
+        { x: cx + R * k + 6, y: cy + R * k + 16, anchor: "start" },  // lower-right
+        { x: cx - R - 6, y: cy + 5, anchor: "end" },                 // left
+        { x: cx, y: cy - R - 8, anchor: "middle" },                  // top
+      ];
+    }
+    case "box": {
+      const g = rectGeom(s.rect, toView);
+      if (!g) return [];
+      const { L, T, W, H } = g;
+      return [
+        { x: L, y: T - 8, anchor: "start" },                 // above-left
+        { x: L + W, y: T - 8, anchor: "end" },               // above-right
+        { x: L, y: T + H + 16, anchor: "start" },            // below-left
+        { x: L + W, y: T + H + 16, anchor: "end" },          // below-right
+      ];
+    }
+    case "line":
+    case "arrow": {
+      const g = segGeom(s, toView);
+      if (!g) return [];
+      const out: LabelPlacement[] = [];
+      for (const t of [0.5, 1 / 3, 2 / 3]) {
+        const px = g.a[0] + (g.b[0] - g.a[0]) * t;
+        const py = g.a[1] + (g.b[1] - g.a[1]) * t;
+        out.push(sideLabel(px, py, g.n, LABEL_OFFSET));
+        out.push(sideLabel(px, py, [-g.n[0], -g.n[1]], LABEL_OFFSET));
+      }
+      return out;
+    }
+    case "vector": {
+      const g = segGeom(s, toView);
+      if (!g) return [];
+      const [ux, uy] = g.u;
+      const [bx, by] = g.b;
+      return [
+        {                                                    // beyond the tip
+          x: bx + ux * 26,
+          y: by + uy * 26 + (uy > 0.35 ? 14 : uy < -0.35 ? -6 : 5),
+          anchor: ux > 0.35 ? "start" : ux < -0.35 ? "end" : "middle",
+        },
+        sideLabel(bx, by, g.n, 18),                          // either side of the tip
+        sideLabel(bx, by, [-g.n[0], -g.n[1]], 18),
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
+function labelBox(p: LabelPlacement, text: string): Box {
+  const w = text.length * CHAR_W;
+  const x0 = p.anchor === "start" ? p.x : p.anchor === "end" ? p.x - w : p.x - w / 2;
+  const y0 = p.y - LABEL_ASCENT;
+  return { x0, y0, x1: x0 + w, y1: y0 + LABEL_H };
+}
+
+/** Segments a shape occupies, in view coordinates, for label collision tests. */
+function obstaclesOf(s: Shape, toView: (p: Pt) => Pt, scale: number): Seg[] {
+  switch (s.kind) {
+    case "circle": {
+      const g = circleGeom(s, toView, scale);
+      if (!g) return [];
+      const ring: Pt[] = [];
+      for (let i = 0; i <= 24; i++) {
+        const th = (i / 24) * Math.PI * 2;
+        ring.push([g.cx + g.R * Math.cos(th), g.cy + g.R * Math.sin(th)]);
+      }
+      return polySegs(ring);
+    }
+    case "box":
+    case "graph":
+    case "slider": {
+      const g = rectGeom(s.rect, toView);
+      return g ? rectSegs({ x0: g.L, y0: g.T, x1: g.L + g.W, y1: g.T + g.H }) : [];
+    }
+    case "line":
+    case "arrow":
+    case "vector": {
+      const g = segGeom(s, toView);
+      return g ? [[g.a[0], g.a[1], g.b[0], g.b[1]]] : [];
+    }
+    case "stroke":
+      return polySegs(strokePts(s, toView));
+    case "text": {
+      if (!s.label || !isFinitePt(s.center)) return [];
+      const [x, y] = toView(s.center);
+      if (!isFiniteNum(x) || !isFiniteNum(y)) return [];
+      return rectSegs(labelBox({ x, y: y + 5, anchor: "middle" }, s.label));
+    }
+    default:
+      return [];
+  }
+}
+
+/** 0 means clean. Otherwise a rough cost: label overlap area, stroke hits, and leaving the viewport. */
+function scoreCandidate(box: Box, segs: Seg[], placed: Box[], vp: { width: number; height: number } | undefined): number {
+  let score = 0;
+  for (const p of placed) score += boxOverlapArea(box, p);
+  const grown = inflate(box, 3);
+  for (const s of segs) if (segHitsBox(s, grown)) score += 1000;
+  if (vp && (box.x0 < 0 || box.y0 < 0 || box.x1 > vp.width || box.y1 > vp.height)) score += 1e6;
+  return score;
+}
+
+function computePlacements(
+  items: Item[],
+  toView: (p: Pt) => Pt,
+  scale: number,
+  vp: { width: number; height: number } | undefined,
+  cache: Map<string, LabelPlacement>,
+): Map<string, LabelPlacement> {
+  const segs: Seg[] = [];
+  for (const { shape } of items) segs.push(...obstaclesOf(shape, toView, scale));
+
+  const out = new Map<string, LabelPlacement>();
+  const placed: Box[] = [];
+
+  // Labels already placed keep their spot; they only constrain new ones.
+  for (const { shape } of items) {
+    const text = placeableText(shape);
+    const cached = cache.get(shape.id);
+    if (!text || !cached) continue;
+    out.set(shape.id, cached);
+    placed.push(labelBox(cached, text));
+  }
+
+  // New labels, greedily in shape order.
+  for (const { shape } of items) {
+    const text = placeableText(shape);
+    if (!text || out.has(shape.id)) continue;
+    const cands = labelCandidates(shape, toView, scale);
+    if (cands.length === 0) continue;
+    let pick = cands[0];
+    let best = Infinity;
+    for (const cand of cands) {
+      const score = scoreCandidate(labelBox(cand, text), segs, placed, vp);
+      if (score === 0) { pick = cand; break; }
+      if (score < best) { best = score; pick = cand; }
+    }
+    out.set(shape.id, pick);
+    placed.push(labelBox(pick, text));
+  }
+
+  cache.clear();
+  out.forEach((p, id) => cache.set(id, p));
+  return out;
+}
+
+/** Placement chosen by the collision pass, or the default candidate if none was computed. */
+function placedAt(c: Ctx, s: Shape): LabelPlacement | null {
+  return c.placements.get(s.id) ?? labelCandidates(s, c.toView, c.scale)[0] ?? null;
 }
 
 /* ───────────── shared pieces ───────────── */
@@ -236,55 +508,41 @@ function labelEl(
   );
 }
 
-function combineLabel(label: string | undefined, magnitude: string | undefined): string | undefined {
-  if (label && magnitude) return label.includes("=") ? `${label} ${magnitude}` : `${label} = ${magnitude}`;
-  return label || magnitude || undefined;
-}
-
 /* ───────────── kinds ───────────── */
 
 function buildCircle(s: Shape, c: Ctx): Built | null {
-  if (!isFinitePt(s.center) || !isFiniteNum(s.radius) || s.radius <= 0) return null;
-  const [cx, cy] = c.toView(s.center);
-  const R = s.radius * c.scale;
-  if (!isFiniteNum(cx) || !isFiniteNum(cy) || !isFiniteNum(R) || R <= 0) return null;
-  const d = circlePath(cx, cy, R);
-  const k = Math.SQRT1_2;
+  const g = circleGeom(s, c.toView, c.scale);
+  if (!g) return null;
+  const d = circlePath(g.cx, g.cy, g.R);
+  const lp = placedAt(c, s);
   return {
     main: d,
     nodes: [
       ...strokeNodes(d, c),
-      labelEl("label", s.label, cx + R * k + 6, cy - R * k - 4, "start", c),
+      lp ? labelEl("label", s.label, lp.x, lp.y, lp.anchor, c) : null,
     ],
   };
 }
 
 function buildBox(s: Shape, c: Ctx): Built | null {
-  if (!isRect(s.rect)) return null;
-  const [x, y, w, h] = s.rect;
-  const a = c.toView([x, y]);
-  const b = c.toView([x + w, y + h]);
-  if (!isFinitePt(a) || !isFinitePt(b)) return null;
-  const L = Math.min(a[0], b[0]);
-  const T = Math.min(a[1], b[1]);
-  const W = Math.abs(b[0] - a[0]);
-  const H = Math.abs(b[1] - a[1]);
-  if (!(W > 0 && H > 0)) return null;
-  const d = roundedRectPath(L, T, W, H, 6);
+  const g = rectGeom(s.rect, c.toView);
+  if (!g) return null;
+  const d = roundedRectPath(g.L, g.T, g.W, g.H, 6);
+  const lp = placedAt(c, s);
   return {
     main: d,
-    nodes: [...strokeNodes(d, c), labelEl("label", s.label, L, T - 8, "start", c)],
+    nodes: [
+      ...strokeNodes(d, c),
+      lp ? labelEl("label", s.label, lp.x, lp.y, lp.anchor, c) : null,
+    ],
   };
 }
 
 /** line, arrow and vector share geometry; they differ in head, width, label and components. */
 function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Built | null {
-  if (!isFinitePt(s.from) || !isFinitePt(s.to)) return null;
-  const a = c.toView(s.from);
-  const b = c.toView(s.to);
-  if (!isFinitePt(a) || !isFinitePt(b)) return null;
-  const frame = unitAndUpNormal(a, b);
-  if (!frame) return null;
+  const g = segGeom(s, c.toView);
+  if (!g) return null;
+  const { a, b } = g;
 
   const isVector = kind === "vector";
   const width = isVector ? 4 : STROKE_W;
@@ -294,15 +552,11 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
   const nodes: ReactNode[] = strokeNodes(d, c, width);
   if (head) nodes.push(...headNodes(head.d, c, "head"));
 
+  const lp = placedAt(c, s);
   if (isVector) {
-    const text = combineLabel(s.label, s.magnitude);
-    const [ux, uy] = frame.u;
-    const tx = b[0] + ux * 26;
-    const ty = b[1] + uy * 26 + (uy > 0.35 ? 14 : uy < -0.35 ? -6 : 5);
-    const anchor = ux > 0.35 ? "start" : ux < -0.35 ? "end" : "middle";
-    nodes.push(labelEl("label", text, tx, ty, anchor, c));
-    if (s.components) {
-      const corner = c.toView([s.to[0], s.from[1]]);
+    nodes.push(lp ? labelEl("label", combineLabel(s.label, s.magnitude), lp.x, lp.y, lp.anchor, c) : null);
+    if (s.components && isFiniteNum(s.to?.[0]) && isFiniteNum(s.from?.[1])) {
+      const corner = c.toView([s.to![0], s.from![1]]);
       if (isFinitePt(corner)) {
         const legDelay = c.delay + DRAW_MS;
         const cls = c.side ? undefined : "gt-rise";
@@ -315,17 +569,13 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
       }
     }
   } else {
-    const mx = (a[0] + b[0]) / 2 + frame.n[0] * LABEL_OFFSET;
-    const my = (a[1] + b[1]) / 2 + frame.n[1] * LABEL_OFFSET;
-    const anchor = Math.abs(frame.n[0]) > 0.5 ? (frame.n[0] < 0 ? "end" : "start") : "middle";
-    nodes.push(labelEl("label", s.label, mx, my + 5, anchor, c));
+    nodes.push(lp ? labelEl("label", s.label, lp.x, lp.y, lp.anchor, c) : null);
   }
   return { main: d, nodes };
 }
 
 function buildStroke(s: Shape, c: Ctx): Built | null {
-  if (!Array.isArray(s.points)) return null;
-  const pts = s.points.filter(isFinitePt).slice(0, 32).map((p) => c.toView(p)).filter(isFinitePt);
+  const pts = strokePts(s, c.toView);
   if (pts.length < 2) return null;
   const d = smoothPath(pts);
   return { main: d, nodes: strokeNodes(d, c) };
@@ -353,20 +603,13 @@ function buildText(s: Shape, c: Ctx): Built | null {
 }
 
 function buildGraph(s: Shape, c: Ctx): Built | null {
-  if (!isRect(s.rect) || !s.graph) return null;
+  if (!s.graph) return null;
   const g = s.graph;
   if (![g.x_min, g.x_max, g.y_min, g.y_max].every(isFiniteNum)) return null;
   if (g.x_max <= g.x_min || g.y_max <= g.y_min || !Array.isArray(g.series)) return null;
-
-  const [x, y, w, h] = s.rect;
-  const a = c.toView([x, y]);
-  const b = c.toView([x + w, y + h]);
-  if (!isFinitePt(a) || !isFinitePt(b)) return null;
-  const L = Math.min(a[0], b[0]);
-  const T = Math.min(a[1], b[1]);
-  const W = Math.abs(b[0] - a[0]);
-  const H = Math.abs(b[1] - a[1]);
-  if (!(W > 0 && H > 0)) return null;
+  const rg = rectGeom(s.rect, c.toView);
+  if (!rg) return null;
+  const { L, T, W, H } = rg;
 
   const plot = { left: L + 46, right: L + W - 18, top: T + 16, bottom: T + H - 40 };
   if (!(plot.right > plot.left && plot.bottom > plot.top)) return null;
@@ -464,21 +707,14 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
 
 function buildSlider(s: Shape, c: Ctx): Built | null {
   const spec = s.slider;
-  if (!isRect(s.rect) || !spec) return null;
+  if (!spec) return null;
   if (![spec.min, spec.max, spec.value, spec.step].every(isFiniteNum) || spec.step <= 0) return null;
-  const [x, y, w, h] = s.rect;
-  const a = c.toView([x, y]);
-  const b = c.toView([x + w, y + h]);
-  if (!isFinitePt(a) || !isFinitePt(b)) return null;
-  const L = Math.min(a[0], b[0]);
-  const T = Math.min(a[1], b[1]);
-  const W = Math.abs(b[0] - a[0]);
-  const H = Math.abs(b[1] - a[1]);
-  if (!(W > 0 && H > 0)) return null;
+  const g = rectGeom(s.rect, c.toView);
+  if (!g) return null;
   return {
     nodes: [
       <SliderNode key="slider" label={spec.label} min={spec.min} max={spec.max} step={spec.step}
-        initial={spec.value} unit={spec.unit} x={L} y={T} w={W} h={H} color={c.style.stroke}
+        initial={spec.value} unit={spec.unit} x={g.L} y={g.T} w={g.W} h={g.H} color={c.style.stroke}
         delay={c.delay + DRAW_MS} side={c.side} />,
     ],
   };

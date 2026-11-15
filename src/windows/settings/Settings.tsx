@@ -80,6 +80,20 @@ export function Settings({
     }
   }, [initialSection]);
 
+  // Once keys_status is known, if Anthropic is missing, bring its field into view and focus it.
+  const autoFocusedRef = useRef(false);
+  useEffect(() => {
+    if (keys === null || autoFocusedRef.current) return;
+    autoFocusedRef.current = true;
+    if (!keys.anthropic) {
+      const input = keysRef.current?.querySelector<HTMLInputElement>(
+        'input[name="secret-anthropic"]',
+      );
+      input?.scrollIntoView({ block: "center" });
+      input?.focus();
+    }
+  }, [keys]);
+
   // Local copy for optimistic updates; the snapshot is the source of truth.
   const serverSettings = snapshot?.settings;
   const [settings, setSettings] = useState<AppSettings>(
@@ -121,14 +135,6 @@ export function Settings({
               label="ElevenLabs API key"
               hint="Optional. Without it, Glass Tutor uses the macOS voice"
               present={keys === null ? null : !!keys.elevenlabs}
-              unavailable={keysUnavailable}
-              onSaved={refreshKeys}
-            />
-            <KeyRow
-              name="voice_id"
-              label="ElevenLabs voice ID"
-              hint="Optional. Voice used for ElevenLabs speech"
-              present={keys === null ? null : !!keys.voice_id}
               unavailable={keysUnavailable}
               onSaved={refreshKeys}
             />
@@ -421,15 +427,33 @@ function VoiceIdRow({
   onCommit: (v: string) => void;
 }) {
   const [draft, setDraft] = useState(voiceId);
+  const [tick, setTick] = useState(false);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     setDraft(voiceId);
   }, [voiceId]);
 
+  useEffect(() => {
+    if (!tick) return;
+    const t = window.setTimeout(() => setTick(false), 1500);
+    return () => window.clearTimeout(t);
+  }, [tick]);
+
+  // Voice IDs are not secret: the saved value stays visible in the field.
   const commit = () => {
     const v = draft.trim();
-    if (v && v !== voiceId) onCommit(v);
-    else setDraft(voiceId);
+    if (!v) {
+      setDraft(voiceId);
+      return;
+    }
+    if (v === voiceId) return;
+    setDraft(v);
+    setError(false);
+    onCommit(v);
+    invoke(CMD.setSecret, { name: "voice_id", value: v })
+      .then(() => setTick(true))
+      .catch(() => setError(true));
   };
 
   return (
@@ -438,19 +462,32 @@ function VoiceIdRow({
         <div className="row-title">Voice ID</div>
         <div className="row-sub">Used for spoken replies</div>
       </div>
-      <input
-        className="text-field wide"
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        aria-label="Voice ID"
-        autoComplete="off"
-        spellCheck={false}
-      />
+      <div className="voice-field">
+        <input
+          className="text-field wide"
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+          aria-label="Voice ID"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        {tick && (
+          <span className="ok" role="status">
+            <CheckIcon />
+            Saved
+          </span>
+        )}
+        {error && (
+          <span className="flash err" role="alert">
+            Couldn't save
+          </span>
+        )}
+      </div>
     </div>
   );
 }

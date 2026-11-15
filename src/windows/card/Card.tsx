@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, Check, ChevronRight, Monitor, Sparkles } from "lucide-react";
+import { AlertTriangle, ArrowUp, BookOpen, Check, ChevronRight, Monitor } from "lucide-react";
 import type { Phase, SessionSnapshot, UiIntent } from "@shared/contracts";
 import "../../ui/glass.css";
 import "./card.css";
@@ -39,6 +39,21 @@ const LOADING_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   "verifying",
 ]);
 
+/** Phases where the last caption stays on screen between segments (no flash to empty). */
+const KEEP_CAPTION_PHASES: ReadonlySet<Phase> = new Set<Phase>(["speaking", "interrupted", "checking"]);
+
+/** Map a raw backend error to a friendly title. The raw text stays available under "Details". */
+function friendlyError(raw: string): { title: string; mic: boolean } {
+  if (/microphone|stt|vad/i.test(raw)) {
+    return { title: "Microphone unavailable — type your question below", mic: true };
+  }
+  if (/capture|screen/i.test(raw)) return { title: "Couldn't capture the screen", mic: false };
+  if (/api|anthropic|401|key/i.test(raw)) {
+    return { title: "Tutor unavailable — check your API key in Settings", mic: false };
+  }
+  return { title: "Something went wrong", mic: false };
+}
+
 export function Card({
   snapshot,
   onIntent,
@@ -52,6 +67,7 @@ export function Card({
   onTypingChange?: (typing: boolean) => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const heightCb = useRef(onHeightChange);
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -81,7 +97,14 @@ export function Card({
   const checkQuestion = s?.checkQuestion || null;
   const tone = PHASE_TONE[phase];
   const isEmpty = phase === "idle" && !response && !caption && !error;
-  const showLoading = !caption && LOADING_PHASES.has(phase);
+
+  // Keep the last caption while a turn is speaking so the text never flashes to empty.
+  const lastCaption = useRef("");
+  if (caption) lastCaption.current = caption;
+  const displayCaption =
+    caption || (KEEP_CAPTION_PHASES.has(phase) ? lastCaption.current : "");
+  const showLoading = !displayCaption && LOADING_PHASES.has(phase);
+
   const liveLine = phase === "listening" ? s?.partialTranscript || s?.question || "" : "";
   const sourceText =
     s?.sourceLabel ||
@@ -91,6 +114,14 @@ export function Card({
     s?.timings.captureAt != null && s.timings.firstAudioAt != null
       ? Math.max(0, (s.timings.firstAudioAt - s.timings.captureAt) / 1000).toFixed(1)
       : null;
+  const err = error ? friendlyError(error) : null;
+  const micError = !!err?.mic;
+
+  // A microphone failure means the user must type instead, so put the cursor in the box.
+  useEffect(() => {
+    if (micError) inputRef.current?.focus();
+  }, [micError, error]);
+
   const canSend = draft.trim().length > 0;
   const typing = focused || canSend;
 
@@ -135,7 +166,7 @@ export function Card({
             <EmptyState />
           ) : (
             <>
-              {(response?.concept || liveLine || caption || showLoading) && (
+              {(response?.concept || liveLine || displayCaption || showLoading) && (
                 <div className="lead fade-up">
                   {response?.concept && <div className="concept">{response.concept}</div>}
                   {liveLine && (
@@ -143,17 +174,19 @@ export function Card({
                       <span className="you-label">You:</span> {liveLine}
                     </div>
                   )}
-                  {showLoading ? (
-                    <div className="skeleton" aria-label="Loading">
-                      <div className="skel" />
-                      <div className="skel" />
-                      <div className="skel" />
-                    </div>
-                  ) : caption ? (
-                    <p key={caption} className="caption caption-in">
-                      {caption}
-                    </p>
-                  ) : null}
+                  <div className="caption-slot">
+                    {showLoading ? (
+                      <div className="skeleton" aria-label="Loading">
+                        <div className="skel" />
+                        <div className="skel" />
+                        <div className="skel" />
+                      </div>
+                    ) : displayCaption ? (
+                      <p key={displayCaption} className="caption caption-in">
+                        {displayCaption}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               )}
 
@@ -215,10 +248,16 @@ export function Card({
                 </section>
               )}
 
-              {error && (
+              {err && (
                 <div className="error fade-up" role="alert">
                   <AlertTriangle size={15} strokeWidth={2} aria-hidden="true" />
-                  <span>{error}</span>
+                  <div className="error-body">
+                    <div className="error-title">{err.title}</div>
+                    <details className="error-details">
+                      <summary>Details</summary>
+                      <div className="error-raw">{error}</div>
+                    </details>
+                  </div>
                 </div>
               )}
             </>
@@ -228,6 +267,7 @@ export function Card({
         <footer className="card-footer">
           <div className="ask">
             <input
+              ref={inputRef}
               className="ask-input"
               type="text"
               value={draft}
@@ -282,9 +322,6 @@ function VerifierBadge({ snapshot }: { snapshot: SessionSnapshot | null }) {
 function EmptyState() {
   return (
     <div className="empty fade-up">
-      <div className="empty-glyph" aria-hidden="true">
-        <Sparkles size={20} strokeWidth={1.75} />
-      </div>
       <div className="empty-title">Ask about anything on your screen</div>
       <div className="empty-sub">Click the bubble and speak, or drag it over a region.</div>
     </div>

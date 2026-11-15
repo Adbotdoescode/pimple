@@ -105,3 +105,53 @@ export function graphMapper(
     Y: (v) => plot.bottom - (v - range.y_min) * ky,
   };
 }
+
+/* ───────────── label collision primitives (view coordinates) ───────────── */
+
+export interface Box { x0: number; y0: number; x1: number; y1: number }
+export type Seg = [number, number, number, number];
+
+export function inflate(b: Box, pad: number): Box {
+  return { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad };
+}
+
+export function boxOverlapArea(a: Box, b: Box): number {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+export function rectSegs(b: Box): Seg[] {
+  return [
+    [b.x0, b.y0, b.x1, b.y0],
+    [b.x1, b.y0, b.x1, b.y1],
+    [b.x1, b.y1, b.x0, b.y1],
+    [b.x0, b.y1, b.x0, b.y0],
+  ];
+}
+
+export function polySegs(pts: Pt[]): Seg[] {
+  const out: Seg[] = [];
+  for (let i = 0; i < pts.length - 1; i++) out.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]]);
+  return out;
+}
+
+const orient = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) =>
+  (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+
+function segsIntersect(s: Seg, t: Seg): boolean {
+  const [ax, ay, bx, by] = s;
+  const [cx, cy, dx, dy] = t;
+  const o1 = orient(ax, ay, bx, by, cx, cy);
+  const o2 = orient(ax, ay, bx, by, dx, dy);
+  const o3 = orient(cx, cy, dx, dy, ax, ay);
+  const o4 = orient(cx, cy, dx, dy, bx, by);
+  return o1 * o2 <= 0 && o3 * o4 <= 0;
+}
+
+/** True when the segment has an endpoint inside the box or crosses one of its edges. */
+export function segHitsBox(s: Seg, b: Box): boolean {
+  const inside = (x: number, y: number) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+  if (inside(s[0], s[1]) || inside(s[2], s[3])) return true;
+  return rectSegs(b).some((e) => segsIntersect(s, e));
+}
