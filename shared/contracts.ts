@@ -136,6 +136,20 @@ export interface CaptureResult {
   displayId: number;
   pixelScale: number;         // imageWidth / regionInScreenPoints.w
   capturedAt: number;         // ms epoch
+  /**
+   * v2 (user request 14:15): for modes "region" and "lasso" the MAIN image above is now the FULL
+   * display (context, and the coordinate space for every shape), and `focus` is a sharper crop of
+   * what the user pointed at. Both images go to the model; the focus is the subject of the question.
+   * Absent for mode "click".
+   */
+  focus?: {
+    imagePath: string;
+    imageBase64: string;
+    imageWidth: number;
+    imageHeight: number;
+    rectInImagePx: [number, number, number, number]; // the focus region in MAIN-image pixels [x,y,w,h]
+    regionInScreenPoints: RectPts;                    // the focus region in screen points (padded 12%)
+  };
 }
 /** Map a model pixel coordinate back to global screen points. */
 export function imagePxToScreen(c: CaptureResult, p: Pt): Pt {
@@ -242,6 +256,9 @@ export type UiIntent =
   | { type: "target-commit"; mode: "region" | "lasso"; region: RectPts } // B/C, bbox in points (unpadded)
   | { type: "target-start" }                                    // drag began → phase targeting
   | { type: "cancel" }                                          // Esc / close
+  | { type: "shut-up" }       // v2: stop speech + drawing + generation NOW, keep the card open, open the mic for a new question
+  | { type: "interrupt" }     // v2: same as space-hold, from any phase (thinking, verifying, speaking, checking)
+  | { type: "card-close" }    // v2: end the session (shut up + clear shapes + bubble back to its edge)
   | { type: "typed-question"; text: string }                    // card text box (fallback to mic)
   | { type: "accept-gizmo" } | { type: "decline-gizmo" }
   | { type: "ask-parked"; index: number }
