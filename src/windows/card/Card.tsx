@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, ArrowUp, BookOpen, Check, ChevronRight, Monitor } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUp,
+  BookOpen,
+  Check,
+  ChevronRight,
+  Maximize2,
+  Mic,
+  Minus,
+  Monitor,
+  Square,
+  X,
+} from "lucide-react";
 import type { Phase, SessionSnapshot, UiIntent } from "@shared/contracts";
 import "../../ui/glass.css";
 import "./card.css";
@@ -39,6 +51,15 @@ const LOADING_PHASES: ReadonlySet<Phase> = new Set<Phase>([
   "verifying",
 ]);
 
+/** Phases in which the tutor is busy, so "Stop" and "Interrupt" are offered. */
+const BUSY_PHASES: ReadonlySet<Phase> = new Set<Phase>([
+  "summarising",
+  "thinking",
+  "verifying",
+  "speaking",
+  "checking",
+]);
+
 /** Phases where the last caption stays on screen between segments (no flash to empty). */
 const KEEP_CAPTION_PHASES: ReadonlySet<Phase> = new Set<Phase>(["speaking", "interrupted", "checking"]);
 
@@ -59,18 +80,30 @@ export function Card({
   onIntent,
   onHeightChange,
   onTypingChange,
+  onMinimisedChange,
+  initialMinimised = false,
 }: {
   snapshot: SessionSnapshot | null;
   onIntent: (i: UiIntent) => void;
   onHeightChange?: (px: number) => void;
   /** True while the typed-question box is focused or holds text. */
   onTypingChange?: (typing: boolean) => void;
+  /** Called when the card collapses to its pill or expands again, before the new height is reported. */
+  onMinimisedChange?: (minimised: boolean) => void;
+  initialMinimised?: boolean;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const heightCb = useRef(onHeightChange);
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
+  const [minimised, setMinimised] = useState(initialMinimised);
+
+  function setMini(next: boolean) {
+    if (next) setFocused(false); // the input unmounts without a blur event
+    onMinimisedChange?.(next);
+    setMinimised(next);
+  }
 
   useEffect(() => {
     heightCb.current = onHeightChange;
@@ -85,7 +118,7 @@ export function Card({
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [minimised]);
 
   const s = snapshot;
   const phase: Phase = s?.phase ?? "idle";
@@ -97,6 +130,7 @@ export function Card({
   const checkQuestion = s?.checkQuestion || null;
   const tone = PHASE_TONE[phase];
   const isEmpty = phase === "idle" && !response && !caption && !error;
+  const busy = BUSY_PHASES.has(phase);
 
   // Keep the last caption while a turn is speaking so the text never flashes to empty.
   const lastCaption = useRef("");
@@ -147,18 +181,86 @@ export function Card({
     }
   }
 
-  return (
-    <div className="card-shell">
-      <section ref={panelRef} className="glass-panel card" aria-label="Tutor card">
-        <header className="card-header">
-          <span className="chip status" role="status" aria-live="polite">
+  if (minimised) {
+    const snippet = displayCaption || liveLine || response?.concept || (err ? err.title : "");
+    return (
+      <div className="card-shell card-shell-mini">
+        <section ref={panelRef} className="glass-panel card-mini" aria-label="Tutor card, minimised">
+          <button
+            type="button"
+            className="mini-main"
+            onClick={() => setMini(false)}
+            aria-label={`Expand tutor card. ${PHASE_LABEL[phase]}`}
+            title="Expand"
+          >
             <span
               className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
               aria-hidden="true"
             />
-            {PHASE_LABEL[phase]}
-          </span>
-          <VerifierBadge snapshot={s} />
+            <span className="mini-status" role="status" aria-live="polite">
+              {PHASE_LABEL[phase]}
+            </span>
+            {snippet && <span className="mini-caption ellipsis">{snippet}</span>}
+          </button>
+          {busy && (
+            <button
+              type="button"
+              className="glass-btn glass-btn-stop"
+              onClick={() => onIntent({ type: "shut-up" })}
+              aria-label="Stop talking"
+              title="Stop"
+            >
+              <Square size={10} strokeWidth={0} fill="currentColor" aria-hidden="true" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="glass-btn"
+            onClick={() => setMini(false)}
+            aria-label="Expand tutor card"
+            title="Expand"
+          >
+            <Maximize2 size={13} strokeWidth={2.2} aria-hidden="true" />
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card-shell">
+      <section ref={panelRef} className="glass-panel card" aria-label="Tutor card">
+        <header className="card-header">
+          <div className="card-header-left">
+            <span className="chip status" role="status" aria-live="polite">
+              <span
+                className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
+                aria-hidden="true"
+              />
+              {PHASE_LABEL[phase]}
+            </span>
+            <VerifierBadge snapshot={s} />
+          </div>
+          <div className="card-controls">
+            <button
+              type="button"
+              className="glass-btn"
+              onClick={() => setMini(true)}
+              aria-label="Minimise tutor card"
+              title="Minimise"
+            >
+              <Minus size={14} strokeWidth={2.4} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="glass-btn glass-btn-close"
+              onClick={() => onIntent({ type: "card-close" })}
+              aria-label="Close and end this session"
+              title="Close"
+            >
+              <X size={14} strokeWidth={2.4} aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div className="card-body">
@@ -263,6 +365,29 @@ export function Card({
             </>
           )}
         </div>
+
+        {busy && (
+          <div className="card-actions" role="group" aria-label="Tutor controls">
+            <button
+              type="button"
+              className="action action-stop"
+              onClick={() => onIntent({ type: "shut-up" })}
+              aria-label="Stop talking now"
+            >
+              <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" />
+              Stop
+            </button>
+            <button
+              type="button"
+              className="action action-interrupt"
+              onClick={() => onIntent({ type: "interrupt" })}
+              aria-label="Interrupt and speak"
+            >
+              <Mic size={14} strokeWidth={2.2} aria-hidden="true" />
+              Interrupt
+            </button>
+          </div>
+        )}
 
         <footer className="card-footer">
           <div className="ask">

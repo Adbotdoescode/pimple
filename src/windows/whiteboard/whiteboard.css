@@ -18,6 +18,31 @@
   --wb-ring: rgba(47, 107, 255, 0.22);
   --wb-shadow: 0 1px 2px rgba(20, 20, 30, 0.06), 0 26px 60px -20px rgba(20, 20, 30, 0.3);
   --wb-card-shadow: 0 1px 2px rgba(20, 20, 30, 0.08), 0 12px 32px -10px rgba(20, 20, 30, 0.25);
+
+  /* Liquid glass chrome. Same roles as the --glass-* tokens in src/ui/glass.css,
+   * redefined here because the whiteboard theme is a class, not the system scheme. */
+  --wb-glass: rgba(255, 255, 255, 0.58);
+  --wb-glass-strong: rgba(255, 255, 255, 0.74);
+  --wb-glass-border: rgba(28, 30, 35, 0.09);
+  --wb-specular: rgba(255, 255, 255, 0.95);
+  --wb-lowlight: rgba(40, 30, 10, 0.07);
+  --wb-bounce: rgba(255, 255, 255, 0.5);
+  --wb-edge: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(186, 224, 255, 0.6) 22%,
+    rgba(255, 255, 255, 0.1) 48%,
+    rgba(255, 204, 234, 0.45) 76%,
+    rgba(255, 255, 255, 0.88) 100%
+  );
+  --wb-gloss:
+    radial-gradient(120% 90% at 12% -40%, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 60%);
+  --wb-ambient:
+    radial-gradient(60% 50% at 8% 0%, rgba(255, 196, 150, 0.3) 0%, rgba(255, 196, 150, 0) 70%),
+    radial-gradient(55% 50% at 100% 12%, rgba(150, 200, 255, 0.3) 0%, rgba(150, 200, 255, 0) 70%),
+    radial-gradient(60% 45% at 60% 110%, rgba(190, 160, 255, 0.24) 0%, rgba(190, 160, 255, 0) 70%);
+  --wb-btn-shadow: 0 1px 2px rgba(20, 20, 30, 0.1), 0 4px 10px -3px rgba(20, 20, 30, 0.16);
   color-scheme: light;
 }
 
@@ -39,6 +64,29 @@
   --wb-ring: rgba(91, 140, 255, 0.28);
   --wb-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 26px 60px -20px rgba(0, 0, 0, 0.75);
   --wb-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 36px -10px rgba(0, 0, 0, 0.7);
+
+  --wb-glass: rgba(255, 255, 255, 0.06);
+  --wb-glass-strong: rgba(255, 255, 255, 0.1);
+  --wb-glass-border: rgba(255, 255, 255, 0.1);
+  --wb-specular: rgba(255, 255, 255, 0.26);
+  --wb-lowlight: rgba(0, 0, 0, 0.45);
+  --wb-bounce: rgba(255, 255, 255, 0.06);
+  --wb-edge: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(140, 200, 255, 0.3) 22%,
+    rgba(255, 255, 255, 0.03) 48%,
+    rgba(255, 160, 220, 0.22) 76%,
+    rgba(255, 255, 255, 0.32) 100%
+  );
+  --wb-gloss:
+    radial-gradient(120% 90% at 12% -40%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 60%);
+  --wb-ambient:
+    radial-gradient(60% 50% at 8% 0%, rgba(255, 140, 90, 0.13) 0%, rgba(255, 140, 90, 0) 70%),
+    radial-gradient(55% 50% at 100% 12%, rgba(70, 150, 255, 0.16) 0%, rgba(70, 150, 255, 0) 70%),
+    radial-gradient(60% 45% at 60% 110%, rgba(150, 110, 255, 0.14) 0%, rgba(150, 110, 255, 0) 70%);
+  --wb-btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 10px -3px rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
 
@@ -474,4 +522,112 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ───────────── Liquid glass chrome ─────────────
+ * Visual layer only: sizes and positions above are unchanged (layout.ts depends on them).
+ * No filters touch the SVG board; backdrop-filter is used on HTML chrome only. */
+
+.wb-root {
+  background: var(--wb-ambient), var(--wb-window);
+}
+
+.wb-header {
+  position: relative;
+  z-index: 3;
+  background: var(--wb-gloss), var(--wb-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border-bottom: 1px solid var(--wb-glass-border);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -10px 16px -14px var(--wb-bounce),
+    0 8px 24px -18px rgba(20, 20, 30, 0.35);
+}
+
+.wb-chip {
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-glass-strong);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    var(--wb-btn-shadow);
+}
+
+.wb-btn {
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-glass-strong);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    var(--wb-btn-shadow);
+  transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
+}
+
+.wb-btn:hover {
+  background: var(--wb-card);
+}
+
+.wb-btn:active {
+  transform: scale(0.94);
+}
+
+/* The paper sits in the glass like a sheet under a pane: an iridescent rim and a hairline. */
+.wb-paper {
+  box-shadow: var(--wb-shadow), 0 0 0 1px var(--wb-glass-border);
+}
+
+.wb-paper::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: var(--wb-edge);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.wb-slider {
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-gloss), color-mix(in srgb, var(--wb-card) 70%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    var(--wb-card-shadow),
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    inset 0 -14px 18px -16px var(--wb-bounce);
+}
+
+.wb-range::-webkit-slider-thumb {
+  border-width: 1.5px;
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--wb-thumb) 60%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.28),
+    0 3px 8px -2px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.wb-caption {
+  position: relative;
+  z-index: 3;
+  background: var(--wb-gloss), var(--wb-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border-top: 1px solid var(--wb-glass-border);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    0 -8px 24px -18px rgba(20, 20, 30, 0.35);
+}
+
+.wb-dot.is-on {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.wb-dot.is-current {
+  box-shadow: 0 0 0 3px var(--wb-ring), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }

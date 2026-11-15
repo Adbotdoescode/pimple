@@ -176,7 +176,7 @@ function cardSnapshot(state: CardState): SessionSnapshot {
   }
 }
 
-function CardView({ state, dark }: { state: CardState; dark: boolean }) {
+function CardView({ state, dark, mini = false }: { state: CardState; dark: boolean; mini?: boolean }) {
   applyTheme(dark);
   const snap = cardSnapshot(state);
   return (
@@ -188,7 +188,7 @@ function CardView({ state, dark }: { state: CardState; dark: boolean }) {
       </div>
       <div className="pv-card-stage">
         <div className="pv-card-slot">
-          <Card snapshot={snap} onIntent={noop} />
+          <Card snapshot={snap} onIntent={noop} initialMinimised={mini} />
         </div>
       </div>
     </div>
@@ -315,7 +315,7 @@ function App() {
       return <BubbleGridView bg={bg} />;
     case "card": {
       const state = (["idle", "thinking", "speaking", "full"] as const).find((s) => s === params.get("state")) ?? "idle";
-      return <CardView state={state} dark={dark} />;
+      return <CardView state={state} dark={dark} mini={params.get("mini") === "1"} />;
     }
     case "overlay": {
       const fixture = params.get("fixture") ?? "incline-light";

@@ -33,7 +33,187 @@ body,
   justify-content: space-between;
   gap: 8px;
   flex: 0 0 auto;
-  padding: 14px 14px 10px;
+  padding: 12px 12px 10px 14px;
+}
+
+.card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.card-header-left .chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.glass-btn-close:hover {
+  background: color-mix(in srgb, var(--bad) 88%, transparent);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.glass-btn-stop {
+  background: color-mix(in srgb, var(--bad) 88%, transparent);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+.glass-btn-stop:hover {
+  background: var(--bad);
+  color: #ffffff;
+}
+
+/* Stop / Interrupt bar: shown while the tutor is busy -------------------- */
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 10px 14px 0;
+  border-top: 1px solid var(--glass-hairline);
+  animation: gt-fade-up 200ms ease-out both;
+}
+
+.card-actions + .card-footer {
+  border-top: 0;
+}
+
+.action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--chip-border);
+  border-radius: var(--r-pill);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 120ms ease, box-shadow 150ms ease;
+}
+
+.action:active {
+  transform: scale(0.97);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Stop is the loudest control on the card: a filled, glossy red capsule. */
+.action-stop {
+  flex: 1.5 1 0;
+  border-color: color-mix(in srgb, var(--bad) 70%, #000000);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 52%),
+    var(--bad);
+  color: #ffffff;
+  box-shadow:
+    0 6px 16px -6px color-mix(in srgb, var(--bad) 70%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.action-stop:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0) 52%),
+    color-mix(in srgb, var(--bad) 92%, #000000);
+}
+
+.action-interrupt {
+  flex: 1 1 0;
+  background: var(--glass-btn-bg);
+  color: var(--text-1);
+  box-shadow: var(--glass-btn-shadow), inset 0 1px 0 var(--glass-specular);
+}
+
+.action-interrupt svg {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-1));
+}
+
+.action-interrupt:hover {
+  background: var(--glass-btn-hover);
+}
+
+/* Minimised pill ------------------------------------------------------- */
+
+.card-mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 44px;
+  padding: 0 8px 0 6px;
+  border-radius: 22px;
+  color: var(--text-1);
+  animation: gt-fade-up 180ms ease-out both;
+}
+
+.mini-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.mini-main:hover {
+  background: var(--chip-bg);
+}
+
+.mini-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mini-status {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.mini-caption {
+  flex: 1 1 auto;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.mini-caption::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--text-3);
+}
+
+.card-shell-mini {
+  max-width: 340px;
 }
 
 .status {
@@ -468,6 +648,7 @@ body,
   border: 1px solid var(--glass-hairline);
   border-radius: var(--r-pill);
   background: var(--field-bg);
+  box-shadow: inset 0 1px 2px var(--glass-lowlight), 0 1px 0 var(--glass-highlight);
   color: var(--text-1);
   font: inherit;
   font-size: 13.5px;
@@ -542,21 +723,28 @@ body,
   padding: 0;
 }
 
-.card-native .card {
+.card-native .card,
+.card-native .card-mini {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.35);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  box-shadow: var(--glass-inner);
+}
+
+.card-native .card-shell-mini {
+  max-width: none;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .card-native .card {
+  :root:not([data-theme="light"]) .card-native .card,
+  :root:not([data-theme="light"]) .card-native .card-mini {
     background: rgba(30, 30, 34, 0.3);
   }
 }
 
-:root[data-theme="dark"] .card-native .card {
+:root[data-theme="dark"] .card-native .card,
+:root[data-theme="dark"] .card-native .card-mini {
   background: rgba(30, 30, 34, 0.3);
 }
 
@@ -564,6 +752,8 @@ body,
 
 @media (prefers-reduced-motion: reduce) {
   .fade-up,
+  .card-actions,
+  .card-mini,
   .caption-in,
   .dot-pulse,
   .skel {
