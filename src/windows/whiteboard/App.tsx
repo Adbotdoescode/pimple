@@ -4,6 +4,8 @@ import type { CaptureResult, Segment, Shape, TutorResponse } from "@shared/contr
 import { Whiteboard, visibleSegmentsFor, type Backdrop } from "./Whiteboard";
 import { useSession } from "@/lib/sessionMirror";
 import { CMD, EV, emitEvent, invokeCmd } from "@/lib/ipc";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 
 /** One answer as drawn: kept after the session moves on so the board can stay dimmed. */
 interface Drawing {
@@ -11,6 +13,31 @@ interface Drawing {
   backdrop: Backdrop | null;
   sourceLabel: string | null;
   sideNote: { segments: Segment[]; shapes: Shape[] } | null;
+}
+
+/**
+ * Auto-open placement: width min(1200, 62% of the monitor), height width × 0.66 (min 560), vertically
+ * centred on the side away from the bubble. Never focuses the window; failures are ignored.
+ */
+async function placeAwayFromBubble(bubbleEdge: "left" | "right"): Promise<void> {
+  try {
+    const monitor = await currentMonitor();
+    if (!monitor) return;
+    const sf = monitor.scaleFactor || 1;
+    const mx = monitor.position.x / sf;
+    const my = monitor.position.y / sf;
+    const mw = monitor.size.width / sf;
+    const mh = monitor.size.height / sf;
+    const width = Math.min(1200, 0.62 * mw);
+    const height = Math.max(560, width * 0.66);
+    const x = bubbleEdge === "right" ? mx + 24 : mx + mw - width - 24;
+    const y = my + (mh - height) / 2;
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(width, height));
+    await win.setPosition(new LogicalPosition(x, y));
+  } catch (err) {
+    console.warn("whiteboard placement failed", err);
+  }
 }
 
 /** Overlay answers are in captured-image pixels, so they need the screenshot under them. */
@@ -45,7 +72,11 @@ export default function App() {
     if (key === seenKey.current) return;
     seenKey.current = key;
     if (resp.surface === "whiteboard") {
-      void invokeCmd(CMD.showWindow, { label: "whiteboard" });
+      const edge = snap.settings.bubbleEdge;
+      void (async () => {
+        await placeAwayFromBubble(edge);
+        await invokeCmd(CMD.showWindow, { label: "whiteboard" }).catch(() => undefined);
+      })();
     } else if (resp.surface === "overlay") {
       void invokeCmd(CMD.hideWindow, { label: "whiteboard" });
     }

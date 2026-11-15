@@ -481,6 +481,9 @@ export function Whiteboard(props: WhiteboardProps) {
           </h1>
         </div>
         <div className="wb-actions">
+          {response?.surface === "whiteboard" ? (
+            <span className="wb-chip">Drawn from scratch</span>
+          ) : null}
           {response && sourceLabel ? (
             <span className="wb-chip" title={sourceLabel}>{sourceLabel}</span>
           ) : null}

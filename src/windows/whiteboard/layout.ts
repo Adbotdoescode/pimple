@@ -16,6 +16,8 @@ const LABEL_PAD = 30;
 const TEXT_GAP = 8;
 const MAX_PASSES = 40;
 const GROW_MAX = 1.35;
+const GROW_MAX_SMALL = 2.0; // for compositions narrower than SMALL_W
+const SMALL_W = 500;
 const NUDGE_STEPS = [14, -14, 28, -28];
 // Room the axis labels need beside a graph's plot (board units).
 const GRAPH_ZONE_LEFT = 64;
@@ -212,7 +214,7 @@ function nudgeOffSegments(b: Box, segs: [Pt, Pt][]): Pt | null {
 export function fitShapes(
   shapes: Shape[],
   board: BoardSize = DEFAULT_BOARD,
-  margin = 32,
+  margin = 48,
   opts: FitOptions = {},
 ): Shape[] {
   const grow = opts.grow ?? true;
@@ -245,7 +247,8 @@ export function fitShapes(
   if (grow) {
     const g = unionOf(work);
     if (g && g.w > 0 && g.h > 0) {
-      const k = Math.min(GROW_MAX, safeW / g.w, safeH / g.h);
+      const cap = g.w < SMALL_W ? GROW_MAX_SMALL : GROW_MAX;
+      const k = Math.min(cap, safeW / g.w, safeH / g.h);
       if (k > 1) {
         work = scaleAbout(work, g, k);
         const g2 = unionOf(work);
