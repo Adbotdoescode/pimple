@@ -1,9 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "@/lib/sessionMirror";
 import { CMD, invokeCmd } from "@/lib/ipc";
 import "./gizmo.css";
 
 export type GizmoStatus = "none" | "offered" | "building" | "ready" | "failed";
+
+/** Decodes the few entities assembleGizmoHtml escapes into <title>. &amp; goes last. */
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** The <title> of a kept diagram, which is the concept it was built for. */
+function titleFromHtml(html: string | null): string | null {
+  if (!html) return null;
+  const m = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const t = m ? decodeEntities(m[1]).trim() : "";
+  return t || null;
+}
 
 function displayTitle(concept?: string | null): string {
   const t = (concept ?? "").trim();
@@ -155,12 +173,14 @@ export default function App() {
   }, [liveHtml]);
 
   const html = liveHtml ?? kept;
+  // The diagram's own title wins: a later turn may have changed the response concept.
+  const concept = useMemo(() => titleFromHtml(html) ?? snap.response?.concept ?? null, [html, snap.response?.concept]);
 
   return (
     <GizmoView
       html={html}
       status={snap.gizmo.status}
-      concept={snap.response?.concept ?? null}
+      concept={concept}
       onClose={() => {
         void invokeCmd(CMD.hideWindow, { label: "gizmo" }).catch(() => undefined);
       }}
