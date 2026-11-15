@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Simple harmonic motion · Physics Notes</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1440px; height: 900px; overflow: hidden; }
+  body {
+    background: #0f1115;
+    color: #e8ebf0;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .nav {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 170px;
+    background: #141821;
+    border-bottom: 1px solid #242a36;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+  .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: #4fd1c5; box-shadow: 0 0 12px #4fd1c5; }
+  .links { display: flex; gap: 28px; font-size: 14px; color: #8b94a5; }
+  .links .on { color: #e8ebf0; }
+  .links span:first-child { color: #e8ebf0; }
+
+  .wrap { width: 1100px; margin: 0 auto; padding-top: 36px; }
+  .crumbs { font-size: 14px; color: #7d8798; height: 20px; margin-bottom: 12px; }
+  .crumbs b { font-weight: 400; color: #4fd1c5; }
+  h1 { margin: 0 0 12px; font-size: 40px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+  .lead { margin: 0 0 28px; font-size: 17px; line-height: 1.6; color: #aab2c2; width: 960px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .card { background: #161a22; border: 1px solid #242a36; border-radius: 14px; padding: 24px; height: 456px; }
+  .label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #4fd1c5; font-weight: 600; margin-bottom: 16px; }
+  .caption { font-size: 14px; line-height: 1.5; color: #8b94a5; margin: 14px 0 0; }
+  .fig svg { display: block; }
+
+  .eqlabel { font-size: 14px; color: #8b94a5; margin: 18px 0 4px; }
+  .label + .eqlabel { margin-top: 0; }
+  .eq {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 34px;
+    line-height: 1.2;
+    color: #f2f4f8;
+    white-space: nowrap;
+    display: block;
+    align-items: center;
+    height: auto;
+  }
+  .eq-sm { font-size: 26px; }
+  .v { font-style: italic; }
+  .fn { font-style: normal; }
+  .hl { color: #f6ad55; font-style: italic; }
+  .op { margin: 0 0.14em; }
+  sub, sup { font-size: 0.62em; line-height: 0; }
+  .frac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 0.12em; }
+  .frac > span:first-child { border-bottom: 2px solid #f2f4f8; padding: 0 0.2em 0.06em; }
+  .frac > span:last-child { padding: 0.06em 0.2em 0; }
+  .rad { display: inline-flex; align-items: center; }
+  .rsym { font-size: 1.15em; margin-right: 1px; }
+  .radicand { border-top: 2px solid #f2f4f8; padding: 0.08em 0.1em 0 0.12em; display: inline-flex; align-items: center; }
+
+
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 22px; margin-top: 16px; font-size: 14px; color: #aab2c2; }
+  .legend div b { font-family: "Times New Roman", Times, serif; font-style: italic; font-weight: 400; color: #f2f4f8; font-size: 17px; display: inline-block; width: 22px; }
+
+  .body2 { margin-top: 26px; width: 1100px; }
+  .body2 h3 { margin: 0 0 8px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .body2 p { margin: 0; font-size: 16px; line-height: 1.65; color: #aab2c2; width: 960px; }
+  .mi { font-family: "Times New Roman", Times, serif; font-style: italic; color: #f2f4f8; font-size: 1.1em; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="brand"><span class="dot"></span>Physics Notes</div>
+  <nav class="links">
+    <span>Mechanics</span>
+    <span>Waves</span>
+    <span>Thermodynamics</span>
+    <span>Electromagnetism</span>
+    <span>Quantum</span>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="crumbs">Mechanics <b>/</b> Oscillations <b>/</b> Simple harmonic motion</div>
+  <h1>Simple harmonic motion</h1>
+  <p class="lead">A mass on a spring, pulled away from rest and released, moves back and forth in a pattern that repeats forever in an ideal system. Its position is a cosine wave, and a single number, the angular frequency, sets how fast it cycles.</p>
+
+  <section class="grid">
+    <div class="card fig" id="figure-card">
+      <div class="label">Figure 1 · Mass on an ideal spring</div>
+      <svg id="spring" width="490" height="300" viewBox="0 0 490 300" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#3a4354" stroke-width="2"/>
+          </pattern>
+          <marker id="ah-amp" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#f6ad55"/>
+          </marker>
+          <marker id="ah-force" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L9,4.5 L0,9 z" fill="#f87171"/>
+          </marker>
+          <marker id="ah-axis" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L8,4 L0,8 z" fill="#5b6577"/>
+          </marker>
+        </defs>
+
+        <!-- wall -->
+        <rect x="24" y="80" width="16" height="140" fill="#252b37"/>
+        <rect x="24" y="80" width="16" height="140" fill="url(#hatch)" opacity="0.8"/>
+        <line x1="24" y1="80" x2="24" y2="220" stroke="#3a4354" stroke-width="2"/>
+
+        <!-- equilibrium ghost mass (dashed) -->
+        <rect x="228" y="118" width="64" height="64" rx="4" fill="none" stroke="#3a4354" stroke-width="2" stroke-dasharray="6 5"/>
+
+        <!-- spring -->
+        <polyline points="40,150 60,150 75.5,138 91,162 106.5,138 122,162 137.5,138 153,162 168.5,138 184,162 199.5,138 215,162 230.5,138 246,162 261.5,138 277,162 292.5,138 308,150 328,150" fill="none" stroke="#8b94a5" stroke-width="2.5" stroke-linejoin="round"/>
+        <text x="184" y="122" text-anchor="middle" font-family="Times New Roman, Times, serif" font-style="italic" font-size="20" fill="#aab2c2">k</text>
+
+        <!-- mass at maximum displacement -->
+        <rect x="328" y="118" width="64" height="64" rx="4" fill="#1f2735" stroke="#4fd1c5" stroke-width="2"/>
+        <text x="360" y="158" text-anchor="middle" font-family="Times New Roman, Times, serif" font-style="italic" font-size="22" fill="#e8ebf0">m</text>
+
+        <!-- force arrow F = -kx -->
+        <line x1="356" y1="96" x2="298" y2="96" stroke="#f87171" stroke-width="2.5" marker-end="url(#ah-force)"/>
+        <text x="327" y="80" text-anchor="middle" font-family="Times New Roman, Times, serif" font-style="italic" font-size="17" fill="#f87171">F = −kx</text>
+
+        <!-- amplitude dimension -->
+        <line x1="260" y1="186" x2="260" y2="222" stroke="#5b6577" stroke-width="1.5" stroke-dasharray="3 4"/>
+        <line x1="360" y1="186" x2="360" y2="222" stroke="#5b6577" stroke-width="1.5" stroke-dasharray="3 4"/>
+        <line x1="262" y1="214" x2="358" y2="214" stroke="#f6ad55" stroke-width="2" marker-start="url(#ah-amp)" marker-end="url(#ah-amp)"/>
+        <text x="310" y="238" text-anchor="middle" font-family="Times New Roman, Times, serif" font-style="italic" font-size="20" fill="#f6ad55">A</text>
+
+        <!-- displacement axis -->
+        <line x1="40" y1="268" x2="462" y2="268" stroke="#5b6577" stroke-width="1.5" marker-end="url(#ah-axis)"/>
+        <line x1="160" y1="263" x2="160" y2="273" stroke="#5b6577" stroke-width="1.5"/>
+        <line x1="260" y1="263" x2="260" y2="273" stroke="#5b6577" stroke-width="1.5"/>
+        <line x1="360" y1="263" x2="360" y2="273" stroke="#5b6577" stroke-width="1.5"/>
+        <text x="160" y="290" text-anchor="middle" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#8b94a5">−A</text>
+        <text x="260" y="290" text-anchor="middle" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#8b94a5">0</text>
+        <text x="360" y="290" text-anchor="middle" font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="13" fill="#8b94a5">+A</text>
+        <text x="472" y="273" font-family="Times New Roman, Times, serif" font-style="italic" font-size="20" fill="#aab2c2">x</text>
+      </svg>
+      <p class="caption">Drawn at maximum displacement. The dashed outline marks equilibrium, where the spring is neither stretched nor compressed.</p>
+    </div>
+
+    <div class="card" id="equation-card">
+      <div class="label">Key results</div>
+
+      <div class="eqlabel">Displacement</div>
+      <div class="eq"><span class="v">x</span><span class="op">(</span><span class="v">t</span><span class="op">) = </span><span class="v">A</span><span class="fn">cos</span><span class="op">(</span><span class="hl">ω</span><span class="v">t</span><span class="op"> + </span><span class="v">φ</span><span class="op">)</span></div>
+
+
+
+      <div class="eqlabel">Angular frequency</div>
+      <div class="eq" id="omega-eq"><span class="hl">ω</span><span class="op"> = </span><span class="rad"><span class="rsym">√</span><span class="radicand"><span class="frac"><span class="v">k</span><span class="v">m</span></span></span></span></div>
+
+
+
+      <div class="eqlabel">Period</div>
+      <div class="eq eq-sm"><span class="v">T</span><span class="op"> = </span><span class="frac"><span>2<span class="v">π</span></span><span class="hl">ω</span></span><span class="op"> = 2</span><span class="v">π</span><span class="rad"><span class="rsym">√</span><span class="radicand"><span class="frac"><span class="v">m</span><span class="v">k</span></span></span></span></div>
+
+      <div class="legend">
+        <div><b>A</b>amplitude (m)</div>
+        <div><b>ω</b>angular frequency (rad/s)</div>
+        <div><b>φ</b>phase constant</div>
+        <div><b>k</b>spring constant (N/m)</div>
+        <div><b>m</b>mass (kg)</div>
+        <div><b>t</b>time (s)</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="body2">
+    <h3>The period depends only on k and m</h3>
+    <p>Hooke's law gives a restoring force <span class="mi">F = −kx</span> that always points back toward equilibrium. Substituting it into Newton's second law, <span class="mi">m d²x/dt² = −kx</span>, gives a sinusoid whose frequency is set by the stiffness and the inertia alone. The starting amplitude <span class="mi">A</span> changes how far the mass travels, but not how often it completes a cycle.</p>
+  </section>
+</main>
+
+</body>
+</html>

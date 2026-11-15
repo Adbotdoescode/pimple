@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
@@ -10,6 +11,7 @@ pub mod cli;
 mod clipboard;
 mod commands;
 pub mod engine_supervisor;
+pub mod glass;
 mod helpers;
 mod input;
 mod language_detection;
@@ -36,8 +38,6 @@ mod utils;
 pub mod webkit_renderer;
 
 pub use cli::CliArgs;
-#[cfg(debug_assertions)]
-use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, collect_events, Builder};
 #[cfg(target_os = "linux")]
 pub use utils::apply_handy_gdk_backend;
@@ -53,12 +53,9 @@ use managers::transcription::TranscriptionManager;
 use managers::transcription_jobs::TranscriptionJobManager;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
-use tauri::image::Image;
 pub use transcription_coordinator::TranscriptionCoordinator;
 
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Listener, Manager};
-use tauri_plugin_autostart::MacosLauncher;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
 
 use crate::settings::get_settings;
@@ -110,7 +107,8 @@ fn build_console_filter() -> env_filter::Filter {
 }
 
 fn show_main_window(app: &AppHandle) {
-    if let Some(main_window) = app.get_webview_window("main") {
+    // Glass Tutor: Handy's main window is gone; "main" now means the settings window.
+    if let Some(main_window) = app.get_webview_window("settings") {
         if let Err(e) = main_window.unminimize() {
             log::error!("Failed to unminimize webview window: {}", e);
         }
@@ -120,12 +118,6 @@ fn show_main_window(app: &AppHandle) {
         if let Err(e) = main_window.set_focus() {
             log::error!("Failed to focus webview window: {}", e);
         }
-        #[cfg(target_os = "macos")]
-        {
-            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
-            }
-        }
         return;
     }
 
@@ -134,42 +126,6 @@ fn show_main_window(app: &AppHandle) {
         "Main window not found. Webview labels: {:?}",
         webview_labels
     );
-}
-
-/// Choose the macOS activation policy the process *launches* with.
-///
-/// Must run between `build()` and `run()`: that is the only point where
-/// `App::set_activation_policy` sets tao's initial policy, which
-/// `applicationDidFinishLaunching` then applies directly. Calling the
-/// `AppHandle` variant from `setup` (which Tauri runs on `RunEvent::Ready`,
-/// i.e. after launch) is instead a runtime Regular → Accessory demotion of an
-/// already-activated foreground app — the transition Apple documents as
-/// unreliable, and what left a Dock icon behind for start-hidden and
-/// login-item launches on macOS 26+ (#1787). Launching as Accessory avoids the
-/// transition entirely; showing the window later promotes to Regular, which is
-/// the supported direction.
-///
-/// Mirrors the show-window decision in `setup`: the app launches without a
-/// Dock icon only when it will start hidden (setting or `--start-hidden`) AND a
-/// tray icon is available (setting and not `--no-tray`). With no tray the Dock
-/// icon stays as the only way back into the app (#903). Headless one-shot
-/// runs are left alone.
-#[cfg(target_os = "macos")]
-fn apply_startup_activation_policy(app: &mut tauri::App, headless_mode: bool) {
-    if headless_mode {
-        return;
-    }
-
-    let cli_args = app.state::<CliArgs>().inner().clone();
-    let settings = settings::get_settings(app.handle());
-
-    let should_hide = settings.start_hidden || cli_args.start_hidden;
-    let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-
-    if should_hide && tray_available {
-        log::info!("Starting hidden with tray available: launching as Accessory (no Dock icon)");
-        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    }
 }
 
 #[allow(unused_variables)]
@@ -233,174 +189,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // after permissions are confirmed (on macOS) or after onboarding completes.
     // This matches the pattern used for Enigo initialization.
 
-    // Set up signal handlers for toggling transcription. On Linux, SIGUSR1 is
-    // deliberately not handled — it belongs to WebKitGTK's garbage collector
-    // (#1660) — see signal_handle.rs.
-    #[cfg(unix)]
-    signal_handle::setup_signal_handler(app_handle.clone());
-
-    // The macOS activation policy for a start-hidden launch is applied before
-    // the event loop runs (see `apply_startup_activation_policy`), not here:
-    // by the time `setup` runs the app has already launched as a Regular
-    // (Dock) app, and demoting it at runtime is unreliable (#1787).
-
-    // Get the current theme to set the appropriate initial icon
-    let initial_theme = tray::get_current_theme(app_handle);
-
-    // Choose the appropriate initial icon based on theme
-    let initial_icon_path = tray::get_icon_path(initial_theme, tray::TrayIconState::Idle, false);
-
-    let mut tray_builder = TrayIconBuilder::new()
-        .icon(
-            Image::from_path(
-                app_handle
-                    .path()
-                    .resolve(initial_icon_path, tauri::path::BaseDirectory::Resource)
-                    .unwrap(),
-            )
-            .unwrap(),
-        )
-        .tooltip(tray::tray_tooltip())
-        .icon_as_template(true);
-
-    // Windows notification-area convention: left click opens the app, right click
-    // shows the menu. Elsewhere (macOS menu bar, Linux) the menu stays on left click.
-    #[cfg(target_os = "windows")]
-    {
-        tray_builder = tray_builder
-            .show_menu_on_left_click(false)
-            .on_tray_icon_event(|tray, event| {
-                use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
-                let opens_window = matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } | TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
-                    }
-                );
-                if opens_window {
-                    show_main_window(tray.app_handle());
-                }
-            });
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        tray_builder = tray_builder.show_menu_on_left_click(true);
-    }
-
-    let tray = tray_builder
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "settings" => {
-                show_main_window(app);
-            }
-            "secure_input_warning" => {
-                // Full explanation lives in the settings-window banner
-                show_main_window(app);
-            }
-            "notice" => {
-                show_main_window(app);
-            }
-            "check_updates" => {
-                let settings = settings::get_settings(app);
-                if settings::update_checks_effectively_enabled(&settings) {
-                    show_main_window(app);
-                    let _ = app.emit("check-for-updates", ());
-                }
-            }
-            "copy_last_transcript" => {
-                tray::copy_last_transcript(app);
-            }
-            "unload_model" => {
-                let transcription_manager = app.state::<Arc<TranscriptionManager>>();
-                if !transcription_manager.is_model_loaded() {
-                    log::warn!("No model is currently loaded.");
-                    return;
-                }
-                if let Err(e) = transcription_manager.ensure_model_unlocked() {
-                    log::warn!("{}", e);
-                    return;
-                }
-                transcription_manager.request_unload();
-                log::info!("Model unloaded via tray.");
-            }
-            "cancel" => {
-                use crate::utils::cancel_current_operation;
-
-                // Use centralized cancellation that handles all operations
-                cancel_current_operation(app);
-            }
-            "quit" => {
-                app.exit(0);
-            }
-            id if id.starts_with("model_select:") => {
-                let model_id = id.strip_prefix("model_select:").unwrap().to_string();
-                let current_model = settings::get_settings(app).selected_model;
-                if model_id == current_model {
-                    return;
-                }
-                let app_clone = app.clone();
-                std::thread::spawn(move || {
-                    match commands::models::switch_active_model(&app_clone, &model_id) {
-                        Ok(()) => {
-                            log::info!("Model switched to {} via tray.", model_id);
-                        }
-                        Err(e) => {
-                            log::error!("Failed to switch model via tray: {}", e);
-                        }
-                    }
-                    tray::update_tray_menu(&app_clone);
-                });
-            }
-            id if id.starts_with("language_select:") => {
-                let language = id.strip_prefix("language_select:").unwrap().to_string();
-                if let Err(e) =
-                    shortcut::change_selected_language_setting(app.clone(), language.clone())
-                {
-                    log::error!("Failed to switch language via tray: {}", e);
-                    return;
-                }
-                log::info!("Language switched to {} via tray.", language);
-                tray::rebuild_tray_menu(app);
-            }
-            _ => {}
-        })
-        .build(app_handle)
-        .unwrap();
-    app_handle.manage(tray);
-
-    // Initialize tray menu with idle state
-    tray::update_tray_menu(app_handle);
-
-    // Apply show_tray_icon setting
-    let settings = settings::get_settings(app_handle);
-    if !settings.show_tray_icon {
-        tray::set_tray_visibility(app_handle, false);
-    }
-
-    // Refresh tray menu when model state changes
-    let app_handle_for_listener = app_handle.clone();
-    app_handle.listen("model-state-changed", move |_| {
-        tray::update_tray_menu(&app_handle_for_listener);
-    });
-    // A download or delete can change what the language submenu offers (the
-    // language detector arriving makes Auto usable).
-    for event in ["model-download-complete", "model-deleted"] {
-        let app_handle_for_listener = app_handle.clone();
-        app_handle.listen(event, move |_| {
-            tray::update_tray_menu(&app_handle_for_listener);
-        });
-    }
-
-    // Apply the autostart preference (SMAppService login item on macOS 13+,
-    // tauri-plugin-autostart elsewhere)
-    autostart::apply_autostart(app_handle, settings.autostart_enabled);
-
-    // Create the recording overlay window (hidden by default)
-    utils::create_recording_overlay(app_handle);
+    // Glass Tutor: no Handy signal handlers (SIGUSR2 would start Handy's
+    // transcribe-and-paste flow), no Handy tray, no autostart, no recording overlay.
+    // Windows + tray are created by glass::setup.
 }
 
 #[tauri::command]
@@ -833,15 +624,17 @@ pub fn run(cli_args: CliArgs) {
             notices::NoticesChanged,
         ]);
 
-    #[cfg(debug_assertions)] // <- Only export on non-release builds
-    specta_builder
-        .export(
-            Typescript::default().bigint(BigIntExportBehavior::Number),
-            "../src/bindings.ts",
-        )
-        .expect("Failed to export typescript bindings");
-
-    let invoke_handler = specta_builder.invoke_handler();
+    // Handy's tauri-specta commands (TS bindings export disabled) plus Glass Tutor's
+    // plain commands; glass names are dispatched first.
+    let specta_handler = specta_builder.invoke_handler();
+    let glass_handler = glass::glass_handler();
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| -> bool {
+        if glass::is_glass_command(invoke.message.command()) {
+            glass_handler(invoke)
+        } else {
+            specta_handler(invoke)
+        }
+    };
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.
@@ -925,8 +718,6 @@ pub fn run(cli_args: CliArgs) {
                 // it arrives as RunEvent::Reopen below — but treat this the
                 // same way: raise the window and recreate a possibly vanished
                 // tray icon (#1948).
-                #[cfg(target_os = "macos")]
-                tray::recreate_tray_icon(app);
                 show_main_window(app);
             }
         }));
@@ -936,7 +727,6 @@ pub fn run(cli_args: CliArgs) {
     let mut app = builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(system_languages::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -944,10 +734,6 @@ pub fn run(cli_args: CliArgs) {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![]),
-        ))
         .manage(cli_args.clone())
         .manage(notices::NoticeStore::default())
         .setup(move |app| {
@@ -1014,74 +800,12 @@ pub fn run(cli_args: CliArgs) {
                 return Ok(());
             }
 
-            // Create main window programmatically so we can set data_directory
-            // for portable mode (redirects WebView2 cache to portable Data dir)
-            let mut win_builder =
-                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-                    .title("Handy")
-                    .inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
-                    .min_inner_size(utils::MAIN_WINDOW_SIZE.0, utils::MAIN_WINDOW_SIZE.1)
-                    .resizable(true)
-                    .maximizable(true)
-                    .visible(false);
-
-            if let Some(data_dir) = portable::data_dir() {
-                win_builder = win_builder.data_directory(data_dir.join("webview"));
-            }
-
-            // Only used on macOS (to size it) and Windows (to disable WebView2
-            // browser accelerators).
-            #[cfg_attr(
-                not(any(target_os = "macos", target_os = "windows")),
-                allow(unused_variables)
-            )]
-            let main_window = win_builder.build()?;
-
-            // macOS draws the title bar inside the inner size; grow the window to fit it.
-            #[cfg(target_os = "macos")]
-            {
-                let bar = utils::measure_title_bar(&main_window);
-                if bar > 0.0 {
-                    let (width, height) = utils::MAIN_WINDOW_SIZE;
-                    let size = tauri::LogicalSize::new(width, height + bar);
-                    let _ = main_window.set_min_size(Some(size));
-                    let _ = main_window.set_size(size);
-                    let _ = main_window.center();
-                }
-            }
-
-            // Disable WebView2 browser accelerators (F5, F6, Ctrl+F, F12, ...).
-            // A settings window has no use for them, and pressing F6 while
-            // recording a shortcut was reported to turn the whole window white
-            // (cjpais/Handy#1940), likely by triggering WebView2 focus cycling.
-            // DevTools stays enabled; only the F12 accelerator is lost.
-            #[cfg(target_os = "windows")]
-            {
-                let _ = main_window.with_webview(|webview| unsafe {
-                    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
-                    use windows::core::Interface;
-
-                    let result = webview
-                        .controller()
-                        .CoreWebView2()
-                        .and_then(|core| core.Settings())
-                        .and_then(|settings| settings.cast::<ICoreWebView2Settings3>())
-                        .and_then(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false));
-
-                    if let Err(error) = result {
-                        log::warn!("Failed to disable WebView2 browser accelerators: {error}");
-                    }
-                });
-            }
-
             let mut settings = get_settings(app.handle());
 
             // Apply the persisted appearance theme to the native title bar before
             // the window is shown, so it matches the in-app palette without a flash
             // of the wrong theme. See `apply_window_theme` for what this does per
             // platform.
-            #[cfg(any(target_os = "windows", target_os = "macos"))]
-            shortcut::apply_window_theme(app.handle(), settings.theme);
 
             // CLI --debug flag overrides debug_mode and log level (runtime-only, not persisted)
             if cli_args.debug {
@@ -1104,10 +828,6 @@ pub fn run(cli_args: CliArgs) {
 
             initialize_core_logic(&app_handle);
 
-            // Secure Input monitor (macOS): detects stuck secure input that
-            // silently blocks keyed shortcuts, warns the user, and activates
-            // the Carbon fallback. See secure_input.rs and issue #1578.
-            secure_input::init(&app_handle);
 
             // Populate the overlay-enabled cache from initial settings so the
             // audio path (overlay::emit_levels, called ~24 Hz during recording)
@@ -1133,24 +853,8 @@ pub fn run(cli_args: CliArgs) {
                 let _ = crate::managers::transcription::get_available_accelerators(&tm);
             });
 
-            // Hide tray icon if --no-tray was passed
-            if cli_args.no_tray {
-                tray::set_tray_visibility(&app_handle, false);
-            }
-
-            // Show main window only if not starting hidden.
-            // CLI --start-hidden flag overrides the setting.
-            // But if permission onboarding is required, always show the window.
-            let should_hide = settings.start_hidden || cli_args.start_hidden;
-            let should_force_show = should_force_show_permissions_window(&app_handle);
-
-            // If start_hidden but tray is disabled, we must show the window
-            // anyway. Without a tray icon, the dock is the only way back in.
-            // Keep in sync with `apply_startup_activation_policy` (macOS).
-            let tray_available = settings.show_tray_icon && !cli_args.no_tray;
-            if should_force_show || !should_hide || !tray_available {
-                show_main_window(&app_handle);
-            }
+            // Glass Tutor windows, tray and (debug builds) the dev HTTP hook.
+            glass::setup(&app_handle);
 
             Ok(())
         })
@@ -1159,27 +863,9 @@ pub fn run(cli_args: CliArgs) {
                 api.prevent_close();
                 let _res = window.hide();
 
-                #[cfg(target_os = "macos")]
-                {
-                    let settings = get_settings(window.app_handle());
-                    let tray_visible =
-                        settings.show_tray_icon && !window.app_handle().state::<CliArgs>().no_tray;
-                    if tray_visible {
-                        // Tray is available: hide the dock icon, app lives in the tray
-                        let res = window
-                            .app_handle()
-                            .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                        if let Err(e) = res {
-                            log::error!("Failed to set activation policy: {}", e);
-                        }
-                    }
-                    // No tray: keep the dock icon visible so the user can reopen
-                }
             }
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);
-                // Re-apply the current tray state with the new theme's icon set
-                utils::refresh_tray_icon(window.app_handle());
             }
             _ => {}
         })
@@ -1188,8 +874,11 @@ pub fn run(cli_args: CliArgs) {
         .expect("error while building tauri application");
 
     // Must sit between build() and run(): see the doc comment.
+    // Glass Tutor is a menu-bar (Accessory) app: no Dock icon, panels never activate it.
     #[cfg(target_os = "macos")]
-    apply_startup_activation_policy(&mut app, headless_mode);
+    if !headless_mode {
+        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
 
     // `app` is only used by the macOS arm.
     #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
@@ -1202,13 +891,6 @@ pub fn run(cli_args: CliArgs) {
             // that vanished (#1948): recreate it. When the window is
             // already visible this is just a focus request and the tray is
             // left alone.
-            let window_visible = app
-                .get_webview_window("main")
-                .and_then(|w| w.is_visible().ok())
-                .unwrap_or(false);
-            if !window_visible {
-                tray::recreate_tray_icon(app);
-            }
             show_main_window(app);
         }
         // No transcription teardown on exit: transcribe.cpp runs only in the

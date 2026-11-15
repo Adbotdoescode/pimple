@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Principles of Microeconomics · 8.2 Opportunity cost</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f4f2ec; color: #222;
+    font-family: "Iowan Old Style", Georgia, "Times New Roman", serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sans { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+
+  .bar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 52px;
+    background: #ffffff; border-bottom: 1px solid #ddd8cb;
+    display: flex; align-items: center; padding: 0 40px; gap: 28px;
+    font-size: 13px; color: #5d584c;
+  }
+  .bar .book { font-weight: 700; color: #3a1f1f; letter-spacing: 0.01em; }
+  .bar .chap { color: #8a8474; }
+  .bar .r { margin-left: auto; }
+
+  .page {
+    position: absolute; left: 0; top: 52px; width: 1440px; height: 848px;
+  }
+  .page-sheet {
+    position: absolute; left: 150px; top: 20px; width: 1140px; height: 812px;
+    background: #fffefb; border: 1px solid #e3ddcd; box-shadow: 0 1px 3px rgba(60,50,30,0.06);
+    padding: 46px 72px 0 72px;
+  }
+  .kicker {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #8b1e1e;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    margin-bottom: 10px;
+  }
+  h1 {
+    margin: 0 0 10px; font-size: 36px; line-height: 1.12; font-weight: 700; letter-spacing: -0.01em; color: #1b1b1b;
+  }
+  .objective {
+    font-size: 15px; font-style: italic; color: #5b5648; margin: 0 0 22px; padding-bottom: 14px; border-bottom: 1px solid #e6e0d1;
+  }
+  .cols { display: grid; grid-template-columns: 1fr 268px; column-gap: 48px; }
+  .body { max-width: 74ch; }
+  .body p {
+    margin: 0 0 13px; font-size: 16.5px; line-height: 1.62; text-align: justify; hyphens: auto; -webkit-hyphens: auto;
+    color: #262626;
+  }
+  .body strong { font-weight: 700; color: #111; white-space: nowrap; }
+  sup.fn { font-size: 0.68em; color: #8b1e1e; font-weight: 700; vertical-align: 0.42em; margin-left: 1px; }
+  .body .h2 {
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 15px; font-weight: 700; color: #1b1b1b; margin: 22px 0 8px;
+  }
+
+  aside.key {
+    align-self: start; margin-top: 4px;
+    background: #f5efdf; border: 1px solid #e0d3ad; border-top: 4px solid #8b1e1e; padding: 16px 18px 18px;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  aside.key .t { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #8b1e1e; margin-bottom: 8px; }
+  aside.key h3 { margin: 0 0 8px; font-size: 17px; line-height: 1.3; font-weight: 700; color: #1b1b1b; font-family: "Iowan Old Style", Georgia, serif; }
+  aside.key p { margin: 0 0 10px; font-size: 14px; line-height: 1.55; color: #3d3a32; }
+  aside.key p:last-child { margin-bottom: 0; }
+
+  table.mini { width: 100%; border-collapse: collapse; margin: 18px 0 0; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  table.mini caption { text-align: left; font-weight: 700; color: #1b1b1b; padding-bottom: 6px; font-size: 12px; }
+  table.mini th, table.mini td { border-bottom: 1px solid #d9cfb4; padding: 5px 4px; text-align: right; }
+  table.mini th:first-child, table.mini td:first-child { text-align: left; }
+  table.mini th { font-weight: 600; color: #5d584c; }
+
+  .foot {
+    position: absolute; left: 72px; right: 72px; bottom: 20px;
+    border-top: 1px solid #e3ddcd; padding-top: 10px;
+    font-size: 13px; line-height: 1.5; color: #5d584c; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  .foot sup { color: #8b1e1e; font-weight: 700; font-size: 0.8em; }
+</style>
+</head>
+<body>
+
+<div class="bar sans">
+  <span class="book">Principles of Microeconomics</span>
+  <span class="chap">Chapter 8 · Trade and Specialization</span>
+  <span class="r">Section 8.2 of 8.4 · Edition 4</span>
+</div>
+
+<div class="page">
+  <div class="page-sheet">
+    <div class="kicker">Chapter 8 · Trade and Specialization</div>
+    <h1>8.2 Opportunity cost and comparative advantage</h1>
+    <p class="objective">After reading this section, you should be able to compute opportunity costs from a production table and identify which producer has a comparative advantage.</p>
+
+    <div class="cols">
+      <div class="body">
+        <p>Every choice has a cost measured in what must be given up. When a student spends an evening revising, the true cost is the next-best use of that time, such as a shift at work or a night of sleep. Economists call the value of that best forgone alternative the <strong>opportunity cost</strong> of an activity. Because time, land and labour are scarce, opportunity cost shapes almost every decision.<sup class="fn">1</sup></p>
+
+        <p>Opportunity cost is easiest to see when we compare production possibilities. Atlantis can make 6 units of wheat or 3 units of cloth with a day's labour, while Borealia can make 4 units of wheat or 4 units of cloth. So one unit of cloth costs Atlantis two units of wheat, but costs Borealia only one. The numbers are chosen to keep the arithmetic clean.</p>
+
+        <p>The principle of <strong>comparative advantage</strong> states that a producer has a comparative advantage in a good when its opportunity cost of making that good is lower than the cost faced by others. It is a relative concept, so a producer that is better at everything can still gain by specializing in the good where its sacrifice is smallest. Here Borealia has the comparative advantage in cloth, and Atlantis in wheat.</p>
+
+        <p>If each country specializes and the two trade one unit of cloth for one and a half units of wheat, both can consume combinations of goods beyond their own production possibilities. The exact price depends on bargaining, transport costs and institutions, so the gains are not split evenly, but trade still expands what both countries can consume.</p>
+      </div>
+
+      <aside class="key">
+        <div class="t">Key idea</div>
+        <h3>Compare costs in what is given up, not in output</h3>
+        <p>Opportunity cost is the value of the best alternative forgone. Comparative advantage depends only on relative opportunity costs, so specialization and trade can make both parties better off even when one of them is more productive at everything.</p>
+        <table class="mini">
+          <caption>Table 8.2 Output per day of labour</caption>
+          <tr><th>Country</th><th>Wheat</th><th>Cloth</th><th>Cloth costs</th></tr>
+          <tr><td>Atlantis</td><td>6</td><td>3</td><td>2 wheat</td></tr>
+          <tr><td>Borealia</td><td>4</td><td>4</td><td>1 wheat</td></tr>
+        </table>
+      </aside>
+    </div>
+
+    <div class="foot">
+      <sup>1</sup> The term is usually credited to Friedrich von Wieser, who popularised it in the early twentieth century.
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

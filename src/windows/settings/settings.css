@@ -1,0 +1,426 @@
+/* Glass Tutor Settings: macOS 26 System Settings style, grouped inset sections. */
+
+.settings {
+  --bg: #f5f5f7;
+  --card: #ffffff;
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --text-3: #8e8e93;
+  --sep: rgba(60, 60, 67, 0.16);
+  --fill: rgba(118, 118, 128, 0.12);
+  --seg-on: #ffffff;
+  --field: #ffffff;
+  --field-border: rgba(60, 60, 67, 0.22);
+  --accent: #007aff;
+  --green: #34c759;
+  --amber-text: #a85a00;
+  --amber-solid: #ff9f0a;
+  --amber-fill: rgba(255, 159, 10, 0.18);
+  --banner-bg: rgba(255, 159, 10, 0.14);
+  --red: #ff3b30;
+  --switch-off: rgba(120, 120, 128, 0.32);
+  --meter-track: rgba(120, 120, 128, 0.2);
+
+  position: fixed;
+  inset: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings {
+    --bg: #1e1e20;
+    --card: #2c2c2e;
+    --text: #f5f5f7;
+    --text-2: #98989d;
+    --text-3: #6e6e73;
+    --sep: rgba(84, 84, 88, 0.65);
+    --fill: rgba(118, 118, 128, 0.24);
+    --seg-on: #636366;
+    --field: #1c1c1e;
+    --field-border: rgba(255, 255, 255, 0.14);
+    --accent: #0a84ff;
+    --green: #30d158;
+    --amber-text: #ffb340;
+    --amber-fill: rgba(255, 159, 10, 0.22);
+    --banner-bg: rgba(255, 159, 10, 0.16);
+    --red: #ff453a;
+    --switch-off: rgba(120, 120, 128, 0.36);
+    --meter-track: rgba(120, 120, 128, 0.3);
+    color-scheme: dark;
+  }
+}
+
+.settings-inner {
+  box-sizing: border-box;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 20px 20px 28px;
+}
+
+.section + .section {
+  margin-top: 22px;
+}
+
+.group-head {
+  margin: 0 0 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.group {
+  background: var(--card);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Rows: hairline separators inset from the leading edge, like System Settings. */
+.row {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 44px;
+  padding: 9px 14px;
+}
+
+.row + .row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 0.5px;
+  background: var(--sep);
+}
+
+.row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.row-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.row-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.35;
+}
+
+.muted {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* API key status */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--green);
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--amber-fill);
+  color: var(--amber-text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.link {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--banner-bg);
+  color: var(--text);
+  font-size: 12.5px;
+}
+
+.banner svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--amber-solid);
+}
+
+/* Inputs and buttons */
+.key-form {
+  display: flex;
+  gap: 8px;
+}
+
+.text-field {
+  flex: 1 1 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 28px;
+  padding: 0 9px;
+  border: 0.5px solid var(--field-border);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  user-select: text;
+}
+
+.text-field.wide {
+  flex: 0 1 200px;
+  width: 200px;
+}
+
+.text-field::placeholder {
+  color: var(--text-3);
+}
+
+.text-field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25);
+}
+
+.btn {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn:not(:disabled):active {
+  filter: brightness(0.92);
+}
+
+.flash {
+  font-size: 12px;
+}
+
+.flash.ok {
+  color: var(--green);
+}
+
+.flash.err {
+  color: var(--red);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--fill);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.spin {
+  animation: settings-spin 0.9s linear infinite;
+}
+
+@keyframes settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* macOS-style switch */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 51px;
+  height: 31px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--switch-off);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.switch.on {
+  background: var(--green);
+}
+
+.switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.4, 1.2);
+}
+
+.switch.on .knob {
+  transform: translateX(20px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Segmented control */
+.segmented {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--fill);
+}
+
+.seg {
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.seg.on {
+  background: var(--seg-on);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+.seg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Credit meter */
+.meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--meter-track);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.meter-fill.amber {
+  background: var(--amber-solid);
+}
+
+.meter-fill.red {
+  background: var(--red);
+}
+
+.footer {
+  margin: 18px 16px 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+@media (max-width: 420px) {
+  .settings-inner {
+    padding: 16px 16px 24px;
+  }
+
+  .group-head {
+    margin-left: 12px;
+  }
+
+  .row-line,
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .text-field.wide {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}

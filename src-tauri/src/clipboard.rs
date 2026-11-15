@@ -899,7 +899,15 @@ fn sends_keys(paste_method: PasteMethod) -> bool {
 
 /// Pastes `text` into the focused app. Call from a worker thread, never the main
 /// thread: it sleeps between steps (input injection hops via `with_enigo`).
+const GLASS_ALLOW_PASTE: bool = false;
+
 pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {
+    // Glass Tutor: transcription must NEVER paste or type into other apps.
+    if !GLASS_ALLOW_PASTE {
+        let _ = (text, app_handle);
+        log::info!("Glass Tutor: paste disabled; transcript not injected");
+        return Ok(PasteOutcome::Pasted);
+    }
     let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let settings = get_settings(&app_handle);
 

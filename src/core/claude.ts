@@ -1,0 +1,90 @@
+import type { AppSettings, CaptureResult, Segment, Shape, TutorResponse } from "../../shared/contracts";
+import tutorSchema from "../../shared/tutor_response.schema.json";
+import { getAnthropic, readableApiError } from "./anthropic";
+import { createResponseStreamParser } from "./jsonStream";
+import { TUTOR_SYSTEM_PROMPT, buildTutorUserText, imageBlock } from "./prompts";
+
+export interface TutorCallInput {
+  capture: CaptureResult; // must include imageBase64
+  question: string;
+  settings: AppSettings;
+  interruption?: { segmentId: string; segmentText: string; spokenSegments: Segment[]; shapes: Shape[]; objection: string };
+  checkAnswer?: { checkQuestion: string; answer: string };
+  critique?: string[];
+  surfaceHint?: "overlay" | "whiteboard";
+  signal?: AbortSignal;
+}
+
+export interface TutorStreamHandlers {
+  onFirstToken?(): void;
+  onMeta?(m: Partial<TutorResponse>): void;
+  onSegment?(s: Segment): void;
+  onShape?(s: Shape): void;
+}
+
+/**
+ * Streams the tutor answer. Segments, shapes and meta are emitted through the handlers as they
+ * complete; the returned promise resolves with the normalised full response.
+ */
+export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers): Promise<TutorResponse> {
+  const client = await getAnthropic();
+  const model = input.settings.tutorModel;
+  const parser = createResponseStreamParser({ onSegment: h.onSegment, onShape: h.onShape, onMeta: h.onMeta });
+  const t0 = performance.now();
+  console.info(`[tutor] request start model=${model} fast=${input.settings.fastMode}`);
+
+  const stream = client.beta.messages.stream(
+    {
+      model,
+      max_tokens: 8000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      ...(input.settings.fastMode ? { speed: "fast" as const } : {}),
+      output_config: { effort: "low", format: { type: "json_schema", schema: tutorSchema } },
+      system: [{ type: "text", text: TUTOR_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      messages: [
+        {
+          role: "user",
+          content: [imageBlock(input.capture), { type: "text", text: buildTutorUserText(input) }],
+        },
+      ],
+    },
+    { signal: input.signal },
+  );
+
+  const onAbort = () => stream.abort();
+  input.signal?.addEventListener("abort", onAbort, { once: true });
+
+  let text = "";
+  let gotFirst = false;
+  stream.on("text", (delta) => {
+    if (!gotFirst) {
+      gotFirst = true;
+      console.info(`[tutor] first token +${Math.round(performance.now() - t0)} ms`);
+      h.onFirstToken?.();
+    }
+    text += delta;
+    try {
+      parser.push(text);
+    } catch (err) {
+      console.error("[tutor] consumer handler threw", err);
+    }
+  });
+
+  const final = await stream
+    .finalMessage()
+    .catch((err: unknown) => {
+      throw readableApiError(err, input.signal);
+    })
+    .finally(() => input.signal?.removeEventListener("abort", onAbort));
+
+  if (final.stop_reason === "refusal") throw new Error("refused");
+
+  const finalText = final.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("") || text;
+  const response = parser.finish(finalText);
+  console.info(
+    `[tutor] done +${Math.round(performance.now() - t0)} ms stop=${final.stop_reason} ` +
+      `segments=${response.segments.length} shapes=${response.shapes.length}`,
+  );
+  return response;
+}

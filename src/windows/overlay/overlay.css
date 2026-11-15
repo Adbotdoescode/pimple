@@ -1,0 +1,43 @@
+html,
+body,
+#root {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+.gt-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  overflow: visible;
+  background: transparent;
+}
+
+/* Marching ants on the lens ring. Dash period is 8 + 6 = 14px, so one loop is seamless. */
+.gt-march {
+  animation: gt-march 2.4s linear infinite;
+}
+
+@keyframes gt-march {
+  to {
+    stroke-dashoffset: -14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gt-march {
+    animation: none;
+  }
+}

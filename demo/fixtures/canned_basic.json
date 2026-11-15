@@ -1,0 +1,115 @@
+{
+  "concept": "Forces on a block on an incline",
+  "surface": "overlay",
+  "grounding": {
+    "source_type": "screen",
+    "source_ref": "the incline diagram",
+    "quote": ""
+  },
+  "segments": [
+    {
+      "id": "s1",
+      "text": "This block, 5 kilograms, sits on an incline tilted about 22 degrees. Start by naming the forces acting on it."
+    },
+    {
+      "id": "s2",
+      "text": "Gravity pulls the block straight down with mg, about 49 newtons. Split that weight into a part along the slope and a part into the surface."
+    },
+    {
+      "id": "s3",
+      "text": "The part along the slope is mg sin θ, about 18 newtons here. That component is what pushes the block down the incline."
+    }
+  ],
+  "shapes": [
+    {
+      "id": "ramp",
+      "segment_id": "s1",
+      "kind": "line",
+      "color_role": "primary",
+      "points": [[300, 880], [1300, 480]],
+      "radius": 0,
+      "label": "incline",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "ground",
+      "segment_id": "s1",
+      "kind": "stroke",
+      "color_role": "primary",
+      "points": [[120, 884], [400, 886], [700, 882], [1000, 886], [1300, 884], [1500, 882]],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "block",
+      "segment_id": "s1",
+      "kind": "box",
+      "color_role": "secondary",
+      "points": [[700, 590], [880, 720]],
+      "radius": 0,
+      "label": "block 5 kg",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "angle",
+      "segment_id": "s1",
+      "kind": "circle",
+      "color_role": "accent",
+      "points": [[300, 880]],
+      "radius": 70,
+      "label": "θ",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "weight",
+      "segment_id": "s2",
+      "kind": "arrow",
+      "color_role": "warn",
+      "points": [[790, 655], [790, 790]],
+      "radius": 0,
+      "label": "mg",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "parallel",
+      "segment_id": "s3",
+      "kind": "vector",
+      "color_role": "accent",
+      "points": [[790, 655], [640, 715]],
+      "radius": 0,
+      "label": "mg sin θ",
+      "magnitude": "18 N",
+      "values": [1],
+      "target": ""
+    },
+    {
+      "id": "angle_label",
+      "segment_id": "s1",
+      "kind": "text",
+      "color_role": "accent",
+      "points": [[1000, 440]],
+      "radius": 0,
+      "label": "θ ≈ 22°",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    }
+  ],
+  "check_question": "If the incline were steeper, would the component along the slope get bigger or smaller?",
+  "gizmo_offer": {
+    "recommended": false,
+    "pitch": ""
+  },
+  "parked": []
+}

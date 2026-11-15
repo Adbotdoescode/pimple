@@ -1,0 +1,206 @@
+{
+  "concept": "Forces on a block on a frictionless incline",
+  "surface": "overlay",
+  "grounding": {
+    "source_type": "screen",
+    "source_ref": "Problem 4 on the page",
+    "quote": "A 2.0 kg block rests on a ramp inclined at 30°."
+  },
+  "segments": [
+    {
+      "id": "s1",
+      "text": "Start with the block itself, the part inside this circle, and we will pull out every force acting on it."
+    },
+    {
+      "id": "s2",
+      "text": "Gravity pulls straight down on it, with a weight of about 19.6 newtons."
+    },
+    {
+      "id": "s3",
+      "text": "The ramp pushes back straight out from its surface, that is the normal force, about 17 newtons. The part of gravity that runs along the slope, about 9.8 newtons, is what pulls the block down the ramp."
+    },
+    {
+      "id": "s4",
+      "text": "Because the surface is frictionless, nothing else acts along the slope, so that 9.8 newton part alone accelerates the block at about 4.9 metres per second squared. The 30 degree angle sets both pieces."
+    }
+  ],
+  "shapes": [
+    {
+      "id": "block_circle",
+      "segment_id": "s1",
+      "kind": "circle",
+      "color_role": "primary",
+      "points": [
+        [
+          438.3,
+          567.4
+        ]
+      ],
+      "radius": 100,
+      "label": "block",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "weight",
+      "segment_id": "s2",
+      "kind": "vector",
+      "color_role": "warn",
+      "points": [
+        [
+          438.3,
+          567.4
+        ],
+        [
+          438.3,
+          685.0
+        ]
+      ],
+      "radius": 0,
+      "label": "mg",
+      "magnitude": "19.6 N",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "normal",
+      "segment_id": "s3",
+      "kind": "vector",
+      "color_role": "primary",
+      "points": [
+        [
+          438.3,
+          567.4
+        ],
+        [
+          387.3,
+          479.0
+        ]
+      ],
+      "radius": 0,
+      "label": "N",
+      "magnitude": "17 N",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "parallel",
+      "segment_id": "s3",
+      "kind": "vector",
+      "color_role": "secondary",
+      "points": [
+        [
+          438.3,
+          567.4
+        ],
+        [
+          387.4,
+          596.8
+        ]
+      ],
+      "radius": 0,
+      "label": "mg sin 30°",
+      "magnitude": "",
+      "values": [
+        1
+      ],
+      "target": ""
+    },
+    {
+      "id": "question_box",
+      "segment_id": "s4",
+      "kind": "box",
+      "color_role": "accent",
+      "points": [
+        [
+          96.0,
+          211.0
+        ],
+        [
+          787.0,
+          255.0
+        ]
+      ],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "angle_label",
+      "segment_id": "s4",
+      "kind": "text",
+      "color_role": "accent",
+      "points": [
+        [
+          232.0,
+          722.0
+        ]
+      ],
+      "radius": 0,
+      "label": "30°",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "friction_stroke",
+      "segment_id": "s4",
+      "kind": "stroke",
+      "color_role": "accent",
+      "points": [
+        [
+          562.0,
+          138.0
+        ],
+        [
+          590.0,
+          139.1
+        ],
+        [
+          618.0,
+          140.1
+        ],
+        [
+          646.0,
+          140.8
+        ],
+        [
+          674.0,
+          141.0
+        ],
+        [
+          702.0,
+          140.8
+        ],
+        [
+          730.0,
+          140.1
+        ],
+        [
+          758.0,
+          139.1
+        ],
+        [
+          786.0,
+          138.0
+        ]
+      ],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    }
+  ],
+  "check_question": "If the ramp were steeper, would the normal force get bigger or smaller?",
+  "gizmo_offer": {
+    "recommended": false,
+    "pitch": ""
+  },
+  "parked": [
+    "Why do ramps reduce effort?"
+  ]
+}

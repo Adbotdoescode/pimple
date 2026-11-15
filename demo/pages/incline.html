@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Physics 101 · Problem 4.3</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1440px; height: 900px; overflow: hidden; position: relative;
+    background: #f3f5f8; color: #1f2933;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 15px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    position: absolute; left: 0; top: 0; width: 1440px; height: 56px;
+    background: #ffffff; border-bottom: 1px solid #dfe3e9;
+    display: flex; align-items: center; padding: 0 20px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: #14213d; letter-spacing: -0.01em; }
+  .logo-mark {
+    width: 28px; height: 28px; border-radius: 8px; background: #1d4ed8; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800;
+  }
+  .logo .sep { color: #9aa5b1; font-weight: 400; margin: 0 2px; }
+  .logo .unit { font-weight: 500; color: #52606d; font-size: 15px; }
+  .topnav { margin-left: 36px; display: flex; gap: 22px; font-size: 14px; color: #52606d; }
+  .topnav span.on { color: #1d4ed8; font-weight: 600; }
+  .topright { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: #52606d; }
+  .pill { background: #fff4e5; color: #9a4b00; border: 1px solid #f7d9ac; border-radius: 999px; padding: 4px 12px; font-weight: 600; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #d9e2f1; color: #1d4ed8;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+  }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    position: absolute; left: 0; top: 56px; width: 240px; height: 844px;
+    background: #fbfcfd; border-right: 1px solid #dfe3e9; padding: 18px 12px;
+  }
+  .sidebar h4 {
+    margin: 14px 10px 6px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #7b8794;
+  }
+  .sidebar ul { list-style: none; margin: 0; padding: 0; }
+  .sidebar li {
+    padding: 7px 10px; border-radius: 6px; font-size: 14px; color: #3e4c59;
+  }
+  .sidebar li.sub { padding-left: 26px; font-size: 13.5px; }
+  .sidebar li.active { background: #e3ebfb; color: #1d4ed8; font-weight: 600; }
+  .sidebar li .done { color: #2f9e6b; margin-left: 6px; font-size: 12px; }
+
+  /* ---------- main card ---------- */
+  .card {
+    position: absolute; left: 272px; top: 88px; width: 1136px; height: 760px;
+    background: #ffffff; border: 1px solid #dfe3e9; border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  }
+  .text {
+    position: absolute; left: 36px; top: 34px; width: 492px;
+  }
+  .crumbs { font-size: 13px; color: #7b8794; margin-bottom: 14px; }
+  .crumbs b { color: #3e4c59; font-weight: 500; }
+  h1 {
+    margin: 0 0 6px; font-size: 27px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #14213d;
+  }
+  .meta { font-size: 13px; color: #7b8794; margin-bottom: 22px; }
+  .meta span + span::before { content: "  ·  "; color: #c3ccd6; }
+
+  p.prompt { margin: 0 0 16px; font-size: 16px; line-height: 1.6; color: #2b3440; }
+
+  .given {
+    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+    background: #eef4ff; border: 1px solid #c9dbfb; border-radius: 8px;
+    padding: 10px 12px; margin: 4px 0 24px;
+  }
+  .given .lbl {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #1d4ed8;
+    text-transform: uppercase; margin-right: 4px;
+  }
+  .chip {
+    background: #ffffff; border: 1px solid #d5e2f8; border-radius: 6px;
+    padding: 3px 9px; font-size: 14px; color: #1f2933; white-space: nowrap;
+  }
+  .chip i { font-family: "Times New Roman", Georgia, serif; font-size: 15px; }
+
+  ol.parts { list-style: none; margin: 0; padding: 0; }
+  ol.parts li {
+    display: flex; gap: 12px; margin-bottom: 14px; font-size: 16px; line-height: 1.55; color: #2b3440;
+  }
+  ol.parts .k {
+    flex: none; width: 30px; height: 26px; border-radius: 6px; background: #f0f2f5; color: #3e4c59;
+    font-weight: 700; font-size: 13px; text-align: center; line-height: 26px;
+  }
+  .u { position: relative; }
+
+  .workbox {
+    margin-top: 22px; border: 1px solid #d5dbe3; border-radius: 8px; background: #fbfcfd;
+  }
+  .workbox .head {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #7b8794;
+    padding: 8px 12px; border-bottom: 1px solid #e6e9ee;
+  }
+  .workbox .body { padding: 12px; height: 96px; font-size: 14px; color: #9aa5b1; }
+  .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .btn {
+    font-size: 14px; font-weight: 600; border-radius: 7px; padding: 8px 16px; border: 1px solid #c9d1db; background: #fff; color: #3e4c59;
+  }
+  .btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+
+  /* ---------- figure ---------- */
+  .fig {
+    position: absolute; left: 560px; top: 88px; width: 540px; height: 430px;
+  }
+  .fig .frame {
+    position: absolute; left: 0; top: 0; width: 540px; height: 412px;
+    background: #f7f9fc; border: 1px solid #dfe5ee; border-radius: 10px;
+  }
+  .fig svg { position: absolute; left: 16px; top: 16px; width: 520px; height: 380px; display: block; }
+  .fig .cap {
+    position: absolute; left: 0; top: 422px; width: 540px; font-size: 13px; line-height: 1.45; color: #7b8794;
+  }
+  .fig .cap b { color: #3e4c59; font-weight: 600; }
+  .fig .hint {
+    position: absolute; left: 0; top: 478px; width: 540px;
+    background: #ffffff; border: 1px solid #dfe5ee; border-left: 4px solid #f59f00; border-radius: 8px; padding: 12px 16px;
+  }
+  .fig .hint-h { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #b25e00; margin-bottom: 4px; }
+  .fig .hint p { margin: 0; font-size: 14px; line-height: 1.55; color: #3e4c59; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">P</div>
+    <span>Physics 101</span>
+    <span class="sep">·</span>
+    <span class="unit">Unit 4: Forces</span>
+  </div>
+  <nav class="topnav">
+    <span>Syllabus</span>
+    <span class="on">Modules</span>
+    <span>Assignments</span>
+    <span>Grades</span>
+    <span>Calendar</span>
+  </nav>
+  <div class="topright">
+    <span class="pill">Homework 6 due Fri 11:59 PM</span>
+    <div class="avatar">AK</div>
+  </div>
+</header>
+
+<aside class="sidebar">
+  <ul>
+    <li>Course home</li>
+    <li>Syllabus</li>
+  </ul>
+  <h4>Modules</h4>
+  <ul>
+    <li>Unit 1 · Kinematics <span class="done">✓</span></li>
+    <li>Unit 2 · Vectors <span class="done">✓</span></li>
+    <li>Unit 3 · Newton's Laws <span class="done">✓</span></li>
+    <li class="active">Unit 4 · Forces</li>
+    <li class="sub">4.1 Gravity and weight</li>
+    <li class="sub">4.2 Tension and pulleys</li>
+    <li class="sub active">4.3 Inclined planes</li>
+    <li class="sub">4.4 Friction</li>
+    <li class="sub">4.5 Circular motion</li>
+    <li>Unit 5 · Energy</li>
+    <li>Unit 6 · Momentum</li>
+  </ul>
+  <h4>Resources</h4>
+  <ul>
+    <li>Formula sheet</li>
+    <li>Lab reports</li>
+    <li>Office hours</li>
+  </ul>
+</aside>
+
+<main class="card">
+  <div class="text">
+    <div class="crumbs">Unit 4 <b>›</b> 4.3 Inclined planes <b>›</b> <b>Homework 6</b></div>
+    <h1>Problem 4.3: Block on a rough incline</h1>
+    <div class="meta"><span>Homework 6</span><span>15 points</span><span>Show your work</span></div>
+
+    <p class="prompt">A 5.0&nbsp;kg block rests on a rough ramp that is inclined at 30° to the horizontal. The coefficient of static friction between the block and the surface of the ramp is 0.45. The block is initially at rest.</p>
+
+    <div class="given" id="given">
+      <span class="lbl">Given</span>
+      <span class="chip">m = 5.0 kg</span>
+      <span class="chip"><i>θ</i> = 30°</span>
+      <span class="chip"><i>μ</i><sub>s</sub> = 0.45</span>
+      <span class="chip"><i>g</i> = 9.8 m/s²</span>
+    </div>
+
+    <ol class="parts">
+      <li><span class="k">(a)</span><span>Draw a free-body diagram for the block. Label every force that acts on it and show where each force is applied.</span></li>
+      <li><span class="k">(b)</span><span>Find the magnitude of the normal force that the ramp exerts on the block.</span></li>
+      <li><span class="k">(c)</span><span class="u"><span id="q-slide">Will the block slide down the ramp?</span> Compare the friction force needed to hold the block still with the maximum static friction the ramp can provide.</span></li>
+    </ol>
+
+    <div class="workbox">
+      <div class="head">Your work</div>
+      <div class="body">Type your answer, or attach a photo of your handwritten solution.</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn">Save draft</button>
+      <button class="btn primary">Submit answer</button>
+    </div>
+  </div>
+
+  <div class="fig">
+    <div class="frame"></div>
+    <svg viewBox="0 0 520 380" width="520" height="380" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif">
+      <defs>
+        <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="7" stroke="#b9c1cc" stroke-width="1.6"/>
+        </pattern>
+        <marker id="ah-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#1d4ed8"/>
+        </marker>
+        <marker id="ah-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#7048e8"/>
+        </marker>
+        <marker id="ah-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#0f9d74"/>
+        </marker>
+        <marker id="ah-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#d9480f"/>
+        </marker>
+      </defs>
+
+      <!-- ground -->
+      <rect x="20" y="330" width="480" height="22" fill="url(#hatch)"/>
+      <line x1="20" y1="330" x2="500" y2="330" stroke="#4a5462" stroke-width="2"/>
+
+      <!-- wedge: A=(60,330) B=(460,330) T=(460,99.1) -->
+      <polygon points="60,330 460,330 460,99.1" fill="#efe6d6" stroke="#6b5b45" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M460 316 L446 316 L446 330" fill="none" stroke="#6b5b45" stroke-width="1.2"/>
+
+      <!-- angle arc at A -->
+      <path d="M116 330 A56 56 0 0 0 108.5 302" fill="none" stroke="#3d4754" stroke-width="1.5"/>
+      <text x="141" y="313" font-size="14" font-style="italic" fill="#3d4754" text-anchor="middle">θ = 30°</text>
+      <text x="296" y="296" font-size="13" font-style="italic" fill="#6b5b45">rough ramp, μs = 0.45</text>
+
+      <!-- block centre C=(222.9,192.1), rotated -30 deg to sit flush on the slope -->
+      <g transform="translate(222.9 192.1) rotate(-30)">
+        <rect x="-38" y="-38" width="76" height="76" rx="3" fill="#bfd4ef" stroke="#2f4a6b" stroke-width="2"/>
+        <text x="17" y="22" font-size="14" font-weight="600" fill="#1d2b3a" text-anchor="middle">5.0 kg</text>
+      </g>
+
+      <!-- weight mg: straight down from centre -->
+      <line x1="222.9" y1="192.1" x2="222.9" y2="290" stroke="#1d4ed8" stroke-width="3" marker-end="url(#ah-blue)"/>
+      <text x="234" y="262" font-size="14" font-weight="700" fill="#1d4ed8">mg = 49 N</text>
+
+      <!-- mg sin(theta): down the slope from centre -->
+      <line x1="222.9" y1="192.1" x2="153.6" y2="232.1" stroke="#7048e8" stroke-width="3" marker-end="url(#ah-purple)"/>
+      <text x="146" y="252" font-size="13" font-weight="600" fill="#5a36c8" text-anchor="end">mg sin θ</text>
+
+      <!-- normal force: perpendicular to the slope, outward -->
+      <line x1="222.9" y1="192.1" x2="172.9" y2="105.5" stroke="#0f9d74" stroke-width="3" marker-end="url(#ah-green)"/>
+      <text x="160" y="96" font-size="15" font-weight="700" fill="#0b7a5a" text-anchor="end">N</text>
+
+      <!-- friction: up the slope from centre -->
+      <line x1="222.9" y1="192.1" x2="292.2" y2="152.1" stroke="#d9480f" stroke-width="3" marker-end="url(#ah-orange)"/>
+      <text x="300" y="140" font-size="15" font-weight="700" fill="#b23b07">f</text>
+    </svg>
+    <div class="cap"><b>Figure 4.3.</b> Block on a rough ramp, not to scale. Forces are drawn from the block's centre.</div>
+    <div class="hint">
+      <div class="hint-h">Hint</div>
+      <p>Before writing any equation, resolve the weight into two parts: one perpendicular to the ramp and one parallel to it. Only one of those parts is balanced by the normal force.</p>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

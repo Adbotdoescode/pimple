@@ -1,0 +1,386 @@
+/* Glass Tutor bubble: Liquid Glass built from layered gradients.
+   Every layer is a circle; the stack reads as glass on white and on dark desktops. */
+
+/* Make the bubble window fully transparent. Scoped with :has so other windows
+   sharing this bundle keep their own backgrounds. */
+html:has(.gt-stage),
+html:has(.gt-stage) body,
+html:has(.gt-stage) #root {
+  background: transparent !important;
+  margin: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.gt-stage {
+  --d: 56px;
+  --motion: 0;
+  --lvl: 0;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ───────── Button: hover, press, springy easing ───────── */
+
+.gt-bubble {
+  position: relative;
+  flex: none;
+  display: block;
+  width: var(--d);
+  height: var(--d);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  appearance: none;
+  outline: none;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transform: scale(1);
+  transition: transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.gt-bubble:hover { transform: scale(1.05); }
+.gt-bubble:active { transform: scale(0.93); }
+.gt-bubble:focus-visible { box-shadow: 0 0 0 2px rgba(120, 220, 255, 0.85); }
+
+/* Shared layer: a full-size circle that does not take pointer events. */
+.gt-layer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Ring mask: only the outer --rw px of the circle stays opaque. */
+.gt-ring {
+  -webkit-mask-image: radial-gradient(closest-side, transparent calc(100% - var(--rw, 1.5px)), #000 100%);
+  mask-image: radial-gradient(closest-side, transparent calc(100% - var(--rw, 1.5px)), #000 100%);
+}
+
+/* ───────── Outer glow (level ring for listening, steady amber for interrupt) ───────── */
+
+.gt-glow {
+  opacity: 0;
+  box-shadow: 0 0 14px 4px rgba(60, 210, 255, 0.55), 0 0 30px 10px rgba(60, 210, 255, 0.2);
+  transition: opacity 200ms ease;
+}
+.gt-bubble[data-state="listen"] .gt-glow,
+.gt-bubble[data-state="check"] .gt-glow {
+  opacity: calc(0.12 + 0.88 * var(--lvl, 0));
+  transition: none;
+}
+.gt-bubble[data-state="check"] .gt-glow {
+  box-shadow: 0 0 14px 4px rgba(255, 184, 77, 0.5), 0 0 30px 10px rgba(255, 170, 60, 0.18);
+}
+.gt-bubble[data-state="interrupt"] .gt-glow {
+  opacity: 0.9;
+  box-shadow: 0 0 12px 3px rgba(255, 170, 50, 0.6), 0 0 26px 8px rgba(255, 150, 40, 0.25);
+}
+
+/* ───────── Speaking pulse rings (emanate from the edge) ───────── */
+
+.gt-pulse {
+  opacity: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 8px rgba(150, 225, 255, 0.5);
+}
+.gt-bubble[data-state="speak"] .gt-pulse {
+  animation: gt-pulse 1.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+}
+.gt-bubble[data-state="speak"] .gt-pulse.p2 {
+  animation-delay: 0.7s;
+}
+@keyframes gt-pulse {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+/* ───────── Glass face (breathes while idle) ───────── */
+
+.gt-face {
+  transform-origin: 50% 50%;
+}
+.gt-bubble[data-state="idle"] .gt-face {
+  animation: gt-breathe 4s ease-in-out infinite;
+}
+@keyframes gt-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+
+/* Outer shadow. Box-shadow only paints outside the circle, so the body stays clear. */
+.gt-shadow {
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.22),
+    0 2px 6px rgba(0, 0, 0, 0.18),
+    0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+/* Body: highlight-to-edge radial over a faint dark base so it reads on white. */
+.gt-body {
+  background-color: rgba(20, 24, 32, 0.18);
+  background-image: radial-gradient(
+    circle at 50% 35%,
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0.1) 55%,
+    rgba(120, 140, 170, 0.18) 100%
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+}
+
+/* Inner shadow: bottom darkening and a top lip of light. */
+.gt-inner {
+  box-shadow:
+    inset 0 -8px 14px rgba(0, 0, 0, 0.14),
+    inset 0 2px 3px rgba(255, 255, 255, 0.55);
+}
+
+/* Diagonal light sweep, clipped to the circle. Runs in think and verify. */
+.gt-clip {
+  overflow: hidden;
+}
+.gt-sweep {
+  position: absolute;
+  top: -20%;
+  bottom: -20%;
+  left: 0;
+  width: 60%;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  opacity: 0;
+  transform: translateX(-100%) rotate(25deg);
+  pointer-events: none;
+}
+.gt-bubble[data-state="think"] .gt-sweep,
+.gt-bubble[data-state="verify"] .gt-sweep {
+  opacity: 1;
+  animation: gt-sweep 1.8s ease-in-out infinite;
+}
+@keyframes gt-sweep {
+  0% { transform: translateX(-100%) rotate(25deg); }
+  40%, 100% { transform: translateX(260%) rotate(25deg); }
+}
+
+/* Shimmer rim: rotating conic gradient, shown while thinking and verifying. */
+.gt-spin {
+  --rw: 2px;
+  --s1: #5ee7ff;
+  --s2: #a98bff;
+  --s3: #ff6ad5;
+  --s4: #ffc56b;
+  background: conic-gradient(from 0deg, var(--s1), var(--s2), var(--s3), var(--s4), var(--s1));
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.gt-bubble[data-state="think"] .gt-spin,
+.gt-bubble[data-state="verify"] .gt-spin {
+  opacity: 0.95;
+  animation: gt-spin 1.6s linear infinite;
+}
+.gt-bubble[data-state="verify"] .gt-spin {
+  --s1: #7dffb4;
+  --s2: #3ddc97;
+  --s3: #c4ff6e;
+  --s4: #4ff0d0;
+}
+@keyframes gt-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Chromatic edge: magenta and cyan rings offset ±0.8px, screen-blended. */
+.gt-chroma {
+  mix-blend-mode: screen;
+  opacity: calc(0.25 + 0.6 * var(--motion, 0));
+}
+.gt-chroma-m {
+  background: radial-gradient(closest-side, transparent 88%, rgba(255, 60, 170, 0.95) 97%, transparent 100%);
+  transform: translateX(-0.8px);
+}
+.gt-chroma-c {
+  background: radial-gradient(closest-side, transparent 88%, rgba(40, 200, 255, 0.95) 97%, transparent 100%);
+  transform: translateX(0.8px);
+}
+
+/* Specular rim: 1.5px ring, brightest top-left, fading right, brighter on hover. */
+.gt-rim {
+  --rw: 1.5px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 255, 255, 0.55) 0deg,
+    rgba(255, 255, 255, 0.15) 90deg,
+    rgba(255, 255, 255, 0.35) 150deg,
+    rgba(255, 255, 255, 0.45) 225deg,
+    rgba(255, 255, 255, 0.7) 285deg,
+    rgba(255, 255, 255, 0.95) 315deg,
+    rgba(255, 255, 255, 0.6) 345deg,
+    rgba(255, 255, 255, 0.55) 360deg
+  );
+  opacity: 0.75;
+  transition: opacity 200ms ease;
+}
+.gt-bubble:hover .gt-rim {
+  opacity: 1;
+}
+
+/* Amber rim for interrupted (and a tint for checking via the bars). */
+.gt-amber {
+  --rw: 2px;
+  background: linear-gradient(160deg, #ffd27a, #ff9d3c 60%, #ffb85c);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.gt-bubble[data-state="interrupt"] .gt-amber {
+  opacity: 1;
+}
+
+/* Gloss: soft ellipse over the top ~45%. */
+.gt-gloss {
+  position: absolute;
+  top: 7%;
+  left: 12%;
+  right: 12%;
+  bottom: auto;
+  height: 42%;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+/* Tiny specular dot near the top-left. */
+.gt-spec {
+  position: absolute;
+  top: 16%;
+  left: 24%;
+  width: 7px;
+  height: 5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 5px 1px rgba(255, 255, 255, 0.9);
+  filter: blur(0.4px);
+  pointer-events: none;
+}
+
+/* Capturing: one quick white flash. */
+.gt-flash {
+  background: radial-gradient(circle, #fff 30%, rgba(255, 255, 255, 0.7) 100%);
+  opacity: 0;
+}
+.gt-bubble[data-state="capture"] .gt-flash {
+  animation: gt-flash 150ms ease-out both;
+}
+@keyframes gt-flash {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ───────── Centre content ───────── */
+
+.gt-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Core: idle glow, targeting brightens, speaking pulses white, interrupt goes amber. */
+.gt-core {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #fff, #e6fbff 60%, rgba(200, 240, 255, 0.85));
+  box-shadow: 0 0 6px 2px rgba(120, 230, 255, 0.55), 0 0 16px 6px rgba(160, 120, 255, 0.35);
+  opacity: 0;
+  transform: scale(1);
+  transition:
+    opacity 200ms ease,
+    transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 200ms ease,
+    background 200ms ease;
+}
+.gt-bubble:not([data-state="listen"]):not([data-state="check"]) .gt-core {
+  opacity: 1;
+}
+.gt-bubble[data-state="target"] .gt-core {
+  transform: scale(1.35);
+  box-shadow: 0 0 10px 3px rgba(120, 230, 255, 0.8), 0 0 22px 8px rgba(160, 120, 255, 0.5);
+}
+.gt-bubble[data-state="speak"] .gt-core {
+  animation: gt-corepulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 10px 3px rgba(255, 255, 255, 0.9), 0 0 24px 8px rgba(170, 225, 255, 0.55);
+}
+.gt-bubble[data-state="interrupt"] .gt-core {
+  background: radial-gradient(circle at 40% 35%, #fff6e0, #ffd08a 60%, #ffb35c);
+  box-shadow: 0 0 8px 2px rgba(255, 170, 60, 0.8), 0 0 18px 6px rgba(255, 150, 40, 0.45);
+}
+@keyframes gt-corepulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+
+/* Waveform: five 3px bars, heights driven from Bubble via rAF. */
+.gt-bars {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.gt-bubble[data-state="listen"] .gt-bars,
+.gt-bubble[data-state="check"] .gt-bars {
+  opacity: 1;
+}
+.gt-bar {
+  flex: none;
+  display: block;
+  width: 3px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #6fe3ff, #ffffff);
+  box-shadow: 0 0 4px rgba(110, 227, 255, 0.7);
+}
+.gt-bubble[data-state="check"] .gt-bar {
+  background: linear-gradient(to top, #ffb347, #fff1cf);
+  box-shadow: 0 0 4px rgba(255, 179, 71, 0.7);
+}
+
+/* ───────── Reduced motion: no infinite animations ───────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .gt-face,
+  .gt-spin,
+  .gt-sweep,
+  .gt-core {
+    animation: none !important;
+  }
+  .gt-pulse {
+    animation: none !important;
+    display: none;
+  }
+  .gt-bubble:hover,
+  .gt-bubble:active {
+    transition-duration: 1ms;
+  }
+}

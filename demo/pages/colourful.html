@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Water Cycle · Splash Science</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1440px; height: 900px; overflow: hidden; }
+  body {
+    background: #fff6e4;
+    color: #3b0764;
+    font-family: -apple-system, BlinkMacSystemFont, "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    position: relative;
+    height: 132px;
+    background: #ffd23f;
+    padding: 0 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .kicker {
+    font-size: 15px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #3b0764; margin-bottom: 6px;
+  }
+  h1 { margin: 0; font-size: 66px; line-height: 1; font-weight: 900; letter-spacing: -0.03em; color: #3b0764; }
+  .sub { margin: 10px 0 0; font-size: 20px; font-weight: 600; color: #5b21b6; }
+  .badge {
+    background: #e11d74; color: #fff; font-weight: 800; font-size: 18px;
+    padding: 14px 24px; border-radius: 999px; box-shadow: 0 6px 0 #9d174d;
+    transform: rotate(-3deg);
+  }
+
+  main {
+    position: absolute;
+    top: 152px; left: 64px;
+    width: 1312px; height: 640px;
+  }
+  .hero {
+    position: absolute; left: 0; top: 0; width: 820px; height: 640px;
+    border-radius: 28px; overflow: hidden; background: #12b5a5;
+  }
+  .hero svg { position: absolute; left: 0; top: 0; display: block; }
+
+  .cards {
+    position: absolute; left: 848px; top: 0; width: 464px; height: 640px;
+    display: grid; grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 16px;
+  }
+  .card { border-radius: 22px; padding: 16px 26px; color: #fff; display: flex; flex-direction: column; justify-content: center; }
+  .card .n { font-size: 14px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.9; }
+  .card h2 { margin: 4px 0 6px; font-size: 32px; font-weight: 900; letter-spacing: -0.02em; }
+  .card p { margin: 0; font-size: 17px; line-height: 1.35; font-weight: 500; }
+  .c1 { background: #ff7a1a; }
+  .c2 { background: #e11d74; }
+  .c3 { background: #6d28d9; }
+  .c4 { background: #ffd23f; color: #3b0764; }
+
+  footer {
+    position: absolute; left: 0; top: 656px; width: 1312px; height: 56px;
+    background: #3b0764; color: #ffd23f; border-radius: 18px;
+    display: flex; align-items: center; padding: 0 28px;
+    font-size: 18px; font-weight: 600;
+  }
+  footer b { color: #fff; font-weight: 900; margin-right: 10px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="kicker">Splash Science · Earth Systems</div>
+    <h1>The Water Cycle</h1>
+    <p class="sub">Follow one drop of water on its journey around the planet.</p>
+  </div>
+  <div class="badge">Ages 8–12</div>
+</header>
+
+<main>
+  <section class="hero">
+    <svg width="820" height="640" viewBox="0 0 820 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0,0 L12,6 L0,12 z" fill="#ffffff"/>
+        </marker>
+        <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+          <circle cx="4" cy="4" r="2.2" fill="#ffffff" opacity="0.18"/>
+        </pattern>
+      </defs>
+
+      <rect x="0" y="0" width="820" height="640" fill="url(#dots)"/>
+
+      <!-- sun -->
+      <g stroke="#ffd23f" stroke-width="8" stroke-linecap="round">
+        <line x1="120" y1="20" x2="120" y2="36"/>
+        <line x1="120" y1="164" x2="120" y2="180"/>
+        <line x1="34" y1="100" x2="50" y2="100"/>
+        <line x1="190" y1="100" x2="206" y2="100"/>
+        <line x1="57" y1="37" x2="68" y2="48"/>
+        <line x1="172" y1="152" x2="183" y2="163"/>
+        <line x1="183" y1="37" x2="172" y2="48"/>
+        <line x1="68" y1="152" x2="57" y2="163"/>
+      </g>
+      <circle cx="120" cy="100" r="50" fill="#ffd23f"/>
+
+      <!-- cloud -->
+      <g fill="#ffffff">
+        <ellipse cx="400" cy="140" rx="104" ry="34"/>
+        <circle cx="350" cy="122" r="32"/>
+        <circle cx="400" cy="104" r="42"/>
+        <circle cx="448" cy="124" r="30"/>
+      </g>
+
+      <!-- rain -->
+      <g stroke="#c4f1ff" stroke-width="6" stroke-linecap="round">
+        <line x1="338" y1="196" x2="328" y2="232"/>
+        <line x1="376" y1="190" x2="366" y2="236"/>
+        <line x1="414" y1="196" x2="404" y2="234"/>
+        <line x1="452" y1="190" x2="442" y2="232"/>
+      </g>
+
+      <!-- evaporation arrows -->
+      <path d="M 196 500 C 150 420, 230 330, 292 190" fill="none" stroke="#ffffff" stroke-width="5" stroke-dasharray="14 12" marker-end="url(#arr)"/>
+      <path d="M 262 500 C 236 440, 300 380, 352 300" fill="none" stroke="#ffffff" stroke-width="5" stroke-dasharray="14 12" marker-end="url(#arr)" opacity="0.9"/>
+
+      <!-- mountains -->
+      <polygon points="500,470 640,286 780,470" fill="#6d28d9"/>
+      <polygon points="640,286 672,332 654,326 640,342 624,326 608,332" fill="#ede9fe"/>
+      <polygon points="430,470 486,392 540,470" fill="#7c3aed"/>
+
+      <!-- river -->
+      <path d="M 628 344 C 622 400, 600 430, 606 470 C 610 500, 590 512, 578 530" fill="none" stroke="#7dd3fc" stroke-width="14" stroke-linecap="round"/>
+
+      <!-- sea -->
+      <rect x="0" y="520" width="820" height="120" fill="#1d4ed8"/>
+      <path d="M 0 548 Q 40 534 80 548 T 160 548 T 240 548 T 320 548 T 400 548 T 480 548 T 560 548 T 640 548 T 720 548 T 800 548 T 880 548" fill="none" stroke="#93c5fd" stroke-width="4" opacity="0.6"/>
+      <path d="M 0 590 Q 40 576 80 590 T 160 590 T 240 590 T 320 590 T 400 590 T 480 590 T 560 590 T 640 590 T 720 590 T 800 590 T 880 590" fill="none" stroke="#93c5fd" stroke-width="4" opacity="0.4"/>
+
+      <!-- callouts -->
+      <line x1="120" y1="216" x2="120" y2="506" stroke="#ffffff" stroke-width="3" stroke-dasharray="2 8" stroke-linecap="round"/>
+      <rect x="40" y="176" width="236" height="40" rx="20" fill="#ffffff"/>
+      <text x="158" y="202" text-anchor="middle" font-size="18" font-weight="800" fill="#3b0764">1. Sun heats the sea</text>
+
+      <rect x="520" y="96" width="270" height="40" rx="20" fill="#ffffff"/>
+      <text x="655" y="122" text-anchor="middle" font-size="18" font-weight="800" fill="#3b0764">2. Vapour cools into clouds</text>
+
+      <rect x="500" y="236" width="272" height="40" rx="20" fill="#ffffff"/>
+      <text x="636" y="262" text-anchor="middle" font-size="18" font-weight="800" fill="#3b0764">3. Rain falls to the land</text>
+
+      <line x1="566" y1="556" x2="582" y2="532" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+      <rect x="296" y="548" width="270" height="40" rx="20" fill="#ffffff"/>
+      <text x="431" y="574" text-anchor="middle" font-size="18" font-weight="800" fill="#3b0764">4. Rivers carry it to the sea</text>
+    </svg>
+  </section>
+
+  <section class="cards">
+    <div class="card c1">
+      <div class="n">Step 1</div>
+      <h2>Evaporation</h2>
+      <p>The sun heats water in seas and lakes until it turns into invisible vapour.</p>
+    </div>
+    <div class="card c2">
+      <div class="n">Step 2</div>
+      <h2>Condensation</h2>
+      <p>Cool air makes vapour gather around specks of dust into tiny droplets.</p>
+    </div>
+    <div class="card c3">
+      <div class="n">Step 3</div>
+      <h2>Precipitation</h2>
+      <p>Droplets join up until they are heavy enough to fall as rain or snow.</p>
+    </div>
+    <div class="card c4">
+      <div class="n">Step 4</div>
+      <h2>Collection</h2>
+      <p>Water gathers in rivers, lakes and oceans, ready to start the cycle again.</p>
+    </div>
+  </section>
+
+  <footer>
+    <b>Fun fact:</b> the water in your glass has been cycling for billions of years, so some of it was probably drunk by dinosaurs.
+  </footer>
+</main>
+
+</body>
+</html>

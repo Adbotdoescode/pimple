@@ -1,0 +1,31 @@
+{
+  "segments": [
+    {
+      "id": "n1",
+      "text": "Only part of gravity presses into the ramp, so the normal force is smaller than the full weight."
+    }
+  ],
+  "shapes": [
+    {
+      "id": "perp_component",
+      "segment_id": "n1",
+      "kind": "vector",
+      "color_role": "secondary",
+      "points": [
+        [
+          438.3,
+          567.4
+        ],
+        [
+          489.3,
+          655.7
+        ]
+      ],
+      "radius": 0,
+      "label": "mg cos 30°",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    }
+  ]
+}

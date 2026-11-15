@@ -1,0 +1,103 @@
+{
+  "concept": "Angular frequency of a spring",
+  "surface": "overlay",
+  "grounding": {
+    "source_type": "screen",
+    "source_ref": "Physics Notes: Simple harmonic motion (Figure 1 and Key results)",
+    "quote": "a single number, the angular frequency, sets how fast it cycles"
+  },
+  "segments": [
+    { "id": "s1", "text": "This is a mass on an ideal spring, pulled away from rest and then let go." },
+    { "id": "s2", "text": "The spring pushes it back toward equilibrium with a restoring force, F equals minus k x, that grows with how far it is pulled." },
+    { "id": "s3", "text": "The angular frequency, omega, equals the square root of k over m, so a stiffer spring or a lighter mass swings faster." }
+  ],
+  "shapes": [
+    {
+      "id": "mass_circle",
+      "segment_id": "s1",
+      "kind": "circle",
+      "color_role": "primary",
+      "points": [[555, 472]],
+      "radius": 50,
+      "label": "mass",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "restoring_force",
+      "segment_id": "s2",
+      "kind": "vector",
+      "color_role": "warn",
+      "points": [[555, 472], [497, 472]],
+      "radius": 0,
+      "label": "restoring force",
+      "magnitude": "F = −kx",
+      "values": [0],
+      "target": ""
+    },
+    {
+      "id": "equilibrium_label",
+      "segment_id": "s2",
+      "kind": "text",
+      "color_role": "secondary",
+      "points": [[455, 426]],
+      "radius": 0,
+      "label": "equilibrium",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "omega_circle",
+      "segment_id": "s3",
+      "kind": "circle",
+      "color_role": "accent",
+      "points": [[771, 470]],
+      "radius": 24,
+      "label": "ω",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "omega_eq_box",
+      "segment_id": "s3",
+      "kind": "box",
+      "color_role": "secondary",
+      "points": [[746, 418], [918, 522]],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "k_over_m_arrow",
+      "segment_id": "s3",
+      "kind": "arrow",
+      "color_role": "accent",
+      "points": [[1000, 410], [900, 444]],
+      "radius": 0,
+      "label": "stiffer spring",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "lead_underline",
+      "segment_id": "s3",
+      "kind": "stroke",
+      "color_role": "accent",
+      "points": [[644, 239], [660, 240.5], [680, 240], [700, 241], [720, 240.5], [740, 240], [760, 240.5], [778, 239]],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    }
+  ],
+  "check_question": "If you doubled the mass, would the period get longer or shorter?",
+  "gizmo_offer": { "recommended": false, "pitch": "" },
+  "parked": []
+}

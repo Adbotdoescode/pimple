@@ -1,0 +1,127 @@
+{
+  "concept": "Normal force on an incline",
+  "surface": "overlay",
+  "grounding": {
+    "source_type": "screen",
+    "source_ref": "Problem 4.3 diagram",
+    "quote": "A 5.0 kg block rests on a rough ramp that is inclined at 30° to the horizontal."
+  },
+  "segments": [
+    {
+      "id": "s1",
+      "text": "Start with the block. Its weight, mg, pulls straight down from its centre. That is 5.0 kilograms times 9.8 metres per second squared, about 49 newtons."
+    },
+    {
+      "id": "s2",
+      "text": "The ramp pushes back perpendicular to its surface. That is the normal force, N. Only part of the weight presses into the ramp, the component mg cos θ, so N is about 42 newtons, which is smaller than the full 49 newtons of weight."
+    },
+    {
+      "id": "s3",
+      "text": "Friction acts up the slope. Holding the block still needs about 24.5 newtons of friction, equal to mg sin θ. But the maximum static friction is only 0.45 times N, about 19 newtons, so the block is going to slide."
+    }
+  ],
+  "shapes": [
+    {
+      "id": "block_circle",
+      "segment_id": "s1",
+      "kind": "circle",
+      "color_role": "primary",
+      "points": [[1071.9, 385.1]],
+      "radius": 62,
+      "label": "5.0 kg block",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "mg_vector",
+      "segment_id": "s1",
+      "kind": "vector",
+      "color_role": "primary",
+      "points": [[1071.9, 385.1], [1071.9, 483.0]],
+      "radius": 0,
+      "label": "mg",
+      "magnitude": "49 N",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "given_box",
+      "segment_id": "s1",
+      "kind": "box",
+      "color_role": "secondary",
+      "points": [[305, 326], [805, 387]],
+      "radius": 0,
+      "label": "Given: 5.0 kg, 30°, μs = 0.45",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "normal_arrow",
+      "segment_id": "s2",
+      "kind": "arrow",
+      "color_role": "accent",
+      "points": [[1071.9, 385.1], [1021.9, 298.5]],
+      "radius": 0,
+      "label": "N",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "weight_components",
+      "segment_id": "s2",
+      "kind": "vector",
+      "color_role": "secondary",
+      "points": [[1071.9, 385.1], [1002.6, 425.1]],
+      "radius": 0,
+      "label": "mg sin θ",
+      "magnitude": "24.5 N",
+      "values": [1],
+      "target": ""
+    },
+    {
+      "id": "normal_text",
+      "segment_id": "s2",
+      "kind": "text",
+      "color_role": "accent",
+      "points": [[999, 263]],
+      "radius": 0,
+      "label": "N = mg cos θ ≈ 42 N",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "friction_arrow",
+      "segment_id": "s3",
+      "kind": "arrow",
+      "color_role": "warn",
+      "points": [[1071.9, 385.1], [1141.2, 345.1]],
+      "radius": 0,
+      "label": "f",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    },
+    {
+      "id": "slide_stroke",
+      "segment_id": "s3",
+      "kind": "stroke",
+      "color_role": "accent",
+      "points": [
+        [352.0, 559.0], [380.2, 559.9], [408.4, 559.9], [436.7, 559.3], [464.9, 558.4],
+        [493.1, 557.8], [521.3, 558.1], [549.6, 559.0], [577.8, 559.9], [606.0, 559.0]
+      ],
+      "radius": 0,
+      "label": "",
+      "magnitude": "",
+      "values": [],
+      "target": ""
+    }
+  ],
+  "check_question": "Why is the normal force smaller than the weight?",
+  "gizmo_offer": { "recommended": false, "pitch": "" },
+  "parked": []
+}
