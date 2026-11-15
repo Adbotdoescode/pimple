@@ -967,15 +967,29 @@ function resumeOrIdle(): void {
   queue(t, main.slice(ctx.from), "speak");
 }
 
-/** Cancel everything and clear the card. Used by card-close, cancel and Escape while targeting or listening. */
-function closeCard(): void {
-  cancelAll();
+/**
+ * Full reset of the conversational context for a new session: aborts every in-flight model call
+ * (stream, verifier checks, rewrites), stops speech and the mic, and forgets the previous question,
+ * answer, follow-up context, side note, contested points, parked items, cached audio and echo history.
+ * Settings are kept (resetSession keeps them), and so is a diagram build that is already running.
+ */
+function resetConversation(reason: string): void {
+  console.info("[brain] fresh context:", reason);
+  cancelAll(); // aborts the turn's AbortController, which also aborts its gate (stream, checks, rewrites)
   pendingFollowUp = null;
   sessionSeq++;
-  endGizmoSession();
-  st().resetSession();
-  patch({ notice: null }); // the notice lasts for the session only
+  resetOffer(); // also clears gizmoFailedQuestion and asideListen
   recentSpoken.length = 0;
+  queuedText.clear();
+  player.reset();
+  st().resetSession();
+}
+
+/** Cancel everything and clear the card. Used by card-close, cancel and Escape while targeting or listening. */
+function closeCard(): void {
+  resetConversation("card closed");
+  endGizmoSession();
+  patch({ notice: null }); // the notice lasts for the session only
   setPhase("idle", "card closed");
 }
 
@@ -1359,7 +1373,9 @@ async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}):
       : undefined,
   };
   try {
-    if (input.settings.verifierEnabled) await runGatedAttempt(t, input, true);
+    // No whole-answer regeneration: a flagged first sentence is rewritten in place like any other,
+    // instead of throwing the answer away and making a second Opus call with a critique.
+    if (input.settings.verifierEnabled) await runGatedAttempt(t, input, false);
     else await askStreaming(t, input);
   } catch (err) {
     fail(t, err);
@@ -1367,11 +1383,7 @@ async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}):
 }
 
 async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolean> {
-  cancelAll();
-  st().resetSession(); // a new capture starts a new session: response, shapes, sideNote, pulse ids all cleared
-  pendingFollowUp = null;
-  sessionSeq++;
-  resetOffer();
+  resetConversation(`new capture (${req.mode})`); // a new capture is a new session: nothing from the last one is kept
   setPhase("capturing");
   patch({ mode: req.mode, isFixture: !!fixture, timings: { captureAt: Date.now() } });
   try {
@@ -1453,7 +1465,10 @@ async function handleIntent(i: UiIntent): Promise<void> {
       return;
     case "typed-question": {
       if (blockedForSetup()) return;
-      if (!st().fullCapture && !(await runCapture({ mode: "click" }))) return;
+      // After a session has ended (idle, nothing pending) a typed question is a new session:
+      // take a fresh screenshot instead of answering about the old one.
+      const ended = st().phase === "idle" && pendingFollowUp === null && !turn?.pendingOffer && gizmoFailedQuestion === null;
+      if ((!st().fullCapture || ended) && !(await runCapture({ mode: "click" }))) return;
       const t = turn;
       if (t?.pendingOffer) {
         answerOffer(t, i.text);

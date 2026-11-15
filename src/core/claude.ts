@@ -83,8 +83,9 @@ export async function streamTutor(input: TutorCallInput, h: TutorStreamHandlers)
 
   const finalText = final.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("") || text;
   const response = parser.finish(finalText);
+  if (final.model !== model) console.warn(`[tutor] answered by ${final.model}, not ${model} (server-side fallback)`);
   console.info(
-    `[tutor] done +${Math.round(performance.now() - t0)} ms stop=${final.stop_reason} ` +
+    `[tutor] done +${Math.round(performance.now() - t0)} ms model=${final.model} stop=${final.stop_reason} ` +
       `segments=${response.segments.length} shapes=${response.shapes.length} surface=${response.surface} ` +
       `in=${final.usage.input_tokens} cache_read=${final.usage.cache_read_input_tokens ?? 0} cache_write=${final.usage.cache_creation_input_tokens ?? 0} out=${final.usage.output_tokens}`,
   );
