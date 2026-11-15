@@ -10,7 +10,6 @@ use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
 use crate::notices::NoticeCode;
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
-use crate::utils;
 use handy_recorder::{Channels, EndReason, ErrorKind, Recorder, RecorderConfig, StartError};
 use log::{debug, error, info, trace, warn};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -531,9 +530,14 @@ impl AudioRecordingManager {
 
         let on_levels: LevelCallback = {
             let app_handle = app.clone();
-            Arc::new(move |levels| utils::emit_levels(&app_handle, &levels))
+            // Glass Tutor: levels go to stt:level (Handy's recording overlay is gone).
+            Arc::new(move |levels| crate::glass::stt::on_levels(&app_handle, &levels))
         };
-        let on_audio: AudioFrameCallback = Arc::new(move |frame| stream_router.feed(frame));
+        // Glass Tutor: VAD-passed frames also drive stt's end-of-turn detection.
+        let on_audio: AudioFrameCallback = Arc::new(move |frame| {
+            crate::glass::stt::on_vad_frame(frame);
+            stream_router.feed(frame)
+        });
 
         let manager = Self {
             state: Arc::new(Mutex::new(RecordingState::Idle)),

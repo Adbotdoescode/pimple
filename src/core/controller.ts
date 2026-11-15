@@ -264,7 +264,7 @@ async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolea
   setPhase("capturing");
   patch({ mode: req.mode, timings: { captureAt: Date.now() } });
   try {
-    const res = await invoke<CaptureResult>(CMD.capture, { req, fixture });
+    const res = await invoke<CaptureResult>(CMD.capture, { mode: req.mode, region: req.region ?? null, fixture: fixture ?? null });
     patch({ fullCapture: res, capture: { ...res, imageBase64: "" } });
     return true;
   } catch (err) {

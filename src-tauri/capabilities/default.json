@@ -34,6 +34,7 @@
     "store:default",
     "process:default",
     "dialog:default",
+    "log:default",
     "macos-permissions:default",
     "fs:read-files",
     "fs:allow-resource-read-recursive",

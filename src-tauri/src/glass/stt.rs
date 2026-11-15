@@ -1,54 +1,64 @@
-//! C3 speech-to-text, reusing Handy's local STT pipeline. Owner: Domain 2. Stubs until wired.
+//! C3 speech-to-text, wired to Handy's local STT pipeline. Owner: Domain 2.
 //!
-//! HANDY ENTRY POINTS (all managers are in Tauri state, created in lib.rs
-//! `initialize_core_logic`; get them with `app.state::<Arc<T>>()`):
+//! Pipeline: `stt_start` opens the mic through Handy's `AudioRecordingManager` with the
+//! offline VAD policy. Two hooks in `AudioRecordingManager::new` feed this module:
+//!   * `on_levels`   — the visualiser's spectrum buckets (~31 Hz) → `stt:level`
+//!   * `on_vad_frame` — every frame the VAD lets through (speech + 450 ms hangover)
+//! A monitor thread ends the turn once speech has been seen and no VAD frame has
+//! arrived for `END_GAP` (≈1 s of trailing silence counting Handy's hangover), after
+//! `NO_SPEECH_TIMEOUT` with no speech at all (→ ""), or at `MAX_TURN`. The captured
+//! (VAD-trimmed) samples go to `TranscriptionManager::transcribe` and the text is emitted
+//! as `stt:final`. Nothing is pasted, copied or stored.
 //!
-//! Managers:
-//!   crate::managers::audio::AudioRecordingManager         (mic + VAD)
-//!   crate::managers::transcription::TranscriptionManager  (model load + transcribe)
-//!   crate::managers::model::ModelManager                  (catalog, download)
-//!
-//! 1. Make sure a model is loaded (do this in stt_model_status / at startup):
-//!      let tm = app.state::<Arc<TranscriptionManager>>();
-//!      tm.is_model_loaded()                     -> bool
-//!      tm.initiate_model_load(false)            -> bool  (async load of settings.selected_model)
-//!      tm.load_model(&model_id)                 -> Result<()> (blocking)
-//!    Selected model id: crate::settings::get_settings(&app).selected_model (empty = none yet).
-//!    Download a missing model: commands::models::download_model(app, model_id) (async) /
-//!      ModelManager::download_model(&self, model_id).await; progress events are Handy's
-//!      "model-download-progress" (re-emit as stt:model). See commands/models.rs.
-//!
-//! 2. Start recording WITH VAD (mirrors actions.rs ~L621 TranscribeAction::start):
-//!      let rm = app.state::<Arc<AudioRecordingManager>>();
-//!      let readiness = rm.try_start_recording("glass", VadPolicy::Offline)?;
-//!        // VadPolicy = crate::audio_toolkit::audio::sink::VadPolicy {Disabled, Offline, Streaming}
-//!      readiness.wait()  -> bool  (blocks until first mic samples; call off main thread)
-//!    The Handy VAD gates/trims silence frames; it does NOT end the turn by itself.
-//!    For "VAD auto-ends after ~1 s silence", poll levels / rm.last_input_silent() on a
-//!    thread and call stop yourself.
-//!    Mic levels: crate::overlay::emit_levels(app, &levels) is called from the audio
-//!    callback (~30 Hz, emits "mic-level" to window "recording_overlay", which no longer
-//!    exists). Hook there to emit EV.sttLevel ("stt:level", {level}) to all windows
-//!    instead (OVERLAY_ENABLED cache must be true: overlay::update_overlay_enabled_cache(true)).
-//!
-//! 3. Stop and get samples:
-//!      let gen = rm.cancel_generation();
-//!      let samples: Option<Vec<f32>> = rm.stop_recording("glass", gen);
-//!    Cancel: rm.cancel_recording();
-//!
-//! 4. Transcribe (blocking, off main thread):
-//!      let t = tm.transcribe_recording(samples)?;   // -> Transcription (see transcription.rs ~L986)
-//!      or tm.transcribe(samples)? -> String        (plain batch path, used by headless CLI)
-//!    The finished text is where Handy's actions.rs (~L790) would then PASTE it. We never paste
-//!    (clipboard::paste is hard-disabled). Instead emit:
-//!      app.emit("stt:final", serde_json::json!({"text": text}))
-//!
-//! Do NOT go through crate::actions / TranscriptionCoordinator: that path pastes, plays
-//! feedback sounds and drives Handy's tray/overlay.
+//! Model: Parakeet TDT 0.6B v3 (Q8_0 GGUF from handy-computer/parakeet-tdt-0.6b-v3-gguf,
+//! stored in the shared Hugging Face cache) through Handy's `ModelManager`. It is
+//! fetched at startup (`init`, called from `glass::setup`) if missing, selected in
+//! Glass Tutor's own settings store, pinned in memory (unload timeout Never) and
+//! preloaded so the first turn transcribes immediately.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use log::{debug, error, info, warn};
 use serde::Serialize;
+use tauri::{AppHandle, Emitter, Listener, Manager};
+
+use crate::audio_toolkit::audio::VadPolicy;
+use crate::managers::audio::AudioRecordingManager;
+use crate::managers::model::{DownloadProgress, ModelManager};
+use crate::managers::transcription::TranscriptionManager;
+use crate::settings::{get_settings, write_settings, ModelUnloadTimeout};
+
+/// Default (and only) Glass Tutor STT model: Parakeet V3. Handy's registry keys catalog
+/// models as "{repository}/{default quant filename}" (catalog/mod.rs, ModelDescriptor::from);
+/// the catalog id "parakeet-tdt-0.6b-v3" is only the retired ONNX model's id.
+pub const MODEL_ID: &str =
+    "handy-computer/parakeet-tdt-0.6b-v3-gguf/parakeet-tdt-0.6b-v3-Q8_0.gguf";
+/// Recording binding id handed to Handy's recorder.
+const BINDING_ID: &str = "glass";
+
+/// Gap since the last VAD-passed frame that ends a turn. Handy's offline VAD keeps
+/// passing frames for 450 ms of hangover after speech stops, so the trailing silence
+/// the student actually leaves is ≈ 450 ms + END_GAP ≈ 1.05 s.
+const END_GAP: Duration = Duration::from_millis(600);
+/// No speech at all within this long → end the turn with "".
+const NO_SPEECH_TIMEOUT: Duration = Duration::from_secs(8);
+/// Hard cap on one turn.
+const MAX_TURN: Duration = Duration::from_secs(30);
+const MONITOR_POLL: Duration = Duration::from_millis(30);
+/// `stt:level` throttle (~30 Hz).
+const LEVEL_INTERVAL_MS: u64 = 30;
+
+pub const EV_LEVEL: &str = "stt:level";
+pub const EV_FINAL: &str = "stt:final";
+pub const EV_ERROR: &str = "stt:error";
+pub const EV_MODEL: &str = "stt:model";
+
+/* ─────────────────────────── payloads ─────────────────────────── */
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SttModelStatus {
     pub ready: bool,
     pub downloading: bool,
@@ -57,26 +67,535 @@ pub struct SttModelStatus {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SttLevel {
+    level: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SttFinal {
+    text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SttError {
+    message: String,
+}
+
+fn emit_error(app: &AppHandle, message: impl Into<String>) {
+    let message = message.into();
+    warn!("stt:error {message}");
+    let _ = app.emit(EV_ERROR, SttError { message });
+}
+
+/* ─────────────────────────── turn state ─────────────────────────── */
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Turn {
+    Idle,
+    Listening(u64),
+    Transcribing(u64),
+}
+
+static TURN: Mutex<Turn> = Mutex::new(Turn::Idle);
+static NEXT_TURN_ID: AtomicU64 = AtomicU64::new(0);
+/// True while a turn is listening: gates the audio-thread hooks.
+static LISTENING: AtomicBool = AtomicBool::new(false);
+/// VAD-passed frames seen this turn (0 = no speech yet).
+static VAD_FRAMES: AtomicU64 = AtomicU64::new(0);
+/// `now_ms()` of the most recent VAD-passed frame.
+static LAST_VAD_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_LEVEL_MS: AtomicU64 = AtomicU64::new(0);
+static CLOCK: OnceLock<Instant> = OnceLock::new();
+
+fn now_ms() -> u64 {
+    CLOCK.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
+
+fn turn() -> Turn {
+    *TURN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Atomically moves `from` → `to`; false if the state was something else.
+fn transition(from: Turn, to: Turn) -> bool {
+    let mut t = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    if *t == from {
+        *t = to;
+        true
+    } else {
+        false
+    }
+}
+
+/* ─────────────────────────── audio hooks ─────────────────────────── */
+
+/// Called from Handy's recorder (CaptureSink → AudioRecordingManager level callback)
+/// with 16 spectrum buckets in 0..1, once per 32 ms window.
+pub fn on_levels(app: &AppHandle, levels: &[f32]) {
+    if !LISTENING.load(Ordering::Relaxed) || levels.is_empty() {
+        return;
+    }
+    let now = now_ms();
+    let last = LAST_LEVEL_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < LEVEL_INTERVAL_MS && last != 0 {
+        return;
+    }
+    LAST_LEVEL_MS.store(now, Ordering::Relaxed);
+    let n = levels.len() as f32;
+    let mean = levels.iter().copied().map(|v| v.clamp(0.0, 1.0)).sum::<f32>() / n;
+    let rms = (levels.iter().map(|v| v * v).sum::<f32>() / n).sqrt();
+    let level = (0.5 * mean + 0.5 * rms).clamp(0.0, 1.0);
+    let _ = app.emit(EV_LEVEL, SttLevel { level });
+}
+
+/// Called from Handy's recorder for every frame the VAD keeps (speech, pre-roll and
+/// hangover). Cheap: two atomics.
+pub fn on_vad_frame(frame: &[f32]) {
+    if frame.is_empty() || !LISTENING.load(Ordering::Relaxed) {
+        return;
+    }
+    LAST_VAD_MS.store(now_ms(), Ordering::Relaxed);
+    VAD_FRAMES.fetch_add(1, Ordering::Relaxed);
+}
+
+/* ─────────────────────────── commands ─────────────────────────── */
+
 /// invoke("stt_start") → void. Opens mic, VAD auto-ends → stt:final
 #[tauri::command]
-pub fn stt_start() -> Result<(), String> {
-    Err(super::not_implemented("stt_start"))
+pub async fn stt_start(app: AppHandle) -> Result<(), String> {
+    let worker = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || start_turn(&worker))
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Err(ref message) = result {
+        emit_error(&app, message.clone());
+    }
+    result
 }
 
 /// invoke("stt_stop") → void. Ends the turn now → stt:final
 #[tauri::command]
-pub fn stt_stop() -> Result<(), String> {
-    Err(super::not_implemented("stt_stop"))
+pub async fn stt_stop(app: AppHandle) -> Result<(), String> {
+    if let Turn::Listening(id) = turn() {
+        std::thread::spawn(move || finish_turn(&app, id, "stop"));
+    }
+    Ok(())
 }
 
 /// invoke("stt_cancel") → void. Discard, no stt:final
 #[tauri::command]
-pub fn stt_cancel() -> Result<(), String> {
-    Err(super::not_implemented("stt_cancel"))
+pub async fn stt_cancel(app: AppHandle) -> Result<(), String> {
+    let previous = {
+        let mut t = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        std::mem::replace(&mut *t, Turn::Idle)
+    };
+    LISTENING.store(false, Ordering::Relaxed);
+    match previous {
+        Turn::Listening(_) => {
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                app.state::<Arc<AudioRecordingManager>>().cancel_recording();
+            })
+            .await;
+            info!("stt: turn cancelled while listening");
+        }
+        Turn::Transcribing(_) => {
+            app.state::<Arc<TranscriptionManager>>().cancel_transcription();
+            info!("stt: turn cancelled while transcribing");
+        }
+        Turn::Idle => {}
+    }
+    Ok(())
 }
 
 /// invoke("stt_model_status") → SttModelStatus (starts download if missing)
 #[tauri::command]
-pub fn stt_model_status() -> Result<SttModelStatus, String> {
-    Err(super::not_implemented("stt_model_status"))
+pub async fn stt_model_status(app: AppHandle) -> Result<SttModelStatus, String> {
+    let status = model_status(&app);
+    if !status.ready && !status.downloading {
+        ensure_model(&app);
+    }
+    Ok(status)
+}
+
+/* ─────────────────────────── turn lifecycle ─────────────────────────── */
+
+fn start_turn(app: &AppHandle) -> Result<(), String> {
+    if let Turn::Listening(_) = turn() {
+        debug!("stt_start: already listening");
+        return Ok(());
+    }
+
+    // The model must at least be on disk; a load still in flight is awaited at
+    // transcription time.
+    if !model_downloaded(app) {
+        ensure_model(app);
+        let status = model_status(app);
+        return Err(match status.error {
+            Some(e) => format!("Speech model unavailable: {e}"),
+            None => format!(
+                "Speech model is still downloading ({:.0}%)",
+                status.progress * 100.0
+            ),
+        });
+    }
+    if !model_loaded(app) {
+        kick_load(app);
+    }
+
+    let id = NEXT_TURN_ID.fetch_add(1, Ordering::Relaxed) + 1;
+    {
+        let mut t = TURN.lock().unwrap_or_else(|e| e.into_inner());
+        if let Turn::Listening(_) = *t {
+            return Ok(());
+        }
+        // A turn still transcribing is superseded: its result is dropped.
+        *t = Turn::Listening(id);
+    }
+    VAD_FRAMES.store(0, Ordering::Relaxed);
+    LAST_VAD_MS.store(0, Ordering::Relaxed);
+    LAST_LEVEL_MS.store(0, Ordering::Relaxed);
+
+    let rm = app.state::<Arc<AudioRecordingManager>>();
+    let started = match rm.try_start_recording(BINDING_ID, VadPolicy::Offline) {
+        Ok(readiness) => Ok(readiness),
+        Err(e) if e.to_string().contains("Already recording") => {
+            // A stale recording (e.g. a previous turn torn down mid-stop): drop it, retry once.
+            warn!("stt_start: recorder busy, cancelling the stale recording and retrying");
+            rm.cancel_recording();
+            rm.try_start_recording(BINDING_ID, VadPolicy::Offline)
+        }
+        Err(e) => Err(e),
+    };
+    if let Err(e) = started {
+        transition(Turn::Listening(id), Turn::Idle);
+        error!("stt_start: could not start recording: {e:#}");
+        return Err(format!("Could not open the microphone: {e:#}"));
+    }
+
+    // stt_cancel may have landed while the device was opening.
+    if turn() != Turn::Listening(id) {
+        rm.cancel_recording();
+        return Ok(());
+    }
+    LISTENING.store(true, Ordering::Relaxed);
+    info!("stt: turn {id} listening");
+
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("glass-stt-monitor".into())
+        .spawn(move || monitor_turn(&app, id))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Decides when the turn ends on its own (end of speech, no speech, hard cap).
+fn monitor_turn(app: &AppHandle, id: u64) {
+    let started = Instant::now();
+    loop {
+        std::thread::sleep(MONITOR_POLL);
+        if turn() != Turn::Listening(id) {
+            return;
+        }
+        let elapsed = started.elapsed();
+        let heard_speech = VAD_FRAMES.load(Ordering::Relaxed) > 0;
+        let reason = if heard_speech {
+            let gap = now_ms().saturating_sub(LAST_VAD_MS.load(Ordering::Relaxed));
+            if gap >= END_GAP.as_millis() as u64 {
+                Some("end of speech")
+            } else if elapsed >= MAX_TURN {
+                Some("max turn length")
+            } else {
+                None
+            }
+        } else if elapsed >= NO_SPEECH_TIMEOUT {
+            Some("no speech")
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            finish_turn(app, id, reason);
+            return;
+        }
+    }
+}
+
+/// Stops the recording, transcribes it and emits `stt:final` (unless cancelled or
+/// superseded meanwhile). Blocking; runs off the main thread.
+fn finish_turn(app: &AppHandle, id: u64, reason: &str) {
+    if !transition(Turn::Listening(id), Turn::Transcribing(id)) {
+        return;
+    }
+    LISTENING.store(false, Ordering::Relaxed);
+    let heard_speech = VAD_FRAMES.load(Ordering::Relaxed) > 0;
+    info!("stt: turn {id} ending ({reason}), speech detected: {heard_speech}");
+
+    let rm = app.state::<Arc<AudioRecordingManager>>();
+    let generation = rm.cancel_generation();
+    let Some(samples) = rm.stop_recording(BINDING_ID, generation) else {
+        // Cancelled while stopping.
+        transition(Turn::Transcribing(id), Turn::Idle);
+        return;
+    };
+    let input_silent = rm.last_input_silent();
+
+    let result: Result<String, String> = if !heard_speech || samples.is_empty() {
+        if input_silent {
+            Err("The microphone delivered only silence. Check that Glass Tutor (or the terminal running it) has Microphone access in System Settings > Privacy & Security.".into())
+        } else {
+            Ok(String::new())
+        }
+    } else {
+        transcribe(app, samples)
+    };
+
+    // Only the turn that is still current may report.
+    if !transition(Turn::Transcribing(id), Turn::Idle) {
+        debug!("stt: turn {id} result dropped (cancelled or superseded)");
+        return;
+    }
+    match result {
+        Ok(text) => {
+            let text = text.trim().to_string();
+            info!("stt: turn {id} final ({} chars)", text.len());
+            let _ = app.emit(EV_FINAL, SttFinal { text });
+        }
+        Err(message) => emit_error(app, message),
+    }
+}
+
+fn transcribe(app: &AppHandle, samples: Vec<f32>) -> Result<String, String> {
+    if !model_loaded(app) {
+        info!("stt: model not loaded yet, loading before transcription");
+        load_model_blocking(app)?;
+    }
+    let tm = app.state::<Arc<TranscriptionManager>>();
+    let started = Instant::now();
+    let text = tm
+        .transcribe(samples)
+        .map_err(|e| format!("Transcription failed: {e:#}"))?;
+    debug!("stt: transcribed in {:?}", started.elapsed());
+    Ok(text)
+}
+
+/* ─────────────────────────── model management ─────────────────────────── */
+
+#[derive(Debug, Default)]
+struct ModelState {
+    downloading: bool,
+    loading: bool,
+    progress: f64,
+    last_emitted_progress: f64,
+    error: Option<String>,
+}
+
+static MODEL: Mutex<ModelState> = Mutex::new(ModelState {
+    downloading: false,
+    loading: false,
+    progress: 0.0,
+    last_emitted_progress: -1.0,
+    error: None,
+});
+static LISTENER_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+fn model_state() -> std::sync::MutexGuard<'static, ModelState> {
+    MODEL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// App startup (from glass::setup): re-emit Handy's download progress as `stt:model`,
+/// then make sure Parakeet V3 is downloaded and loaded.
+pub fn init(app: &AppHandle) {
+    if !LISTENER_REGISTERED.swap(true, Ordering::SeqCst) {
+        let handle = app.clone();
+        app.listen_any("model-download-progress", move |event| {
+            let Ok(p) = serde_json::from_str::<DownloadProgress>(event.payload()) else {
+                return;
+            };
+            if p.model_id != MODEL_ID {
+                return;
+            }
+            let progress = (p.percentage / 100.0).clamp(0.0, 1.0);
+            let should_emit = {
+                let mut st = model_state();
+                st.progress = progress;
+                if progress - st.last_emitted_progress >= 0.005 || progress >= 1.0 {
+                    st.last_emitted_progress = progress;
+                    true
+                } else {
+                    false
+                }
+            };
+            if should_emit {
+                emit_model_status(&handle);
+            }
+        });
+    }
+    let app = app.clone();
+    std::thread::spawn(move || ensure_model(&app));
+}
+
+fn model_downloaded(app: &AppHandle) -> bool {
+    app.state::<Arc<ModelManager>>()
+        .get_model_info(MODEL_ID)
+        .map(|m| m.is_downloaded)
+        .unwrap_or(false)
+}
+
+fn model_loaded(app: &AppHandle) -> bool {
+    let tm = app.state::<Arc<TranscriptionManager>>();
+    tm.is_model_loaded() && tm.get_current_model().as_deref() == Some(MODEL_ID)
+}
+
+fn model_status(app: &AppHandle) -> SttModelStatus {
+    let downloaded = model_downloaded(app);
+    let ready = downloaded && model_loaded(app);
+    let st = model_state();
+    SttModelStatus {
+        ready,
+        downloading: st.downloading,
+        progress: if downloaded { 1.0 } else { st.progress },
+        error: if ready { None } else { st.error.clone() },
+    }
+}
+
+fn emit_model_status(app: &AppHandle) {
+    let _ = app.emit(EV_MODEL, model_status(app));
+}
+
+/// Non-blocking: starts the download or the load, whichever is needed.
+fn ensure_model(app: &AppHandle) {
+    let mm = app.state::<Arc<ModelManager>>().inner().clone();
+    let Some(info) = mm.get_model_info(MODEL_ID) else {
+        let similar: Vec<String> = mm
+            .get_available_models()
+            .into_iter()
+            .map(|m| m.id)
+            .filter(|id| id.contains("parakeet"))
+            .collect();
+        let message = format!("Model {MODEL_ID} is not in the catalog (parakeet ids: {similar:?})");
+        model_state().error = Some(message.clone());
+        emit_model_status(app);
+        emit_error(app, message);
+        return;
+    };
+    if info.is_downloaded {
+        kick_load(app);
+        return;
+    }
+    {
+        let mut st = model_state();
+        if st.downloading {
+            return;
+        }
+        st.downloading = true;
+        st.error = None;
+        st.last_emitted_progress = -1.0;
+    }
+    info!("stt: downloading {MODEL_ID}");
+    emit_model_status(app);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = mm.download_model(MODEL_ID).await;
+        model_state().downloading = false;
+        match result {
+            Ok(()) if model_downloaded(&app) => {
+                info!("stt: {MODEL_ID} downloaded");
+                kick_load(&app);
+            }
+            Ok(()) => {
+                model_state().error = Some("Speech model download was cancelled".into());
+                emit_model_status(&app);
+            }
+            Err(e) => {
+                let message = format!("Speech model download failed: {e:#}");
+                error!("stt: {message}");
+                model_state().error = Some(message.clone());
+                emit_model_status(&app);
+                emit_error(&app, message);
+            }
+        }
+    });
+}
+
+/// Loads (preloads) the model on a background thread unless it is loaded or loading.
+fn kick_load(app: &AppHandle) {
+    if model_loaded(app) {
+        emit_model_status(app);
+        return;
+    }
+    {
+        let mut st = model_state();
+        if st.loading {
+            return;
+        }
+        st.loading = true;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let result = load_model_blocking(&app);
+        {
+            let mut st = model_state();
+            st.loading = false;
+            st.error = result.as_ref().err().cloned();
+        }
+        if let Err(ref message) = result {
+            emit_error(&app, message.clone());
+        }
+        emit_model_status(&app);
+    });
+}
+
+/// Glass Tutor's own settings store: always Parakeet V3, kept resident, English.
+fn configure_settings(app: &AppHandle) {
+    let mut settings = get_settings(app);
+    let mut changed = false;
+    if settings.selected_model != MODEL_ID {
+        settings.selected_model = MODEL_ID.to_string();
+        changed = true;
+    }
+    if settings.model_unload_timeout != ModelUnloadTimeout::Never {
+        settings.model_unload_timeout = ModelUnloadTimeout::Never;
+        changed = true;
+    }
+    if settings.selected_language == "auto" {
+        settings.selected_language = "en".to_string();
+        changed = true;
+    }
+    if changed {
+        write_settings(app, settings);
+    }
+}
+
+/// Blocks until Parakeet V3 is loaded (or fails). Serialised with any other load
+/// through Handy's loading guard.
+fn load_model_blocking(app: &AppHandle) -> Result<(), String> {
+    if !model_downloaded(app) {
+        return Err("Speech model is not downloaded yet".into());
+    }
+    configure_settings(app);
+    let tm = app.state::<Arc<TranscriptionManager>>();
+    let deadline = Instant::now() + Duration::from_secs(180);
+    loop {
+        if model_loaded(app) {
+            return Ok(());
+        }
+        if let Some(guard) = tm.try_start_loading() {
+            let started = Instant::now();
+            let result = tm.load_model(MODEL_ID);
+            drop(guard);
+            return match result {
+                Ok(()) => {
+                    info!("stt: {MODEL_ID} loaded in {:?}", started.elapsed());
+                    Ok(())
+                }
+                Err(e) => Err(format!("Could not load the speech model: {e:#}")),
+            };
+        }
+        if Instant::now() >= deadline {
+            return Err("Timed out waiting for the speech model to load".into());
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
 }

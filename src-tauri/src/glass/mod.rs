@@ -18,6 +18,7 @@ use tauri::{AppHandle, Manager};
 /// Every command this module owns. lib.rs dispatches these names to `glass_handler`.
 pub const GLASS_COMMANDS: &[&str] = &[
     "capture",
+    "read_debug_file",
     "stt_start",
     "stt_stop",
     "stt_cancel",
@@ -42,6 +43,7 @@ pub fn is_glass_command(name: &str) -> bool {
 pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         capture::capture,
+        capture::read_debug_file,
         stt::stt_start,
         stt::stt_stop,
         stt::stt_cancel,
@@ -68,6 +70,7 @@ pub fn not_implemented(name: &str) -> String {
 pub fn setup(app: &AppHandle) {
     windows::create_all(app);
     tray::create_tray(app);
+    stt::init(app); // download/preload Parakeet V3 so the first question is fast
     #[cfg(debug_assertions)]
     debug_server::start(app.clone());
     let _ = app; // silence unused in release
