@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import type { CaptureResult, Segment, Shape, TutorResponse } from "@shared/contracts";
-import { Whiteboard, visibleSegmentsFor, type Backdrop } from "./Whiteboard";
+import type { Segment, Shape, TutorResponse } from "@shared/contracts";
+import { Whiteboard, visibleSegmentsFor } from "./Whiteboard";
 import { useSession } from "@/lib/sessionMirror";
 import { CMD, EV, emitEvent, invokeCmd } from "@/lib/ipc";
 import { Effect, EffectState, Window as TauriWindow, currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
@@ -11,7 +10,6 @@ import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 /** One answer as drawn: kept after the session moves on so the board can stay dimmed. */
 interface Drawing {
   response: TutorResponse;
-  backdrop: Backdrop | null;
   sourceLabel: string | null;
   sideNote: { segments: Segment[]; shapes: Shape[] } | null;
 }
@@ -89,12 +87,6 @@ async function announceRect(visible: boolean): Promise<void> {
   } catch {
     /* best effort */
   }
-}
-
-/** Overlay answers are in captured-image pixels, so they need the screenshot under them. */
-function backdropFor(response: TutorResponse, capture: CaptureResult | null): Backdrop | null {
-  if (response.surface !== "overlay" || !capture) return null;
-  return { src: convertFileSrc(capture.imagePath), w: capture.imageWidth, h: capture.imageHeight };
 }
 
 export default function App() {
@@ -215,32 +207,27 @@ export default function App() {
     void announceRect(false);
   }, [snap.response]);
 
-  // The current session's drawing, or null when the snapshot has no response.
+  // Only whiteboard answers are drawn here, from scratch in board space. An overlay answer is in
+  // screenshot pixels and belongs to the overlay: the board keeps its last drawing and never shows the capture.
+  const boardResponse = snap.response?.surface === "whiteboard" ? snap.response : null;
   const live = useMemo<Drawing | null>(
     () =>
-      snap.response
-        ? {
-            response: snap.response,
-            backdrop: backdropFor(snap.response, snap.capture),
-            sourceLabel: snap.sourceLabel,
-            sideNote: snap.sideNote,
-          }
+      boardResponse
+        ? { response: boardResponse, sourceLabel: snap.sourceLabel, sideNote: snap.sideNote }
         : null,
-    [snap.response, snap.capture, snap.sourceLabel, snap.sideNote],
+    [boardResponse, snap.sourceLabel, snap.sideNote],
   );
 
   // Keep the last drawing: a new session dims it rather than blanking the board, and a spoken-only
-  // overlay turn (no shapes) is captioned over the drawing that is already up.
-  const liveDraws = live !== null && (live.response.surface === "whiteboard" || live.response.shapes.length > 0);
+  // turn is captioned over the drawing that is already up.
   const [kept, setKept] = useState<Drawing | null>(null);
   useEffect(() => {
-    if (live && liveDraws) setKept(live);
-  }, [live, liveDraws]);
+    if (live) setKept(live);
+  }, [live]);
 
-  const drawingLive = liveDraws || kept === null;
-  const shown = drawingLive ? (live ?? kept) : kept;
-  const pending = live === null && kept !== null && snap.phase !== "idle";
-  const visibleIds = live && drawingLive
+  const shown = live ?? kept;
+  const pending = snap.response === null && kept !== null && snap.phase !== "idle";
+  const visibleIds = live
     ? visibleSegmentsFor(snap)
     : kept
       ? kept.response.segments.map((seg) => seg.id)
@@ -265,14 +252,13 @@ export default function App() {
   return (
     <Whiteboard
       response={shown?.response ?? null}
-      backdrop={shown?.backdrop ?? null}
       pending={pending}
       visibleSegmentIds={visibleIds}
-      currentSegmentId={live && drawingLive ? snap.currentSegmentId : null}
-      pulseShapeIds={live && drawingLive ? snap.pulseShapeIds : []}
+      currentSegmentId={live ? snap.currentSegmentId : null}
+      pulseShapeIds={live ? snap.pulseShapeIds : []}
       sideNote={shown?.sideNote ?? null}
       theme={theme}
-      caption={live ? snap.caption : ""}
+      caption={snap.response ? snap.caption : ""}
       phase={snap.phase}
       sourceLabel={shown?.sourceLabel ?? null}
       onToggleTheme={onToggleTheme}

@@ -123,32 +123,6 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
    */
   function process(obj: Record<string, unknown>, done: boolean, strict: Record<string, unknown> | null): void {
     const has = (k: string) => k in obj;
-
-    const segs: unknown[] = Array.isArray(obj.segments) ? obj.segments : [];
-    const strictSegs: unknown[] = strict && Array.isArray(strict.segments) ? strict.segments : [];
-    const segsClosed = done || AFTER_SEGMENTS.some(has);
-    while (segCursor < segs.length) {
-      const sIdx = strictSegs[segCursor];
-      const strictDone =
-        isObj(sIdx) && typeof sIdx.id === "string" && typeof sIdx.text === "string";
-      if (!(segsClosed || segCursor < segs.length - 1 || strictDone)) break;
-      const seg = parseSegment(segs[segCursor]);
-      segCursor++;
-      if (seg) h.onSegment?.(seg);
-    }
-
-    const shapes: unknown[] = Array.isArray(obj.shapes) ? obj.shapes : [];
-    const strictShapes: unknown[] = strict && Array.isArray(strict.shapes) ? strict.shapes : [];
-    const shapesClosed = done || AFTER_SHAPES.some(has);
-    while (shapeCursor < shapes.length) {
-      const sh = strictShapes[shapeCursor];
-      const strictDone = isObj(sh) && typeof sh.target === "string";
-      if (!(shapesClosed || shapeCursor < shapes.length - 1 || strictDone)) break;
-      const shape = parseWireShape(shapes[shapeCursor], true);
-      shapeCursor++;
-      if (shape) h.onShape?.(shape);
-    }
-
     const later = (key: string) => done || keysAfter(key).some(has);
     // grounding's quote is its last field, so the strict parse has all three strings only once it is closed.
     const strictGrounding = strict && isObj(strict.grounding) ? strict.grounding : null;
@@ -176,6 +150,31 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
     if (ready("gizmo_offer", isObj(obj.gizmo_offer))) fresh.gizmo_offer = normalizeGizmo(obj.gizmo_offer);
     if (ready("parked", Array.isArray(obj.parked))) fresh.parked = normalizeParked(obj.parked);
     if (Object.keys(fresh).length) h.onMeta?.(fresh);
+
+    const segs: unknown[] = Array.isArray(obj.segments) ? obj.segments : [];
+    const strictSegs: unknown[] = strict && Array.isArray(strict.segments) ? strict.segments : [];
+    const segsClosed = done || AFTER_SEGMENTS.some(has);
+    while (segCursor < segs.length) {
+      const sIdx = strictSegs[segCursor];
+      const strictDone =
+        isObj(sIdx) && typeof sIdx.id === "string" && typeof sIdx.text === "string";
+      if (!(segsClosed || segCursor < segs.length - 1 || strictDone)) break;
+      const seg = parseSegment(segs[segCursor]);
+      segCursor++;
+      if (seg) h.onSegment?.(seg);
+    }
+
+    const shapes: unknown[] = Array.isArray(obj.shapes) ? obj.shapes : [];
+    const strictShapes: unknown[] = strict && Array.isArray(strict.shapes) ? strict.shapes : [];
+    const shapesClosed = done || AFTER_SHAPES.some(has);
+    while (shapeCursor < shapes.length) {
+      const sh = strictShapes[shapeCursor];
+      const strictDone = isObj(sh) && typeof sh.target === "string";
+      if (!(shapesClosed || shapeCursor < shapes.length - 1 || strictDone)) break;
+      const shape = parseWireShape(shapes[shapeCursor], true);
+      shapeCursor++;
+      if (shape) h.onShape?.(shape);
+    }
   }
 
   return {

@@ -467,12 +467,6 @@
   to { opacity: 1; transform: none; }
 }
 
-.wb-backdrop-edge {
-  fill: none;
-  stroke: var(--wb-muted);
-  stroke-opacity: 0.35;
-  stroke-width: 1;
-}
 .wb-marker {
   transition: transform 120ms ease-out;
 }

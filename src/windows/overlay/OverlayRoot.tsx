@@ -139,7 +139,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
   const side = useMemo<Layer | null>(() => {
     const cap = snapshot?.capture;
     const sn = snapshot?.sideNote;
-    if (!snapshot || phase === "idle" || inTarget || !cap || !sn || snapshot.response?.surface === "whiteboard") return null;
+    if (!snapshot || phase === "idle" || inTarget || !cap || !sn || snapshot.response?.surface !== "overlay") return null;
     const spoken = new Set([...snapshot.spokenSegmentIds, ...(current ? [current] : [])]);
     const matching = sn.segments.filter((s) => spoken.has(s.id)).map((s) => s.id);
     return {
@@ -161,8 +161,9 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
     if (!snapshot || !FIXTURE_PHASES.has(phase) || !snapshot.capture) return null;
     // A whiteboard answer draws nothing here: the opaque backdrop would cover the whiteboard window.
     if (snapshot.response?.surface === "whiteboard") return null;
+    if (cuts.whiteboard) return null; // never paint the capture while the whiteboard is up
     return isFixture || forcedByUrl ? snapshot.capture : null;
-  }, [snapshot, phase, isFixture, forcedByUrl]);
+  }, [snapshot, phase, isFixture, forcedByUrl, cuts.whiteboard]);
 
   // Fade lengths: 200 ms when a drag starts, 400 ms at session end, 450 ms for a side note cleared mid-session.
   const mainFadeMs = inTarget ? TARGET_FADE_MS : MAIN_FADE_MS;
