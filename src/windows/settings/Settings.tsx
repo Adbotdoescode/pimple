@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   CMD,
   DEFAULT_SETTINGS,
@@ -9,55 +10,137 @@ import {
   type TtsProvider,
   type UiIntent,
 } from "@shared/contracts";
+import { BubbleMap } from "./BubbleMap";
+import { VoicePicker } from "./VoicePicker";
+import { CheckIcon, RefreshIcon, WarningIcon } from "./icons";
+import { atRest, makeLoop, prefersReducedMotion, spring, stepSpring } from "./spring";
 import "./settings.css";
 
-// Inline icons (lucide-react is not a dependency of this project).
-function CheckIcon({ size = 13, strokeWidth = 2.6 }: { size?: number; strokeWidth?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
-function RefreshIcon({ size = 14, strokeWidth = 2.2, className }: { size?: number; strokeWidth?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-      <path d="M21 3v6h-6" />
-    </svg>
-  );
-}
-
-function WarningIcon({ size = 16, strokeWidth = 2.2 }: { size?: number; strokeWidth?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-      <path d="M12 9v4" />
-      <path d="M12 17h.01" />
-    </svg>
-  );
-}
-
 type KeyStatus = Partial<Record<SecretName, boolean>>;
+type Tab = "bubble" | "voice" | "tutor" | "keys";
+const TABS: { value: Tab; label: string }[] = [
+  { value: "bubble", label: "Bubble" },
+  { value: "voice", label: "Voice" },
+  { value: "tutor", label: "Tutor" },
+  { value: "keys", label: "Keys" },
+];
 
 type CreditState =
   | { status: "loading" }
   | { status: "error" }
   | { status: "ok"; used: number; limit: number };
 
+/**
+ * Liquid that reacts to the pointer: a soft specular glow trails the cursor across the pane
+ * and the header droplet leans toward it. Springs, so everything overshoots and settles.
+ */
+function useCursorLiquid(
+  rootRef: React.RefObject<HTMLDivElement | null>,
+  logoRef: React.RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || prefersReducedMotion()) return;
+    const gx = spring(root.clientWidth * 0.7);
+    const gy = spring(80);
+    const lx = spring(0);
+    const ly = spring(0);
+    const loop = makeLoop((dt) => {
+      stepSpring(gx, 38, 9, dt);
+      stepSpring(gy, 38, 9, dt);
+      stepSpring(lx, 150, 7.5, dt);
+      stepSpring(ly, 150, 7.5, dt);
+      root.style.setProperty("--gx", `${gx.x.toFixed(1)}px`);
+      root.style.setProperty("--gy", `${gy.x.toFixed(1)}px`);
+      const logo = logoRef.current;
+      if (logo) {
+        const sp = Math.min(0.14, Math.hypot(lx.v, ly.v) / 700);
+        logo.style.transform = `translate(${lx.x.toFixed(2)}px, ${ly.x.toFixed(2)}px) scale(${1 + sp}, ${1 - sp})`;
+        logo.style.setProperty("--hx", `${(32 + lx.x * 2.2).toFixed(1)}%`);
+        logo.style.setProperty("--hy", `${(26 + ly.x * 2.2).toFixed(1)}%`);
+      }
+      return !(atRest(gx, 0.3) && atRest(gy, 0.3) && atRest(lx, 0.02) && atRest(ly, 0.02));
+    });
+    const onMove = (e: PointerEvent) => {
+      const r = root.getBoundingClientRect();
+      gx.target = e.clientX - r.left;
+      gy.target = e.clientY - r.top;
+      const logo = logoRef.current;
+      if (logo) {
+        const b = logo.getBoundingClientRect();
+        const dx = e.clientX - (b.left + b.width / 2);
+        const dy = e.clientY - (b.top + b.height / 2);
+        const d = Math.hypot(dx, dy) || 1;
+        // Leans up to 5 px toward the cursor, more when it is close.
+        const pull = 5 * Math.min(1, 160 / d);
+        lx.target = (dx / d) * pull;
+        ly.target = (dy / d) * pull;
+      }
+      root.classList.add("has-pointer");
+      loop.kick();
+    };
+    const onLeave = () => {
+      lx.target = 0;
+      ly.target = 0;
+      root.classList.remove("has-pointer");
+      loop.kick();
+    };
+    root.addEventListener("pointermove", onMove);
+    root.addEventListener("pointerleave", onLeave);
+    return () => {
+      loop.stop();
+      root.removeEventListener("pointermove", onMove);
+      root.removeEventListener("pointerleave", onLeave);
+    };
+  }, [rootRef, logoRef]);
+}
+
+const INTERACTIVE = "button, input, textarea, select, a, [role='slider'], [role='radio'], [role='switch'], .bmap";
+
 export function Settings({
   snapshot,
   onIntent,
   initialSection,
+  navNonce = 0,
+  devTab,
 }: {
   snapshot: SessionSnapshot | null;
   onIntent: (i: UiIntent) => void;
   initialSection?: "keys" | "general";
+  navNonce?: number;
+  /** Dev-only scripted navigation (see App.tsx). */
+  devTab?: string;
 }) {
   const [keys, setKeys] = useState<KeyStatus | null>(null);
   const [keysUnavailable, setKeysUnavailable] = useState(false);
-  const keysRef = useRef<HTMLElement | null>(null);
+  const [tab, setTab] = useState<Tab>(initialSection === "keys" ? "keys" : "bubble");
+  const [dir, setDir] = useState(1);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const logoRef = useRef<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  useCursorLiquid(rootRef, logoRef);
+
+  const go = useCallback((next: Tab) => {
+    setTab((prev) => {
+      if (prev === next) return prev;
+      const a = TABS.findIndex((t) => t.value === prev);
+      const b = TABS.findIndex((t) => t.value === next);
+      setDir(b > a ? 1 : -1);
+      return next;
+    });
+    bodyRef.current?.scrollTo({ top: 0 });
+  }, []);
+
+  // Tray navigation: "Keys…" opens Keys, "Settings…" keeps the current section.
+  useEffect(() => {
+    if (initialSection === "keys") go("keys");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSection, navNonce]);
+
+  useEffect(() => {
+    const t = TABS.find((x) => x.value === devTab);
+    if (t) go(t.value);
+  }, [devTab, go]);
 
   const refreshKeys = useCallback(async () => {
     try {
@@ -74,33 +157,19 @@ export function Settings({
     void refreshKeys();
   }, [refreshKeys]);
 
+  // First run: if the Anthropic key is missing, open Keys once.
+  const nudged = useRef(false);
   useEffect(() => {
-    if (initialSection === "keys") {
-      keysRef.current?.scrollIntoView({ block: "start" });
-    }
-  }, [initialSection]);
-
-  // Once keys_status is known, if Anthropic is missing, bring its field into view and focus it.
-  const autoFocusedRef = useRef(false);
-  useEffect(() => {
-    if (keys === null || autoFocusedRef.current) return;
-    autoFocusedRef.current = true;
-    if (!keys.anthropic) {
-      const input = keysRef.current?.querySelector<HTMLInputElement>(
-        'input[name="secret-anthropic"]',
-      );
-      input?.scrollIntoView({ block: "center" });
-      input?.focus();
-    }
-  }, [keys]);
+    if (keys === null || nudged.current) return;
+    nudged.current = true;
+    if (!keys.anthropic) go("keys");
+  }, [keys, go]);
 
   // Local copy for optimistic updates; the snapshot is the source of truth.
   const serverSettings = snapshot?.settings;
-  const [settings, setSettings] = useState<AppSettings>(
-    serverSettings ?? DEFAULT_SETTINGS,
-  );
+  const [settings, setSettings] = useState<AppSettings>(serverSettings ?? DEFAULT_SETTINGS);
   useEffect(() => {
-    if (serverSettings) setSettings(serverSettings);
+    if (serverSettings) setSettings({ ...DEFAULT_SETTINGS, ...serverSettings });
   }, [serverSettings]);
 
   const change = (patch: Partial<AppSettings>) => {
@@ -108,123 +177,234 @@ export function Settings({
     onIntent({ type: "settings-changed", settings: patch });
   };
 
+  const selectVoice = async (id: string) => {
+    change({ voiceId: id });
+    // Voice IDs are not secret; the keychain copy is what the Rust synthesiser reads.
+    await invoke(CMD.setSecret, { name: "voice_id", value: id });
+  };
+
   const needsAnthropic = keys !== null && !keys.anthropic;
 
+  // The whole header moves the window, except its controls.
+  const onHeaderDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest(INTERACTIVE)) return;
+    try {
+      void getCurrentWindow()
+        .startDragging()
+        .catch(() => {});
+    } catch {
+      /* outside Tauri */
+    }
+  };
+
+  const tabIndex = TABS.findIndex((t) => t.value === tab);
+
   return (
-    <div className="settings">
-      <div className="settings-inner">
-        <section className="section" ref={keysRef}>
-          <h2 className="group-head">API keys</h2>
-          {needsAnthropic && (
-            <div className="banner" role="alert">
-              <WarningIcon />
-              <span>Glass Tutor needs an Anthropic key to answer.</span>
-            </div>
-          )}
-          <div className="group">
-            <KeyRow
-              name="anthropic"
-              label="Anthropic API key"
-              hint="Required to answer questions"
-              present={keys === null ? null : !!keys.anthropic}
-              unavailable={keysUnavailable}
-              onSaved={refreshKeys}
-            />
-            <KeyRow
-              name="elevenlabs"
-              label="ElevenLabs API key"
-              hint="Optional. Without it, Glass Tutor uses the macOS voice"
-              present={keys === null ? null : !!keys.elevenlabs}
-              unavailable={keysUnavailable}
-              onSaved={refreshKeys}
-            />
-          </div>
-        </section>
-
-        <section className="section">
-          <h2 className="group-head">Tutor</h2>
-          <div className="group">
-            <ToggleRow
-              title="Verify answers"
-              subtitle="A fast second model checks each answer against the screen"
-              checked={settings.verifierEnabled}
-              onChange={(v) => change({ verifierEnabled: v })}
-            />
-            <ToggleRow
-              title="Fast mode"
-              subtitle="Faster answers, higher cost"
-              checked={settings.fastMode}
-              onChange={(v) => change({ fastMode: v })}
-            />
-          </div>
-        </section>
-
-        <section className="section">
-          <h2 className="group-head">Voice</h2>
-          <div className="group">
-            <div className="row">
-              <div className="row-text">
-                <div className="row-title">Speech</div>
-              </div>
-              <Segmented<TtsProvider>
-                label="Speech provider"
-                value={settings.ttsProvider}
-                options={[
-                  { value: "elevenlabs", label: "ElevenLabs" },
-                  { value: "say", label: "macOS voice" },
-                  { value: "off", label: "Off" },
-                ]}
-                onChange={(v) => change({ ttsProvider: v })}
-              />
-            </div>
-            <VoiceIdRow
-              voiceId={settings.voiceId}
-              onCommit={(v) => change({ voiceId: v })}
-            />
-            <CreditRow />
-          </div>
-        </section>
-
-        <section className="section">
-          <h2 className="group-head">Appearance</h2>
-          <div className="group">
-            <div className="row">
-              <div className="row-text">
-                <div className="row-title">Bubble edge</div>
-              </div>
-              <Segmented<AppSettings["bubbleEdge"]>
-                label="Bubble edge"
-                value={settings.bubbleEdge}
-                options={[
-                  { value: "left", label: "Left" },
-                  { value: "right", label: "Right" },
-                ]}
-                onChange={(v) => change({ bubbleEdge: v })}
-              />
-            </div>
-            <div className="row">
-              <div className="row-text">
-                <div className="row-title">Whiteboard theme</div>
-              </div>
-              <Segmented<AppSettings["whiteboardTheme"]>
-                label="Whiteboard theme"
-                value={settings.whiteboardTheme}
-                options={[
-                  { value: "light", label: "Light" },
-                  { value: "dark", label: "Dark" },
-                ]}
-                onChange={(v) => change({ whiteboardTheme: v })}
-              />
-            </div>
-          </div>
-        </section>
-
-        <p className="footer">
-          Keys are stored in your macOS Keychain and never leave this Mac except
-          to call the provider.
-        </p>
+    <div className="app" ref={rootRef}>
+      <div className="app-wash" aria-hidden="true">
+        <i className="wash a" />
+        <i className="wash b" />
+        <i className="wash c" />
+        <i className="cursor-glow" />
       </div>
+
+      <header className="lg-header" onMouseDown={onHeaderDown}>
+        <div className="brand">
+          <div className="logo" ref={logoRef} aria-hidden="true">
+            <span className="logo-glass" />
+          </div>
+          <div className="brand-text">
+            <h1>Pimple</h1>
+            <p>The tutor that rests on the edge of your screen</p>
+          </div>
+          <button
+            type="button"
+            className={`status-pill ${needsAnthropic ? "warn" : keys ? "ok" : ""}`}
+            onClick={() => needsAnthropic && go("keys")}
+            tabIndex={needsAnthropic ? 0 : -1}
+            aria-label={needsAnthropic ? "An Anthropic key is needed. Open Keys." : "Pimple is ready"}
+          >
+            <span className="dot" />
+            {needsAnthropic ? "Needs a key" : keys ? "Ready" : keysUnavailable ? "Preview" : "Waking up"}
+          </button>
+        </div>
+
+        <nav
+          className="tabs"
+          role="tablist"
+          aria-label="Sections"
+          style={{ ["--n" as string]: TABS.length, ["--i" as string]: tabIndex }}
+        >
+          <span className="tab-thumb" aria-hidden="true" />
+          {TABS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="tab"
+              aria-selected={t.value === tab}
+              className={t.value === tab ? "tab on" : "tab"}
+              onClick={() => go(t.value)}
+            >
+              {t.label}
+              {t.value === "keys" && needsAnthropic && <span className="tab-dot" aria-hidden="true" />}
+            </button>
+          ))}
+        </nav>
+
+        <svg className="meniscus" viewBox="0 0 1200 14" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 7 C 100 0, 200 14, 300 7 S 500 0, 600 7 S 800 14, 900 7 S 1100 0, 1200 7" />
+          <path d="M0 7 C 100 0, 200 14, 300 7 S 500 0, 600 7 S 800 14, 900 7 S 1100 0, 1200 7" />
+        </svg>
+      </header>
+
+      <main className="lg-body" ref={bodyRef}>
+        <div key={tab} className="pane" role="tabpanel" style={{ ["--dir" as string]: dir }}>
+          {tab === "bubble" && (
+            <>
+              <Blob
+                title="Where Pimple rests"
+                sub="Drag the droplet to either edge, at any height. Let go and the real bubble glides there."
+              >
+                <BubbleMap
+                  edge={settings.bubbleEdge}
+                  y={typeof settings.bubbleY === "number" ? settings.bubbleY : 0.5}
+                  onChange={(e, y) => change({ bubbleEdge: e, bubbleY: y })}
+                />
+              </Blob>
+            </>
+          )}
+
+          {tab === "voice" && (
+            <>
+              <Blob title="Speech" sub="How Pimple talks back while it draws.">
+                <div className="rows">
+                  <div className="row">
+                    <div className="row-text">
+                      <div className="row-title">Speak with</div>
+                    </div>
+                    <Segmented<TtsProvider>
+                      label="Speech provider"
+                      value={settings.ttsProvider}
+                      options={[
+                        { value: "elevenlabs", label: "ElevenLabs" },
+                        { value: "say", label: "macOS voice" },
+                        { value: "off", label: "Off" },
+                      ]}
+                      onChange={(v) => change({ ttsProvider: v })}
+                    />
+                  </div>
+                  <CreditRow />
+                </div>
+              </Blob>
+              <Blob
+                title="Voice"
+                sub={
+                  settings.ttsProvider === "elevenlabs"
+                    ? "Tap play to hear a voice (previews are free), then pick the one you like."
+                    : "These voices are used when speech is set to ElevenLabs."
+                }
+              >
+                <VoicePicker
+                  voiceId={settings.voiceId}
+                  hasKey={keys === null ? null : !!keys.elevenlabs}
+                  onSelect={selectVoice}
+                />
+                <VoiceIdRow voiceId={settings.voiceId} onCommit={selectVoice} />
+              </Blob>
+            </>
+          )}
+
+          {tab === "tutor" && (
+            <>
+              <Blob title="How it answers">
+                <div className="rows">
+                  <ToggleRow
+                    title="Verify answers"
+                    subtitle="A fast second model checks each answer against your screen"
+                    checked={settings.verifierEnabled}
+                    onChange={(v) => change({ verifierEnabled: v })}
+                  />
+                  <ToggleRow
+                    title="Fast mode"
+                    subtitle="Faster answers, higher cost"
+                    checked={settings.fastMode}
+                    onChange={(v) => change({ fastMode: v })}
+                  />
+                </div>
+              </Blob>
+              <Blob title="Whiteboard">
+                <div className="rows">
+                  <div className="row">
+                    <div className="row-text">
+                      <div className="row-title">Theme</div>
+                      <div className="row-sub">For longer explanations that open the board</div>
+                    </div>
+                    <Segmented<AppSettings["whiteboardTheme"]>
+                      label="Whiteboard theme"
+                      value={settings.whiteboardTheme}
+                      options={[
+                        { value: "light", label: "Light" },
+                        { value: "dark", label: "Dark" },
+                      ]}
+                      onChange={(v) => change({ whiteboardTheme: v })}
+                    />
+                  </div>
+                </div>
+              </Blob>
+            </>
+          )}
+
+          {tab === "keys" && (
+            <>
+              {needsAnthropic && (
+                <div className="banner" role="alert">
+                  <WarningIcon />
+                  <span>Pimple needs an Anthropic key before it can answer.</span>
+                </div>
+              )}
+              <Blob title="API keys" sub="Paste a key to save it. Saved keys are never shown again.">
+                <div className="rows">
+                  <KeyRow
+                    name="anthropic"
+                    label="Anthropic"
+                    hint="Required. Powers every answer"
+                    present={keys === null ? null : !!keys.anthropic}
+                    unavailable={keysUnavailable}
+                    autoFocus={needsAnthropic}
+                    onSaved={refreshKeys}
+                  />
+                  <KeyRow
+                    name="elevenlabs"
+                    label="ElevenLabs"
+                    hint="Optional. Without it Pimple uses the macOS voice"
+                    present={keys === null ? null : !!keys.elevenlabs}
+                    unavailable={keysUnavailable}
+                    onSaved={refreshKeys}
+                  />
+                </div>
+              </Blob>
+              <p className="footnote">
+                Keys live in your macOS Keychain and leave this Mac only to call the provider.
+              </p>
+            </>
+          )}
+        </div>
+      </main>
     </div>
+  );
+}
+
+/** A soft, slightly irregular glass card. */
+function Blob({ title, sub, children }: { title: string; sub?: string; children: ReactNode }) {
+  return (
+    <section className="blob">
+      <div className="blob-head">
+        <h2>{title}</h2>
+        {sub && <p>{sub}</p>}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -234,6 +414,7 @@ function KeyRow({
   hint,
   present,
   unavailable,
+  autoFocus,
   onSaved,
 }: {
   name: SecretName;
@@ -241,6 +422,7 @@ function KeyRow({
   hint: string;
   present: boolean | null;
   unavailable: boolean;
+  autoFocus?: boolean;
   onSaved: () => Promise<void>;
 }) {
   const [value, setValue] = useState("");
@@ -265,11 +447,12 @@ function KeyRow({
       await invoke(CMD.setSecret, { name, value: v });
       setValue("");
       setReplacing(false);
-      setFlash({ ok: true, text: "Saved" });
+      setFlash({ ok: true, text: "Saved to Keychain" });
       await onSaved();
     } catch {
       // Generic message only: never echo the key value or raw error text.
-      setFlash({ ok: false, text: "Couldn't save to Keychain. Try again." });
+      setValue("");
+      setFlash({ ok: false, text: "Couldn't save to Keychain. Paste the key and try again." });
     } finally {
       setSaving(false);
     }
@@ -285,7 +468,7 @@ function KeyRow({
       <>
         <span className="ok">
           <CheckIcon />
-          Saved in Keychain
+          In Keychain
         </span>
         <button
           type="button"
@@ -326,27 +509,21 @@ function KeyRow({
             name={`secret-${name}`}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Paste to save"
-            aria-label={label}
+            placeholder={`Paste your ${label} key`}
+            aria-label={`${label} API key`}
             autoComplete="off"
+            autoFocus={autoFocus}
             spellCheck={false}
             data-1p-ignore="true"
             data-lpignore="true"
           />
-          <button
-            type="submit"
-            className="btn"
-            disabled={saving || value.trim() === ""}
-          >
+          <button type="submit" className="btn primary" disabled={saving || value.trim() === ""}>
             {saving ? "Saving…" : "Save"}
           </button>
         </form>
       )}
       {flash && (
-        <div
-          className={flash.ok ? "flash ok" : "flash err"}
-          role={flash.ok ? "status" : "alert"}
-        >
+        <div className={flash.ok ? "flash ok" : "flash err"} role={flash.ok ? "status" : "alert"}>
           {flash.text}
         </div>
       )}
@@ -396,8 +573,18 @@ function Segmented<T extends string>({
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
+  const index = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
+    <div
+      className="segmented"
+      role="radiogroup"
+      aria-label={label}
+      style={{ ["--n" as string]: options.length, ["--i" as string]: index }}
+    >
+      <span className="seg-thumb" aria-hidden="true" />
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -424,7 +611,7 @@ function VoiceIdRow({
   onCommit,
 }: {
   voiceId: string;
-  onCommit: (v: string) => void;
+  onCommit: (v: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(voiceId);
   const [tick, setTick] = useState(false);
@@ -450,45 +637,47 @@ function VoiceIdRow({
     if (v === voiceId) return;
     setDraft(v);
     setError(false);
-    onCommit(v);
-    invoke(CMD.setSecret, { name: "voice_id", value: v })
+    onCommit(v)
       .then(() => setTick(true))
       .catch(() => setError(true));
   };
 
   return (
-    <div className="row">
-      <div className="row-text">
-        <div className="row-title">Voice ID</div>
-        <div className="row-sub">Used for spoken replies</div>
+    <details className="advanced">
+      <summary>Use a voice ID instead</summary>
+      <div className="row">
+        <div className="row-text">
+          <div className="row-title">Voice ID</div>
+          <div className="row-sub">For a voice outside your library</div>
+        </div>
+        <div className="voice-field">
+          <input
+            className="text-field mono"
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            aria-label="Voice ID"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {tick && (
+            <span className="ok" role="status">
+              <CheckIcon />
+              Saved
+            </span>
+          )}
+          {error && (
+            <span className="flash err" role="alert">
+              Couldn't save
+            </span>
+          )}
+        </div>
       </div>
-      <div className="voice-field">
-        <input
-          className="text-field wide"
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") e.currentTarget.blur();
-          }}
-          aria-label="Voice ID"
-          autoComplete="off"
-          spellCheck={false}
-        />
-        {tick && (
-          <span className="ok" role="status">
-            <CheckIcon />
-            Saved
-          </span>
-        )}
-        {error && (
-          <span className="flash err" role="alert">
-            Couldn't save
-          </span>
-        )}
-      </div>
-    </div>
+    </details>
   );
 }
 
@@ -498,9 +687,7 @@ function CreditRow() {
   const load = useCallback(async () => {
     setCredit({ status: "loading" });
     try {
-      const r = await invoke<{ used: number; limit: number; provider: string }>(
-        CMD.ttsCredit,
-      );
+      const r = await invoke<{ used: number; limit: number; provider: string }>(CMD.ttsCredit);
       setCredit({ status: "ok", used: r.used, limit: r.limit });
     } catch {
       setCredit({ status: "error" });
@@ -513,18 +700,14 @@ function CreditRow() {
 
   const loading = credit.status === "loading";
   const pct =
-    credit.status === "ok" && credit.limit > 0
-      ? Math.min(100, (credit.used / credit.limit) * 100)
-      : 0;
+    credit.status === "ok" && credit.limit > 0 ? Math.min(100, (credit.used / credit.limit) * 100) : 0;
   const tone = pct > 90 ? "red" : pct > 75 ? "amber" : "";
 
   let text: string;
   if (credit.status === "loading") text = "Checking…";
-  else if (credit.status === "error") text = "Credit unavailable";
+  else if (credit.status === "error") text = "Credit isn't available right now";
   else
-    text = `${credit.used.toLocaleString("en-US")} of ${credit.limit.toLocaleString(
-      "en-US",
-    )} characters used`;
+    text = `${credit.used.toLocaleString("en-US")} of ${credit.limit.toLocaleString("en-US")} characters used`;
 
   return (
     <div className="row stack">
@@ -553,10 +736,7 @@ function CreditRow() {
           aria-valuemax={100}
           aria-valuenow={Math.round(pct)}
         >
-          <div
-            className={tone ? `meter-fill ${tone}` : "meter-fill"}
-            style={{ width: `${pct}%` }}
-          />
+          <div className={tone ? `meter-fill ${tone}` : "meter-fill"} style={{ width: `${Math.max(pct, 3)}%` }} />
         </div>
       )}
     </div>

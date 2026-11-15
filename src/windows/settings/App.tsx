@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { UiIntent } from "@shared/contracts";
-import { EV, emitEvent, onEvent } from "../../lib/ipc";
+import { EV, emitEvent, invokeCmd, onEvent } from "../../lib/ipc";
 import { useSession } from "../../lib/sessionMirror";
 import { Settings } from "./Settings";
 
@@ -35,6 +35,35 @@ export default function App() {
     };
   }, []);
 
+  // Dev only (the tray is hard to reach from scripts): an injected ui:intent carrying
+  // `devOpen: "<tab>"` shows this window on that tab, `devOpen: "hide"` hides it. Example:
+  //   scripts/gt-emit.sh ui:intent '{"type":"settings-changed","settings":{},"devOpen":"voice"}'
+  const [devTab, setDevTab] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    onEvent(EV.uiIntent, (p) => {
+      const dev = (p as { devOpen?: unknown }).devOpen;
+      if (typeof dev !== "string") return;
+      if (dev === "hide") {
+        invokeCmd("hide_window", { label: "settings" }).catch(() => {});
+        return;
+      }
+      setDevTab(dev);
+      invokeCmd("show_window", { label: "settings" }).catch(() => {});
+    })
+      .then((u) => {
+        if (disposed) u();
+        else unlisten = u;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const send = (i: UiIntent): void => {
     emitEvent(EV.uiIntent, i).catch((e) =>
       console.error("settings: ui:intent emit failed", e instanceof Error ? e.message : e),
@@ -42,11 +71,6 @@ export default function App() {
   };
 
   return (
-    <Settings
-      key={`${section}-${nonce}`}
-      snapshot={snapshot}
-      onIntent={send}
-      initialSection={section}
-    />
+    <Settings snapshot={snapshot} onIntent={send} initialSection={section} navNonce={nonce} devTab={devTab} />
   );
 }
