@@ -12,7 +12,7 @@ import type {
 import { ShapeLayer } from "@/render/ShapeLayer";
 import { boardStyle } from "@/render/palette";
 import { graphMapper } from "@/render/geometry";
-import { fitShapes, imageRectOnBoard, mapImageShapesToBoard } from "./layout";
+import { VIEW_SCALE, composeBoard, contentBox, fitShapes, imageRectOnBoard, mapImageShapesToBoard, type Box } from "./layout";
 import "./whiteboard.css";
 
 /** A captured screenshot the overlay response's coordinates refer to (pixels of the image). */
@@ -33,6 +33,14 @@ export interface WhiteboardProps {
   sourceLabel?: string | null;
   onToggleTheme?: () => void;
   onClose?: () => void;
+  /** The window is a frameless transparent sheet over native blur (else an ordinary titled window). */
+  frameless?: boolean;
+  /** Bumped each time the sheet should spring open again. */
+  openSeq?: number;
+  /** Play the exit; the caller hides the window afterwards. */
+  closing?: boolean;
+  /** Where the spring starts from (the bubble's side), as CSS lengths in window px. */
+  origin?: { x: string; y: string } | null;
 }
 
 /**
@@ -50,12 +58,33 @@ export function visibleSegmentsFor(snapshot: SessionSnapshot): string[] {
   return [...ids];
 }
 
-const BOARD_W = 1600;
-const BOARD_ASPECT = 1600 / 1000;
 const GRID = 40;
-const STAGE_PAD_X = 16;
-const STAGE_PAD_Y = 12;
 const SLIDER_MIN_W = 200;
+/** View px per board unit: the layer is always drawn at this scale and the camera does the rest. */
+const V = VIEW_SCALE;
+// Camera limits. At zoom 1 a label is 16 px; below Z_MIN it would stop being readable.
+const Z_MIN = 0.74;
+const Z_MAX = 1.7;
+// Sheet px kept clear around the framed drawing for the floating title and caption.
+const INSET = { top: 78, bottom: 108, side: 46 };
+// The camera never frames less than this much board, so one small first shape is not blown up.
+const MIN_FRAME = { w: 620, h: 400 };
+const DEFAULT_FRAME: Box = { x: 300, y: 200, w: 1000, h: 600 };
+
+interface Camera { x: number; y: number; z: number }
+
+/** Camera that centres `box` (board units) in the clear part of a width × height sheet. */
+function frameBox(box: Box, width: number, height: number): Camera {
+  const w = Math.max(box.w, MIN_FRAME.w), h = Math.max(box.h, MIN_FRAME.h);
+  const availW = Math.max(160, width - 2 * INSET.side);
+  const availH = Math.max(120, height - INSET.top - INSET.bottom);
+  const z = Math.min(Z_MAX, Math.max(Z_MIN, Math.min(availW / (w * V), availH / (h * V))));
+  return {
+    z,
+    x: INSET.side + availW / 2 - (box.x + box.w / 2) * V * z,
+    y: INSET.top + availH / 2 - (box.y + box.h / 2) * V * z,
+  };
+}
 // Same plot inset ShapeLayer uses for graphs.
 const PLOT_INSET = { left: 46, right: 18, top: 16, bottom: 40 };
 
@@ -202,6 +231,7 @@ interface BoardProps {
   pulseShapeIds: string[];
   theme: "light" | "dark";
   width: number;
+  height: number;
   backdrop: Backdrop | null;
 }
 
@@ -212,10 +242,13 @@ interface SliderItem {
   readout?: { y: number; text: string };
 }
 
-/** The paper card. Keyed by concept in the parent, so each new answer crossfades in. */
-function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width, backdrop }: BoardProps) {
-  const height = Math.floor(width / BOARD_ASPECT);
-  const s = width / BOARD_W;
+/**
+ * The drawing. Shapes stay at the coordinates the tutor gave them, drawn at a fixed scale; a camera
+ * (one CSS transform) glides to frame what has been drawn so far, so each step is large and centred
+ * and the finished picture fills the sheet. Keyed by concept in the parent: a new answer starts fresh.
+ */
+function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width, height, backdrop }: BoardProps) {
+  const s = V;
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({});
   const [dragging, setDragging] = useState<string | null>(null);
   const visible = useMemo(() => new Set(visibleSegmentIds), [visibleSegmentIds]);
@@ -231,25 +264,43 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
     };
   }, [dragging]);
 
-  // Overlay (image-pixel) coordinates are mapped onto the board first, with no margin so the fit
-  // cannot move them off the screenshot.
+  // Overlay (image-pixel) coordinates are mapped onto the board over the screenshot; whiteboard
+  // answers are only tidied (composeBoard never moves geometry, so streaming never reshuffles it).
   const prep = (shapes: Shape[]) =>
     backdrop
       ? fitShapes(mapImageShapesToBoard(shapes, backdrop.w, backdrop.h), undefined, 0, { grow: false })
-      : fitShapes(shapes);
-  const mainShapes = useMemo(
-    () => applySliders(prep(response?.shapes ?? []), sliderValues),
-    [response, sliderValues, backdrop],
-  );
-  const sideShapes = useMemo(
-    () => applySliders(prep(sideNote?.shapes ?? []), sliderValues),
-    [sideNote, sliderValues, backdrop],
-  );
+      : composeBoard(shapes);
+  const baseMain = useMemo(() => prep(response?.shapes ?? []), [response?.shapes, backdrop]);
+  const baseSide = useMemo(() => prep(sideNote?.shapes ?? []), [sideNote?.shapes, backdrop]);
+  const mainShapes = useMemo(() => applySliders(baseMain, sliderValues), [baseMain, sliderValues]);
+  const sideShapes = useMemo(() => applySliders(baseSide, sliderValues), [baseSide, sliderValues]);
   const imgRect = backdrop ? imageRectOnBoard(backdrop.w, backdrop.h) : null;
   const sideIds = useMemo(() => sideNote?.segments.map((seg) => seg.id) ?? [], [sideNote]);
 
   const toView = useMemo(() => (p: Pt): Pt => [p[0] * s, p[1] * s], [s]);
   const styleFor = useMemo(() => (sh: Shape) => boardStyle(sh.color_role, theme), [theme]);
+
+  // What the camera frames: everything drawn so far (the first step while nothing is drawn yet).
+  const firstSegId = response?.segments[0]?.id;
+  const focus = useMemo<Box>(() => {
+    if (imgRect) return { x: imgRect[0], y: imgRect[1], w: imgRect[2], h: imgRect[3] };
+    const placedShapes = baseMain.filter((sh) => sh.kind !== "slider" || sh.rect);
+    let seen = placedShapes.filter((sh) => visible.has(sh.segment_id));
+    if (baseSide.length > 0) seen = [...seen, ...baseSide.filter((sh) => sh.kind !== "slider" || sh.rect)];
+    if (seen.length === 0) seen = placedShapes.filter((sh) => sh.segment_id === firstSegId);
+    if (seen.length === 0) seen = placedShapes;
+    return contentBox(seen) ?? DEFAULT_FRAME;
+  }, [baseMain, baseSide, visible, firstSegId, imgRect?.[0], imgRect?.[1], imgRect?.[2], imgRect?.[3]]);
+  const cam = frameBox(focus, width, height);
+  const camCss = `translate(${cam.x.toFixed(1)}px, ${cam.y.toFixed(1)}px) scale(${cam.z.toFixed(4)})`;
+
+  // The first frame lands on its target; every later change glides.
+  const [gliding, setGliding] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setGliding(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const camClass = gliding ? "wb-cam is-gliding" : "wb-cam";
 
   const mainDraw = mainShapes.filter((sh) => sh.kind !== "slider");
   const sideDraw = sideShapes.filter((sh) => sh.kind !== "slider");
@@ -293,112 +344,104 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
   }
 
   return (
-    <div className="wb-paper" style={{ width, height }}>
+    <div className="wb-board" style={{ width, height }}>
       <svg className="wb-svg" width={width} height={height} aria-hidden="true">
         <defs>
           <pattern id="wb-grid" width={GRID * s} height={GRID * s} patternUnits="userSpaceOnUse">
-            {theme === "light" ? (
-              <circle cx={0} cy={0} r={1.2} style={{ fill: "var(--wb-grid)" }} />
-            ) : (
-              <path
-                d={`M0.5 0 V${GRID * s} M0 0.5 H${GRID * s}`}
-                fill="none"
-                strokeWidth={1}
-                style={{ stroke: "var(--wb-grid)" }}
-              />
-            )}
+            <circle cx={GRID * s * 0.5} cy={GRID * s * 0.5} r={1.1} style={{ fill: "var(--wb-grid)" }} />
           </pattern>
-          <radialGradient id="wb-vig" cx="50%" cy="50%" r="75%">
-            <stop offset="60%" style={{ stopColor: "var(--wb-vig)", stopOpacity: 0 }} />
-            <stop offset="100%" style={{ stopColor: "var(--wb-vig)", stopOpacity: 1 }} />
-          </radialGradient>
         </defs>
-        <rect width={width} height={height} fill="url(#wb-grid)" />
-        {backdrop && imgRect && (
-          <>
-            <defs>
-              <clipPath id="wb-backdrop-clip">
-                <rect
-                  x={imgRect[0] * s}
-                  y={imgRect[1] * s}
-                  width={imgRect[2] * s}
-                  height={imgRect[3] * s}
-                  rx={12 * s}
-                />
-              </clipPath>
-            </defs>
-            <image
-              href={backdrop.src}
-              x={imgRect[0] * s}
-              y={imgRect[1] * s}
-              width={imgRect[2] * s}
-              height={imgRect[3] * s}
-              preserveAspectRatio="none"
-              opacity={0.92}
-              clipPath="url(#wb-backdrop-clip)"
-            />
-            <rect
-              className="wb-backdrop-edge"
-              x={imgRect[0] * s}
-              y={imgRect[1] * s}
-              width={imgRect[2] * s}
-              height={imgRect[3] * s}
-              rx={12 * s}
-            />
-          </>
-        )}
-        {!backdrop && <rect width={width} height={height} fill="url(#wb-vig)" />}
-        <ShapeLayer
-          shapes={mainDraw}
-          visibleSegmentIds={visibleSegmentIds}
-          pulseShapeIds={[...pulse]}
-          variant="main"
-          toView={toView}
-          scale={s}
-          styleFor={styleFor}
-          opacity={sideNote ? 0.35 : 1}
-        />
-        {sideNote && (
+        <g className={camClass} style={{ transform: camCss }}>
+          {!backdrop && <rect x={-4000} y={-4000} width={10000} height={9000} fill="url(#wb-grid)" />}
+          {backdrop && imgRect && (
+            <>
+              <defs>
+                <clipPath id="wb-backdrop-clip">
+                  <rect
+                    x={imgRect[0] * s}
+                    y={imgRect[1] * s}
+                    width={imgRect[2] * s}
+                    height={imgRect[3] * s}
+                    rx={12 * s}
+                  />
+                </clipPath>
+              </defs>
+              <image
+                href={backdrop.src}
+                x={imgRect[0] * s}
+                y={imgRect[1] * s}
+                width={imgRect[2] * s}
+                height={imgRect[3] * s}
+                preserveAspectRatio="none"
+                opacity={0.92}
+                clipPath="url(#wb-backdrop-clip)"
+              />
+              <rect
+                className="wb-backdrop-edge"
+                x={imgRect[0] * s}
+                y={imgRect[1] * s}
+                width={imgRect[2] * s}
+                height={imgRect[3] * s}
+                rx={12 * s}
+              />
+            </>
+          )}
           <ShapeLayer
-            shapes={sideDraw}
-            visibleSegmentIds={sideIds}
-            pulseShapeIds={pulseShapeIds}
-            variant="sidenote"
+            shapes={mainDraw}
+            visibleSegmentIds={visibleSegmentIds}
+            pulseShapeIds={[...pulse]}
+            variant="main"
             toView={toView}
             scale={s}
             styleFor={styleFor}
+            opacity={sideNote ? 0.35 : 1}
           />
-        )}
-        {markers.map((m) => (
-          <g key={m.key} className="wb-marker" style={{ transform: `translate(${m.px}px, ${m.py}px)` }}>
-            <line className="wb-guide" x1={0} y1={0} x2={0} y2={m.bottom - m.py} />
-            <line className="wb-guide" x1={0} y1={0} x2={m.left - m.px} y2={0} />
-            <circle className="wb-marker-dot" r={3.5} />
-            <g transform="translate(10, -30)">
-              <rect className="wb-pill" width={m.text.length * 6.6 + 16} height={20} rx={10} />
-              <text className="wb-pill-text" x={8} y={14}>{m.text}</text>
+          {sideNote && (
+            <ShapeLayer
+              shapes={sideDraw}
+              visibleSegmentIds={sideIds}
+              pulseShapeIds={pulseShapeIds}
+              variant="sidenote"
+              toView={toView}
+              scale={s}
+              styleFor={styleFor}
+            />
+          )}
+          {markers.map((m) => (
+            <g key={m.key} className="wb-marker" style={{ transform: `translate(${m.px}px, ${m.py}px)` }}>
+              <line className="wb-guide" x1={0} y1={0} x2={0} y2={m.bottom - m.py} />
+              <line className="wb-guide" x1={0} y1={0} x2={m.left - m.px} y2={0} />
+              <circle className="wb-marker-dot" r={3.5} />
+              <g transform="translate(10, -30)">
+                <rect className="wb-pill" width={m.text.length * 6.6 + 16} height={20} rx={10} />
+                <text className="wb-pill-text" x={8} y={14}>{m.text}</text>
+              </g>
             </g>
-          </g>
-        ))}
+          ))}
+        </g>
       </svg>
 
       {!response && <EmptyBoard />}
 
-      {placed.map((it) => {
-        const r = it.sh.rect;
-        if (!r) return null;
-        return (
-          <SliderControl
-            key={it.sh.id}
-            spec={it.sh.slider}
-            value={it.value}
-            readout={it.readout?.text}
-            onChange={(v) => setSliderValues((prev) => ({ ...prev, [it.sh.id]: v }))}
-            onDragStart={() => setDragging(it.sh.id)}
-            style={{ left: r[0] * s, top: r[1] * s, width: Math.max(r[2] * s, SLIDER_MIN_W) }}
-          />
-        );
-      })}
+      {placed.length > 0 && (
+        <div className={`wb-cam-html ${camClass}`} style={{ transform: camCss }}>
+          {placed.map((it) => {
+            const r = it.sh.rect;
+            if (!r) return null;
+            return (
+              <SliderControl
+                key={it.sh.id}
+                spec={it.sh.slider}
+                value={it.value}
+                readout={it.readout?.text}
+                onChange={(v) => setSliderValues((prev) => ({ ...prev, [it.sh.id]: v }))}
+                onDragStart={() => setDragging(it.sh.id)}
+                style={{ left: r[0] * s, top: r[1] * s, width: Math.max(r[2] * s, SLIDER_MIN_W) }}
+              />
+            );
+          })}
+        </div>
+      )}
       {floating.length > 0 && (
         <div className="wb-slider-stack">
           {floating.map((it) => (
@@ -457,95 +500,111 @@ export function Whiteboard(props: WhiteboardProps) {
     onClose,
     pending = false,
     backdrop = null,
+    frameless = false,
+    openSeq = 0,
+    closing = false,
+    origin = null,
   } = props;
 
   const stageRef = useRef<HTMLElement>(null);
   const stage = useStageSize(stageRef);
-  const availW = stage.w - STAGE_PAD_X * 2;
-  const availH = stage.h - STAGE_PAD_Y * 2;
-  const boardW = Math.max(0, Math.floor(Math.min(availW, availH * BOARD_ASPECT)));
 
   const visible = useMemo(() => new Set(visibleSegmentIds), [visibleSegmentIds]);
   const segments = response?.segments ?? [];
   const currentText = segments.find((seg) => seg.id === currentSegmentId)?.text ?? "";
   const thinking = pending || phase === "thinking" || phase === "verifying";
   const text = (caption || currentText).trim();
+  const showCaption = response !== null && (thinking || text.length > 0 || segments.length > 0);
+
+  const rootClass = [
+    "wb-root",
+    `wb-${theme}`,
+    frameless ? "wb-frameless" : "wb-framed",
+    closing ? "is-closing" : openSeq > 0 ? (openSeq % 2 ? "is-open-a" : "is-open-b") : "",
+  ].join(" ");
+  const rootStyle = (origin ? { "--wb-ox": origin.x, "--wb-oy": origin.y } : {}) as CSSProperties;
 
   return (
-    <div className={`wb-root wb-${theme}`}>
-      <header className="wb-header">
-        <div className="wb-titles">
-          <div className="wb-eyebrow">WHITEBOARD</div>
-          <h1 className="wb-title" title={response?.concept}>
-            {response ? capitalise(response.concept) : "Nothing drawn yet"}
-          </h1>
-        </div>
-        <div className="wb-actions">
-          {response?.surface === "whiteboard" ? (
-            <span className="wb-chip">Drawn from scratch</span>
-          ) : null}
-          {response && sourceLabel ? (
-            <span className="wb-chip" title={sourceLabel}>{sourceLabel}</span>
-          ) : null}
-          <button
-            type="button"
-            className="wb-btn"
-            onClick={() => onToggleTheme?.()}
-            aria-label={theme === "light" ? "Switch to dark board" : "Switch to light board"}
-            title={theme === "light" ? "Dark board" : "Light board"}
-          >
-            {theme === "light" ? <MoonIcon /> : <SunIcon />}
-          </button>
-          <button
-            type="button"
-            className="wb-btn"
-            onClick={() => onClose?.()}
-            aria-label="Close whiteboard"
-            title="Close"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-      </header>
-
-      <main className="wb-stage" ref={stageRef}>
-        {boardW >= 40 && (
-          <div className={`wb-board-wrap${pending ? " is-pending" : ""}`}>
-            <Board
-              key={response?.concept ?? "__empty__"}
-              response={response}
-              sideNote={sideNote}
-              visibleSegmentIds={visibleSegmentIds}
-              pulseShapeIds={pulseShapeIds}
-              theme={theme}
-              width={boardW}
-              backdrop={backdrop}
-            />
-          </div>
-        )}
-      </main>
-
-      {response && (
-        <footer className="wb-caption">
-          <p className={`wb-caption-text${thinking ? " wb-shimmer" : ""}`} aria-live="polite">
-            {thinking ? "Thinking…" : text}
-          </p>
-          {segments.length > 0 && (
-            <div className="wb-dots" aria-hidden="true">
-              {segments.map((seg) => {
-                const on = visible.has(seg.id);
-                const cur = seg.id === currentSegmentId;
-                return (
-                  <span
-                    key={seg.id}
-                    className={`wb-dot${on ? " is-on" : ""}${cur ? " is-current" : ""}`}
-                  />
-                );
-              })}
+    <div className={rootClass} style={rootStyle}>
+      <div className="wb-sheet">
+        <main className="wb-stage" ref={stageRef}>
+          {stage.w >= 80 && stage.h >= 80 && (
+            <div className={`wb-board-wrap${pending ? " is-pending" : ""}`}>
+              <Board
+                key={response?.concept ?? "__empty__"}
+                response={response}
+                sideNote={sideNote}
+                visibleSegmentIds={visibleSegmentIds}
+                pulseShapeIds={pulseShapeIds}
+                theme={theme}
+                width={stage.w}
+                height={stage.h}
+                backdrop={backdrop}
+              />
             </div>
           )}
-        </footer>
-      )}
+        </main>
+
+        <header className="wb-header" data-tauri-drag-region>
+          <div className="wb-titles" data-tauri-drag-region>
+            <div className="wb-eyebrow" data-tauri-drag-region>
+              {response?.surface === "whiteboard" ? "Whiteboard · drawn from scratch" : "Whiteboard"}
+            </div>
+            <h1 className="wb-title" title={response?.concept} data-tauri-drag-region>
+              {response ? capitalise(response.concept) : "Nothing drawn yet"}
+            </h1>
+          </div>
+          <div className="wb-actions">
+            {response && sourceLabel ? (
+              <span className="wb-chip" title={sourceLabel}>{sourceLabel}</span>
+            ) : null}
+            <button
+              type="button"
+              className="wb-btn"
+              onClick={() => onToggleTheme?.()}
+              aria-label={theme === "light" ? "Switch to dark board" : "Switch to light board"}
+              title={theme === "light" ? "Dark board" : "Light board"}
+            >
+              {theme === "light" ? <MoonIcon /> : <SunIcon />}
+            </button>
+            <button
+              type="button"
+              className="wb-btn"
+              onClick={() => onClose?.()}
+              aria-label="Close whiteboard"
+              title="Close"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        </header>
+
+        {showCaption && (
+          <footer className="wb-caption">
+            <p
+              key={thinking ? "__thinking__" : text}
+              className={`wb-caption-text${thinking ? " wb-shimmer" : ""}`}
+              aria-live="polite"
+            >
+              {thinking ? "Thinking…" : text}
+            </p>
+            {segments.length > 1 && (
+              <div className="wb-dots" aria-hidden="true">
+                {segments.map((seg) => {
+                  const on = visible.has(seg.id);
+                  const cur = seg.id === currentSegmentId;
+                  return (
+                    <span
+                      key={seg.id}
+                      className={`wb-dot${on ? " is-on" : ""}${cur ? " is-current" : ""}`}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </footer>
+        )}
+      </div>
     </div>
   );
 }

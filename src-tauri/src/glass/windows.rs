@@ -82,8 +82,34 @@ pub fn create_all(app: &AppHandle) {
         log::error!("create brain: {e}");
     }
 
+    // whiteboard: a frameless sheet of blurred glass (native vibrancy under a transparent webview).
+    // The web content draws the whole surface, its own close button and a drag region, and places
+    // the window next to the bubble from JS.
+    if let Err(e) = WebviewWindowBuilder::new(app, "whiteboard", url("whiteboard"))
+        .title("Pimple — Whiteboard")
+        .inner_size(1120.0, 720.0)
+        .min_inner_size(640.0, 420.0)
+        .visible(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .resizable(true)
+        .accept_first_mouse(true)
+        .skip_taskbar(true)
+        .effects(
+            EffectsBuilder::new()
+                .effect(Effect::FullScreenUI)
+                .state(EffectState::Active)
+                .radius(30.0)
+                .build(),
+        )
+        .center()
+        .build()
+    {
+        log::error!("create whiteboard: {e}");
+    }
+
     for (label, title, w, h) in [
-        ("whiteboard", "Pimple — Whiteboard", 1200.0, 780.0),
         ("gizmo", "Pimple — Diagram", 1100.0, 820.0),
     ] {
         if let Err(e) = WebviewWindowBuilder::new(app, label, url(label))
@@ -279,11 +305,25 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
             let _ = app.show();
             activate_ns_app(&app);
         }
+        // The whiteboard grows out of the bubble: shrink it to a small pane on the bubble's side
+        // before it shows, then animate the native frame (blur and shadow included) to full size.
+        #[cfg(target_os = "macos")]
+        let grow = if label == "whiteboard" && !w.is_visible().unwrap_or(true) {
+            let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+            whiteboard_grow_begin(&app, slot.clone());
+            Some(slot)
+        } else {
+            None
+        };
         w.show().map_err(|e| e.to_string())?;
         let _ = w.unminimize();
         #[cfg(target_os = "macos")]
         let _ = w.set_always_on_top(true);
         let _ = w.set_focus();
+        #[cfg(target_os = "macos")]
+        if let Some(slot) = grow {
+            whiteboard_grow_finish(&app, slot);
+        }
         #[cfg(target_os = "macos")]
         if label == "settings" {
             // Briefly on top so it comes forward, then behave like a normal window.
@@ -297,6 +337,84 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
         w.show().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+type GrowSlot = std::sync::Arc<std::sync::Mutex<Option<objc2_foundation::NSRect>>>;
+
+/// Step 1 of the whiteboard's opening: remember its placed frame and collapse it to a small pane
+/// at the edge nearest the bubble, level with the bubble. Queued on the main thread before the show.
+#[cfg(target_os = "macos")]
+fn whiteboard_grow_begin(app: &AppHandle, slot: GrowSlot) {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    let Some(w) = app.get_webview_window("whiteboard") else { return };
+    let bubble = app.get_webview_window("bubble");
+    let _ = app.run_on_main_thread(move || {
+        let Ok(ptr) = w.ns_window() else { return };
+        let ns = ptr as *mut AnyObject;
+        if ns.is_null() {
+            return;
+        }
+        let target: NSRect = unsafe { objc2::msg_send![ns, frame] };
+        if target.size.width < 300.0 || target.size.height < 200.0 {
+            return;
+        }
+        let mut on_right = true;
+        let mut by = target.origin.y + target.size.height / 2.0;
+        if let Some(bp) = bubble.and_then(|b| b.ns_window().ok()) {
+            let bp = bp as *mut AnyObject;
+            if !bp.is_null() {
+                let bf: NSRect = unsafe { objc2::msg_send![bp, frame] };
+                on_right = bf.origin.x + bf.size.width / 2.0 > target.origin.x + target.size.width / 2.0;
+                by = bf.origin.y + bf.size.height / 2.0;
+            }
+        }
+        let (w0, h0) = (132.0, 96.0);
+        let x = if on_right { target.origin.x + target.size.width - w0 } else { target.origin.x };
+        let y = (by - h0 / 2.0).clamp(target.origin.y, target.origin.y + target.size.height - h0);
+        let from = NSRect::new(NSPoint::new(x, y), NSSize::new(w0, h0));
+        unsafe {
+            let _: () = objc2::msg_send![ns, setFrame: from, display: false];
+        }
+        if let Ok(mut g) = slot.lock() {
+            *g = Some(target);
+        }
+    });
+}
+
+/// Step 2: after the show, animate the frame back to the remembered one (0.42 s, ease-out).
+#[cfg(target_os = "macos")]
+fn whiteboard_grow_finish(app: &AppHandle, slot: GrowSlot) {
+    use objc2::runtime::{AnyClass, AnyObject};
+    let Some(w) = app.get_webview_window("whiteboard") else { return };
+    let _ = app.run_on_main_thread(move || {
+        let Some(target) = slot.lock().ok().and_then(|mut g| g.take()) else { return };
+        let Ok(ptr) = w.ns_window() else { return };
+        let ns = ptr as *mut AnyObject;
+        if ns.is_null() {
+            return;
+        }
+        let Some(ctx_cls) = AnyClass::get(c"NSAnimationContext") else {
+            unsafe {
+                let _: () = objc2::msg_send![ns, setFrame: target, display: true];
+            }
+            return;
+        };
+        unsafe {
+            let _: () = objc2::msg_send![ctx_cls, beginGrouping];
+            let ctx: *mut AnyObject = objc2::msg_send![ctx_cls, currentContext];
+            let _: () = objc2::msg_send![ctx, setDuration: 0.42f64];
+            if let Some(tf_cls) = AnyClass::get(c"CAMediaTimingFunction") {
+                let name = objc2_foundation::NSString::from_str("easeOut");
+                let tf: *mut AnyObject = objc2::msg_send![tf_cls, functionWithName: &*name];
+                let _: () = objc2::msg_send![ctx, setTimingFunction: tf];
+            }
+            let animator: *mut AnyObject = objc2::msg_send![ns, animator];
+            let _: () = objc2::msg_send![animator, setFrame: target, display: true];
+            let _: () = objc2::msg_send![ctx_cls, endGrouping];
+        }
+    });
 }
 
 /// Activates the NSApplication on the main thread (macOS 14+ `activate`).

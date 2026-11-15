@@ -3,7 +3,7 @@
 .wb-light {
   --wb-window: #ECE9E2;
   --wb-paper: #FBFAF6;
-  --wb-grid: rgba(30, 30, 40, 0.12);
+  --wb-grid: rgba(30, 30, 40, 0.13);
   --wb-vig: rgba(96, 74, 40, 0.065);
   --wb-ink: #1C1E23;
   --wb-muted: #7D8089;
@@ -43,13 +43,16 @@
     radial-gradient(55% 50% at 100% 12%, rgba(150, 200, 255, 0.3) 0%, rgba(150, 200, 255, 0) 70%),
     radial-gradient(60% 45% at 60% 110%, rgba(190, 160, 255, 0.24) 0%, rgba(190, 160, 255, 0) 70%);
   --wb-btn-shadow: 0 1px 2px rgba(20, 20, 30, 0.1), 0 4px 10px -3px rgba(20, 20, 30, 0.16);
+  /* Tint laid over the native blur: milky, so ink reads on whatever is behind the sheet. */
+  --wb-tint: linear-gradient(180deg, rgba(253, 252, 249, 0.34) 0%, rgba(246, 246, 251, 0.2) 100%);
+  --wb-solid: #F3F1EC;
   color-scheme: light;
 }
 
 .wb-dark {
   --wb-window: #0C0E12;
   --wb-paper: #171A20;
-  --wb-grid: rgba(255, 255, 255, 0.045);
+  --wb-grid: rgba(255, 255, 255, 0.1);
   --wb-vig: rgba(0, 0, 0, 0.45);
   --wb-ink: #E9ECF2;
   --wb-muted: #7C8290;
@@ -87,6 +90,8 @@
     radial-gradient(55% 50% at 100% 12%, rgba(70, 150, 255, 0.16) 0%, rgba(70, 150, 255, 0) 70%),
     radial-gradient(60% 45% at 60% 110%, rgba(150, 110, 255, 0.14) 0%, rgba(150, 110, 255, 0) 70%);
   --wb-btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 10px -3px rgba(0, 0, 0, 0.5);
+  --wb-tint: linear-gradient(180deg, rgba(17, 20, 27, 0.86) 0%, rgba(10, 12, 17, 0.78) 100%);
+  --wb-solid: #111419;
   color-scheme: dark;
 }
 
@@ -97,45 +102,192 @@
   box-sizing: border-box;
 }
 
+/* ───────────── The sheet: one pane of blurred glass that grows out of the bubble ───────────── */
+
 .wb-root {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background: var(--wb-window);
   color: var(--wb-ink);
   font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  --wb-ox: 100%;
+  --wb-oy: 50%;
+  --wb-radius: 30px;
+}
+
+.wb-sheet {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--wb-radius);
+  background: var(--wb-ambient), var(--wb-tint);
+  transform-origin: var(--wb-ox) var(--wb-oy);
   transition: background-color 300ms ease;
 }
 
-/* Header */
+/* An ordinary titled window (before the frameless build): opaque, square. */
+.wb-framed {
+  --wb-radius: 0px;
+}
+.wb-framed .wb-sheet {
+  background: var(--wb-ambient), var(--wb-solid);
+}
+
+/* Rim: a thin iridescent edge and the light caught along the top, as on the bubble. */
+.wb-sheet::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: var(--wb-edge);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.wb-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1.5px 0 var(--wb-specular),
+    inset 0 0 0 1px var(--wb-glass-border),
+    inset 0 -22px 30px -26px var(--wb-bounce),
+    inset 0 26px 40px -34px var(--wb-specular);
+}
+
+/* Open: the native frame grows out of the droplet (show_window animates it, blur included); the
+ * contents condense onto the pane as it arrives. Two names so a re-open restarts the animation.
+ * An ordinary titled window has no native growth, so it gets the whole spring in CSS. */
+.is-open-a .wb-sheet { animation: wb-open-a 520ms cubic-bezier(0.2, 0.9, 0.22, 1) both; }
+.is-open-b .wb-sheet { animation: wb-open-b 520ms cubic-bezier(0.2, 0.9, 0.22, 1) both; }
+.is-open-a .wb-header { animation: wb-chrome-a 380ms ease-out 260ms both; }
+.is-open-b .wb-header { animation: wb-chrome-b 380ms ease-out 260ms both; }
+.is-closing .wb-sheet { animation: wb-close 190ms cubic-bezier(0.5, 0, 0.9, 0.4) both; }
+
+@keyframes wb-open-a {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 1; }
+}
+@keyframes wb-open-b {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 1; }
+}
+@keyframes wb-chrome-a {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes wb-chrome-b {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.wb-framed.is-open-a .wb-sheet,
+.wb-framed.is-open-b .wb-sheet {
+  animation-name: wb-open-framed;
+}
+@keyframes wb-open-framed {
+  0% { opacity: 0; transform: scale(0.62, 0.5); border-radius: 120px; }
+  55% { opacity: 1; transform: scale(1.012, 1.02); }
+  78% { transform: scale(0.997, 0.994); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes wb-close {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.86, 0.8); border-radius: 110px; }
+}
+
+/* ───────────── Board ───────────── */
+
+.wb-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.wb-board-wrap {
+  position: absolute;
+  inset: 0;
+  transition: opacity 300ms ease-out;
+}
+.wb-board-wrap.is-pending {
+  opacity: 0.35;
+}
+
+.wb-board {
+  position: relative;
+  overflow: hidden;
+  animation: wb-enter 320ms ease-out both;
+}
+
+.wb-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+
+/* The camera: one transform shared by the ink and the controls laid on it. */
+.wb-cam {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.wb-cam.is-gliding {
+  transition: transform 900ms cubic-bezier(0.3, 0.9, 0.25, 1);
+}
+.wb-cam-html {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 2;
+}
+
+@keyframes wb-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ───────────── Floating title and controls ───────────── */
 
 .wb-header {
-  flex: none;
-  height: 56px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 4;
+  height: 74px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 16px 0 24px;
+  padding: 16px 16px 0 28px;
+  cursor: default;
+  /* A veil so ink gliding under the title stays legible without a hard bar. */
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wb-solid) 62%, transparent) 0%, transparent 100%);
 }
 
 .wb-titles {
-  /* The title keeps at least half the header; the chips give way first. */
   flex: 1 1 auto;
-  min-width: 50%;
+  min-width: 40%;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .wb-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--wb-muted);
 }
@@ -143,9 +295,10 @@
 .wb-title {
   margin: 0;
   font-family: "New York", ui-serif, Georgia, serif;
-  font-size: 24px;
+  font-size: 25px;
   font-weight: 600;
   line-height: 1.15;
+  letter-spacing: -0.01em;
   color: var(--wb-ink);
   white-space: nowrap;
   overflow: hidden;
@@ -163,10 +316,17 @@
 .wb-chip {
   flex: 0 1 auto;
   min-width: 0;
-  max-width: 220px;
-  padding: 6px 12px;
+  max-width: 250px;
+  padding: 7px 13px;
   border-radius: 999px;
-  background: var(--wb-chip);
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-glass-strong);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    var(--wb-btn-shadow);
   color: var(--wb-muted);
   font-size: 12px;
   white-space: nowrap;
@@ -176,69 +336,43 @@
 
 .wb-btn {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border: 0;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: transparent;
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-glass-strong);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    var(--wb-btn-shadow);
   color: var(--wb-muted);
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, color 150ms ease, transform 160ms cubic-bezier(0.3, 1.6, 0.5, 1);
 }
-
 .wb-btn:hover {
-  background: var(--wb-hover);
+  background: var(--wb-card);
   color: var(--wb-ink);
+  transform: scale(1.07);
 }
-
+.wb-btn:active {
+  transform: scale(0.92);
+}
 .wb-btn:focus-visible,
 .wb-range:focus-visible {
   outline: 2px solid var(--wb-accent);
   outline-offset: 2px;
 }
-
 .wb-btn svg {
   width: 16px;
   height: 16px;
 }
 
-/* Stage and paper board */
-
-.wb-stage {
-  flex: 1;
-  min-height: 0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.wb-paper {
-  position: relative;
-  flex: none;
-  border-radius: 18px;
-  background: var(--wb-paper);
-  box-shadow: var(--wb-shadow);
-  overflow: hidden;
-  animation: wb-enter 300ms ease-out both;
-}
-
-.wb-svg {
-  position: absolute;
-  left: 0;
-  top: 0;
-  display: block;
-}
-
-@keyframes wb-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* Empty state */
+/* ───────────── Empty state ───────────── */
 
 .wb-empty {
   position: absolute;
@@ -252,7 +386,6 @@
   text-align: center;
   pointer-events: none;
 }
-
 .wb-empty p {
   margin: 0;
   max-width: 360px;
@@ -260,7 +393,6 @@
   line-height: 1.45;
   color: var(--wb-muted);
 }
-
 .wb-doodle path,
 .wb-doodle circle {
   fill: none;
@@ -273,53 +405,66 @@
   stroke-dashoffset: 0;
   animation: wb-draw 1.2s ease-out both;
 }
-
 .wb-doodle circle { animation-delay: 0.25s; }
 .wb-doodle path:last-child { animation-delay: 0.5s; }
-
 @keyframes wb-draw {
   from { stroke-dashoffset: 1; }
   to { stroke-dashoffset: 0; }
 }
 
-/* Sliders */
+/* ───────────── Sliders and graph markers ───────────── */
 
 .wb-slider {
   position: absolute;
   z-index: 2;
   min-width: 200px;
   padding: 10px 14px 12px;
-  border-radius: 14px;
-  background: var(--wb-card);
+  border-radius: 16px;
   color: var(--wb-card-ink);
-  box-shadow: var(--wb-card-shadow);
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-gloss), color-mix(in srgb, var(--wb-card) 70%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+  box-shadow:
+    var(--wb-card-shadow),
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    inset 0 -14px 18px -16px var(--wb-bounce);
   animation: wb-slide-in 250ms ease-out both;
 }
-
 .wb-slider-stack {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2;
+  right: 20px;
+  bottom: 112px;
+  z-index: 3;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-
+.wb-slider-stack .wb-slider {
+  position: static;
+}
 .wb-slider-read {
   margin-top: 6px;
   font-size: 12px;
   color: var(--wb-muted);
   font-variant-numeric: tabular-nums;
 }
-
-.wb-board-wrap {
-  flex: none;
-  transition: opacity 300ms ease-out;
+.wb-slider-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
-
-.wb-board-wrap.is-pending {
-  opacity: 0.35;
+.wb-slider-label strong {
+  font-weight: 700;
+}
+.wb-accent {
+  color: var(--wb-accent);
+}
+@keyframes wb-slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
 .wb-backdrop-edge {
@@ -328,57 +473,28 @@
   stroke-opacity: 0.35;
   stroke-width: 1;
 }
-
 .wb-marker {
   transition: transform 120ms ease-out;
 }
-
 .wb-guide {
   stroke: var(--wb-muted);
   stroke-width: 1;
   stroke-dasharray: 3 3;
   opacity: 0.7;
 }
-
 .wb-marker-dot {
   fill: var(--wb-accent);
   stroke: #FFFFFF;
   stroke-width: 2;
 }
-
 .wb-pill {
   fill: var(--wb-card);
   stroke: var(--wb-hair);
   stroke-width: 1;
 }
-
 .wb-pill-text {
   font: 600 11px -apple-system, "SF Pro Text", system-ui, sans-serif;
   fill: var(--wb-card-ink);
-}
-
-.wb-slider-stack .wb-slider {
-  position: static;
-}
-
-@keyframes wb-slide-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
-
-.wb-slider-label {
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wb-slider-label strong {
-  font-weight: 700;
-}
-
-.wb-accent {
-  color: var(--wb-accent);
 }
 
 .wb-range {
@@ -392,11 +508,9 @@
   background: transparent;
   cursor: pointer;
 }
-
 .wb-range:focus {
   outline: none;
 }
-
 .wb-range::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
@@ -408,7 +522,6 @@
     var(--wb-track) 100%
   );
 }
-
 .wb-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -417,59 +530,66 @@
   margin-top: -7px;
   box-sizing: border-box;
   border-radius: 50%;
-  background: var(--wb-thumb);
-  border: 2px solid var(--wb-accent);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  border: 1.5px solid var(--wb-accent);
+  background: linear-gradient(180deg, #FFFFFF 0%, var(--wb-thumb) 60%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.28),
+    0 3px 8px -2px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
-.wb-range::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--wb-track);
-}
-
-.wb-range::-moz-range-progress {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--wb-accent);
-}
-
-.wb-range::-moz-range-thumb {
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--wb-thumb);
-  border: 2px solid var(--wb-accent);
-}
-
-/* Caption bar */
+/* ───────────── Caption: a glass capsule floating at the foot of the sheet ───────────── */
 
 .wb-caption {
-  flex: none;
-  min-height: 56px;
-  padding: 8px 24px 10px;
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 4;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(820px, calc(100% - 72px));
+  min-height: 54px;
+  padding: 11px 26px 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border-top: 1px solid var(--wb-hair);
-  background: var(--wb-window);
+  gap: 7px;
+  border-radius: 28px;
+  border: 1px solid var(--wb-glass-border);
+  background: var(--wb-gloss), var(--wb-glass-strong);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  backdrop-filter: blur(26px) saturate(180%);
+  box-shadow:
+    inset 0 1px 0 var(--wb-specular),
+    inset 0 -1px 0 var(--wb-lowlight),
+    inset 0 -14px 18px -16px var(--wb-bounce),
+    0 2px 4px rgba(20, 20, 30, 0.08),
+    0 18px 40px -18px rgba(20, 20, 30, 0.45);
+  animation: wb-caption-in 420ms cubic-bezier(0.25, 1.3, 0.4, 1) both;
+}
+@keyframes wb-caption-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.96); }
+  to { opacity: 1; transform: translateX(-50%); }
 }
 
 .wb-caption-text {
   margin: 0;
-  max-width: 860px;
   min-height: 1.4em;
   font-size: 16px;
   line-height: 1.4;
   text-align: center;
+  text-wrap: balance;
   color: var(--wb-ink);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  animation: wb-line-in 260ms ease-out both;
+}
+@keyframes wb-line-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 
 .wb-shimmer {
@@ -485,7 +605,6 @@
   background-clip: text;
   animation: wb-shimmer 1.8s linear infinite;
 }
-
 @keyframes wb-shimmer {
   from { background-position: 100% 0; }
   to { background-position: -150% 0; }
@@ -497,7 +616,6 @@
   align-items: center;
   gap: 7px;
 }
-
 .wb-dot {
   width: 6px;
   height: 6px;
@@ -506,17 +624,16 @@
   opacity: 0.7;
   transition: all 250ms ease;
 }
-
 .wb-dot.is-on {
   background: var(--wb-accent);
   border-color: var(--wb-accent);
   opacity: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
-
 .wb-dot.is-current {
-  width: 8px;
-  height: 8px;
-  box-shadow: 0 0 0 3px var(--wb-ring);
+  width: 18px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px var(--wb-ring), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 /* Motion preferences */
@@ -528,112 +645,4 @@
     animation: none !important;
     transition: none !important;
   }
-}
-
-/* ───────────── Liquid glass chrome ─────────────
- * Visual layer only: sizes and positions above are unchanged (layout.ts depends on them).
- * No filters touch the SVG board; backdrop-filter is used on HTML chrome only. */
-
-.wb-root {
-  background: var(--wb-ambient), var(--wb-window);
-}
-
-.wb-header {
-  position: relative;
-  z-index: 3;
-  background: var(--wb-gloss), var(--wb-glass);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  border-bottom: 1px solid var(--wb-glass-border);
-  box-shadow:
-    inset 0 1px 0 var(--wb-specular),
-    inset 0 -10px 16px -14px var(--wb-bounce),
-    0 8px 24px -18px rgba(20, 20, 30, 0.35);
-}
-
-.wb-chip {
-  border: 1px solid var(--wb-glass-border);
-  background: var(--wb-glass-strong);
-  box-shadow:
-    inset 0 1px 0 var(--wb-specular),
-    inset 0 -1px 0 var(--wb-lowlight),
-    var(--wb-btn-shadow);
-}
-
-.wb-btn {
-  border: 1px solid var(--wb-glass-border);
-  background: var(--wb-glass-strong);
-  box-shadow:
-    inset 0 1px 0 var(--wb-specular),
-    inset 0 -1px 0 var(--wb-lowlight),
-    var(--wb-btn-shadow);
-  transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
-}
-
-.wb-btn:hover {
-  background: var(--wb-card);
-}
-
-.wb-btn:active {
-  transform: scale(0.94);
-}
-
-/* The paper sits in the glass like a sheet under a pane: an iridescent rim and a hairline. */
-.wb-paper {
-  box-shadow: var(--wb-shadow), 0 0 0 1px var(--wb-glass-border);
-}
-
-.wb-paper::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  border-radius: inherit;
-  padding: 1.5px;
-  pointer-events: none;
-  background: var(--wb-edge);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-}
-
-.wb-slider {
-  border: 1px solid var(--wb-glass-border);
-  background: var(--wb-gloss), color-mix(in srgb, var(--wb-card) 70%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
-  backdrop-filter: blur(18px) saturate(170%);
-  box-shadow:
-    var(--wb-card-shadow),
-    inset 0 1px 0 var(--wb-specular),
-    inset 0 -1px 0 var(--wb-lowlight),
-    inset 0 -14px 18px -16px var(--wb-bounce);
-}
-
-.wb-range::-webkit-slider-thumb {
-  border-width: 1.5px;
-  background: linear-gradient(180deg, #FFFFFF 0%, var(--wb-thumb) 60%);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.28),
-    0 3px 8px -2px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-.wb-caption {
-  position: relative;
-  z-index: 3;
-  background: var(--wb-gloss), var(--wb-glass);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  backdrop-filter: blur(24px) saturate(170%);
-  border-top: 1px solid var(--wb-glass-border);
-  box-shadow:
-    inset 0 1px 0 var(--wb-specular),
-    0 -8px 24px -18px rgba(20, 20, 30, 0.35);
-}
-
-.wb-dot.is-on {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-.wb-dot.is-current {
-  box-shadow: 0 0 0 3px var(--wb-ring), inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }

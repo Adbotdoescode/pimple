@@ -10,8 +10,12 @@ export interface BoardSize { w: number; h: number }
 export interface FitOptions { grow?: boolean }
 
 const DEFAULT_BOARD: BoardSize = { w: 1600, h: 1000 };
-const TEXT_CHAR_W = 11;
-const TEXT_H = 28;
+/** View px per board unit. Constant, so label placements never depend on the window size; the
+ *  camera in Whiteboard.tsx does all the fitting. */
+export const VIEW_SCALE = 0.7;
+// A 16 px bold label on its 24 px pill, in board units.
+const TEXT_CHAR_W = 9.4 / VIEW_SCALE;
+const TEXT_H = 26 / VIEW_SCALE;
 const LABEL_PAD = 30;
 const TEXT_GAP = 8;
 const MAX_PASSES = 40;
@@ -202,6 +206,69 @@ function nudgeOffSegments(b: Box, segs: [Pt, Pt][]): Pt | null {
 }
 
 /**
+ * Text de-overlap in place, up to 40 passes: push a text below an earlier overlapping text, move a
+ * text clear of a graph's axis-label zone, and nudge a text perpendicular off a line/arrow/vector.
+ * Only text shapes move, and only later ones give way, so a drawing that is still streaming in
+ * does not reshuffle what is already on the board.
+ */
+function deOverlapText(work: Shape[]): void {
+  const segs: [Pt, Pt][] = [];
+  for (const s of work) {
+    if ((s.kind === "line" || s.kind === "arrow" || s.kind === "vector") && isPt(s.from) && isPt(s.to)) {
+      segs.push([s.from, s.to]);
+    }
+  }
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let moved = false;
+
+    // text vs text: push the later one down until clear
+    for (let i = 0; i < work.length; i++) {
+      const ba = work[i].kind === "text" ? shapeBBox(work[i]) : null;
+      if (!ba) continue;
+      for (let j = i + 1; j < work.length; j++) {
+        const bb = work[j].kind === "text" ? shapeBBox(work[j]) : null;
+        if (!bb || !overlaps(ba, bb)) continue;
+        const oy = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
+        const d = oy + TEXT_GAP;
+        work[j] = mapShape(work[j], (p): Pt => [p[0], p[1] + d]);
+        moved = true;
+      }
+    }
+
+    // text vs graph axis-label zone: move it clear the shortest way
+    for (let i = 0; i < work.length; i++) {
+      if (work[i].kind !== "text") continue;
+      const tb = shapeBBox(work[i]);
+      if (!tb) continue;
+      for (const g of work) {
+        if (g.kind !== "graph") continue;
+        const z = graphZone(g);
+        if (!z || !overlaps(tb, z)) continue;
+        const [dx, dy] = escapeDelta(tb, z);
+        work[i] = mapShape(work[i], (p): Pt => [p[0] + dx, p[1] + dy]);
+        moved = true;
+        break;
+      }
+    }
+
+    // text vs line/arrow/vector: nudge perpendicular off the segment
+    for (let i = 0; i < work.length; i++) {
+      if (work[i].kind !== "text") continue;
+      const tb = shapeBBox(work[i]);
+      if (!tb) continue;
+      const d = nudgeOffSegments(tb, segs);
+      if (d) {
+        work[i] = mapShape(work[i], (p): Pt => [p[0] + d[0], p[1] + d[1]]);
+        moved = true;
+      }
+    }
+
+    if (!moved) break;
+  }
+
+}
+
+/**
  * Fit shapes into the virtual board (default 1600 x 1000):
  *  (a) drop shapes without geometry (sliders without a rect are kept; the view stacks them);
  *  (b) if the union is larger than the safe area, scale it down about its centre, then slide it
@@ -264,59 +331,7 @@ export function fitShapes(
   }
 
   // (c) text de-overlap. Segments and non-text shapes stay where they are.
-  const segs: [Pt, Pt][] = [];
-  for (const s of work) {
-    if ((s.kind === "line" || s.kind === "arrow" || s.kind === "vector") && isPt(s.from) && isPt(s.to)) {
-      segs.push([s.from, s.to]);
-    }
-  }
-  for (let pass = 0; pass < MAX_PASSES; pass++) {
-    let moved = false;
-
-    // text vs text: push the later one down until clear
-    for (let i = 0; i < work.length; i++) {
-      const ba = work[i].kind === "text" ? shapeBBox(work[i]) : null;
-      if (!ba) continue;
-      for (let j = i + 1; j < work.length; j++) {
-        const bb = work[j].kind === "text" ? shapeBBox(work[j]) : null;
-        if (!bb || !overlaps(ba, bb)) continue;
-        const oy = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
-        const d = oy + TEXT_GAP;
-        work[j] = mapShape(work[j], (p): Pt => [p[0], p[1] + d]);
-        moved = true;
-      }
-    }
-
-    // text vs graph axis-label zone: move it clear the shortest way
-    for (let i = 0; i < work.length; i++) {
-      if (work[i].kind !== "text") continue;
-      const tb = shapeBBox(work[i]);
-      if (!tb) continue;
-      for (const g of work) {
-        if (g.kind !== "graph") continue;
-        const z = graphZone(g);
-        if (!z || !overlaps(tb, z)) continue;
-        const [dx, dy] = escapeDelta(tb, z);
-        work[i] = mapShape(work[i], (p): Pt => [p[0] + dx, p[1] + dy]);
-        moved = true;
-        break;
-      }
-    }
-
-    // text vs line/arrow/vector: nudge perpendicular off the segment
-    for (let i = 0; i < work.length; i++) {
-      if (work[i].kind !== "text") continue;
-      const tb = shapeBBox(work[i]);
-      if (!tb) continue;
-      const d = nudgeOffSegments(tb, segs);
-      if (d) {
-        work[i] = mapShape(work[i], (p): Pt => [p[0] + d[0], p[1] + d[1]]);
-        moved = true;
-      }
-    }
-
-    if (!moved) break;
-  }
+  deOverlapText(work);
 
   // (d) clamp every shape back inside the safe area
   return work.map((s) => {
@@ -352,4 +367,61 @@ export function mapImageShapesToBoard(shapes: Shape[], imgW: number, imgH: numbe
   const k = w / imgW;
   const f = (p: Pt): Pt => [x0 + p[0] * k, y0 + p[1] * k];
   return shapes.map((s) => mapShape(s, f, k));
+}
+
+/**
+ * Whiteboard answers: keep the model's geometry exactly where it drew it (so nothing jumps while the
+ * answer streams in) and only tidy it: drop shapes without geometry, give tiny shapes a readable
+ * minimum size, and move free text off other text, graph axes and lines. The camera does the fitting.
+ */
+export function composeBoard(shapes: Shape[]): Shape[] {
+  const work: Shape[] = [];
+  for (const s of shapes) {
+    if (s.kind === "slider" && !isRect(s.rect)) { work.push({ ...s }); continue; }
+    if (!shapeBBox(s)) continue;
+    const c: Shape = { ...s };
+    if (c.kind === "circle" && isNum(c.radius) && c.radius < MIN_RADIUS) c.radius = MIN_RADIUS;
+    if (c.kind === "box" && isRect(c.rect)) {
+      const [x, y, w, h] = c.rect;
+      const w2 = Math.max(w, MIN_BOX), h2 = Math.max(h, MIN_BOX);
+      c.rect = [x - (w2 - w) / 2, y - (h2 - h) / 2, w2, h2];
+    }
+    if (c.kind === "graph" && isRect(c.rect)) {
+      const [x, y, w, h] = c.rect;
+      const w2 = Math.max(w, MIN_GRAPH_W), h2 = Math.max(h, MIN_GRAPH_H);
+      c.rect = [x - (w2 - w) / 2, y - (h2 - h) / 2, w2, h2];
+    }
+    work.push(c);
+  }
+  deOverlapText(work);
+  return work;
+}
+const MIN_RADIUS = 14;
+const MIN_BOX = 26;
+const MIN_GRAPH_W = 360;
+const MIN_GRAPH_H = 260;
+
+/**
+ * The area the camera should frame for these shapes, in board units: their union plus room for the
+ * label pills the renderer hangs beside them. Null when nothing has geometry.
+ */
+export function contentBox(shapes: Shape[]): Box | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of shapes) {
+    const b = shapeBBox(s);
+    if (!b) continue;
+    let px = 10, py = 10;
+    if (s.kind === "graph") { px = GRAPH_ZONE_LEFT; py = GRAPH_ZONE_BOTTOM; }
+    else if (s.kind !== "text" && (s.label || s.magnitude)) {
+      const chars = (s.label ?? "").length + (s.magnitude ? s.magnitude.length + 3 : 0);
+      px = Math.min(190, chars * TEXT_CHAR_W * 0.75 + 24);
+      py = TEXT_H + 14;
+    }
+    x0 = Math.min(x0, b.x - px);
+    y0 = Math.min(y0, b.y - py);
+    x1 = Math.max(x1, b.x + b.w + px);
+    y1 = Math.max(y1, b.y + b.h + py);
+  }
+  if (!Number.isFinite(x0)) return null;
+  return { x: x0, y: y0, w: Math.max(x1 - x0, 1), h: Math.max(y1 - y0, 1) };
 }
