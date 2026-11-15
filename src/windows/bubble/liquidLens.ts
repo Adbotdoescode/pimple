@@ -72,11 +72,11 @@ float blob(vec2 p) {
   float c = cos(u_def.x), s = sin(u_def.x);
   vec2 q = vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
   float st = u_def.y;
-  vec2 sc = vec2(1.0 + st, 1.0 - 0.5 * st);
+  vec2 sc = vec2(1.0 + 0.9 * st, 1.0 - 0.42 * st);
   q /= sc;
   float len = length(q);
   float a = atan(q.y, q.x);
-  float rr = u_r * (1.0 - 0.32 * st * cos(a)
+  float rr = u_r * (1.0 - 0.26 * st * cos(a)
     + (0.010 + 0.10 * st) * sin(3.0 * a + u_def.z)
     + (0.006 + 0.04 * st) * sin(5.0 * a - u_def.z * 1.7));
   return (len - rr) * min(sc.x, sc.y);
@@ -308,7 +308,8 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
     const oy = s.cy - J.y;
     const om = Math.hypot(ox, oy);
     if (om > 0.6) axis = Math.atan2(oy, ox);
-    const stretch = Math.min(om / (s.r * 1.5 + 40), 0.4);
+    // Capped so a large lens never deforms past the canvas.
+    const stretch = Math.min(om / (s.r * 1.5 + 40), 0.4, Math.max(0, (HALF - 16) / s.r - 1.04));
     phase += dt * (1.1 + 9 * stretch);
 
     // drag speed → dispersion
