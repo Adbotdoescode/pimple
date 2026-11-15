@@ -283,6 +283,7 @@ export interface AppSettings {
   voiceId: string;              // default "SAz9YHcvj6GT2YYXdXww" (River)
   bubbleEdge: "left" | "right"; // default right
   bubbleY: number;              // v3: resting height as a fraction of the display height (0..1), default 0.5
+  micAutoOpen: boolean;         // v3: mic opens by itself after capture / check / offer; false = hold Space (or bubble click / card mic) to talk
   whiteboardTheme: "light" | "dark";
 }
 
@@ -318,6 +319,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   voiceId: "SAz9YHcvj6GT2YYXdXww",
   bubbleEdge: "right",
   bubbleY: 0.5,
+  micAutoOpen: true,
   whiteboardTheme: "light",
 };
 

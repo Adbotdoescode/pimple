@@ -222,6 +222,7 @@ function cancelAll(): void {
   turn = null;
   player.stop();
   cancelMicTimer();
+  markMicClosed();
   invoke(CMD.sttCancel).catch(() => undefined);
 }
 
@@ -417,8 +418,13 @@ function cancelMicTimer(): void {
 }
 
 /** Open the mic after the echo delay. Cancelled if the phase changes meanwhile. One attempt, no retry loop. */
-function scheduleMic(onFail: () => void): void {
+function scheduleMic(onFail: () => void, force = false): void {
   cancelMicTimer();
+  if (!force && !st().settings.micAutoOpen) {
+    holdToTalkHint(); // the phase is entered, but the mic waits for Space
+    return;
+  }
+  if (micOpen) return;
   const phase = st().phase;
   micTimer = setTimeout(() => {
     micTimer = null;
@@ -432,15 +438,49 @@ function scheduleMic(onFail: () => void): void {
   }, ECHO_DELAY_MS);
 }
 
-/** One attempt to open the mic. Returns false (and logs) if it cannot; never retries. */
-async function tryMic(): Promise<boolean> {
-  try {
-    await invoke(CMD.sttStart);
-    return true;
-  } catch (err) {
-    console.warn("[brain] stt_start failed:", errMsg(err));
-    return false;
+/** Whether the mic is open (or opening). Set by a successful stt_start, cleared by any stt_cancel/stt_stop/final. */
+let micOpen = false;
+let micStarting: Promise<boolean> | null = null;
+
+function markMicClosed(): void {
+  micOpen = false;
+}
+
+/** One stt_start. Never called twice: an open or opening mic is not started again. No retry loop. */
+function tryMic(): Promise<boolean> {
+  if (micOpen) return Promise.resolve(true);
+  if (micStarting === null) {
+    micStarting = invoke(CMD.sttStart)
+      .then(() => {
+        micOpen = true;
+        return true;
+      })
+      .catch((err: unknown) => {
+        console.warn("[brain] stt_start failed:", errMsg(err));
+        return false;
+      })
+      .finally(() => {
+        micStarting = null;
+      });
   }
+  return micStarting;
+}
+
+/** Card-side hint when the mic will not open by itself (micAutoOpen off). */
+function holdToTalkHint(): void {
+  console.info("[brain] mic waiting for Space (micAutoOpen off)");
+  const c = st().caption.trim();
+  if (!c || c.endsWith("?")) patch({ caption: "Hold Space to talk" });
+}
+
+/** Explicit open from Space (hold) or the card's mic button: no echo delay, and it does nothing if already open. */
+function openMicNow(): void {
+  if (micOpen) return;
+  cancelMicTimer();
+  patch({ partialTranscript: "" });
+  void tryMic().then((ok) => {
+    if (!ok) patch({ error: MIC_DOWN });
+  });
 }
 
 async function startListening(): Promise<void> {
@@ -460,12 +500,12 @@ function openMicForCheck(t: Turn): void {
 }
 
 /** Opens the mic for a push-to-talk or "which part" answer. On failure the main explanation resumes. */
-function openMicForInterrupt(t: Turn, ix: Interruption): void {
+function openMicForInterrupt(t: Turn, ix: Interruption, force = false): void {
   scheduleMic(() => {
     if (!isCurrent(t) || t.interruption !== ix) return;
     patch({ error: MIC_DOWN });
     beginBack(t);
-  });
+  }, force);
 }
 
 /** Ends the turn: optionally mention parked questions first, then idle. */
@@ -516,6 +556,8 @@ let gizmoAc: AbortController | null = null;
 let gizmoFailedQuestion: string | null = null;
 /** Open the mic once the speech queued without a turn (gizmo-fail) has finished. */
 let asideListen = false;
+/** Bumped on every new capture and on card-close. A build only speaks if its session is still the current one. */
+let sessionSeq = 0;
 
 function gizmoLog(state: string): void {
   console.info("[brain] gizmo", state);
@@ -525,12 +567,19 @@ function isVoiceRequest(text: string): boolean {
   return VOICE_KIND_RE.test(text) && VOICE_VERB_RE.test(text);
 }
 
-function resetGizmo(): void {
-  gizmoAc?.abort();
-  gizmoAc = null;
+/** Per-capture offer state. A build that is running is not touched here. */
+function resetOffer(): void {
   gizmoSession.offeredThisSession = false;
   gizmoFailedQuestion = null;
   asideListen = false;
+}
+
+/** Card-close: the only thing that aborts a build. Clears the card's diagram too. */
+function endGizmoSession(): void {
+  gizmoAc?.abort();
+  gizmoAc = null;
+  resetOffer();
+  patch({ gizmo: { status: "none" } });
 }
 
 /** Speech that is not part of a turn (gizmo-ready, gizmo-fail). It plays after whatever is queued. */
@@ -570,29 +619,44 @@ function declineGizmo(): void {
   }
 }
 
-/** Starts the build without awaiting it. The speech path carries on; the result arrives later. */
+/**
+ * Starts the build without awaiting it. It has its own AbortController: a new capture, ask, interrupt or
+ * shut-up does not abort it. Only card-close does. A second accept while one is running is ignored.
+ */
 function acceptGizmo(resp: TutorResponse, question: string): void {
-  gizmoAc?.abort();
+  if (gizmoAc !== null) {
+    gizmoLog("accept ignored: a build is already running");
+    return;
+  }
   const ac = new AbortController();
   gizmoAc = ac;
+  const session = sessionSeq;
   gizmoSession.offeredThisSession = true;
   patch({ gizmo: { status: "building" } });
   gizmoLog("building");
-  void generateGizmo(buildGizmoRequest(resp, question), { signal: ac.signal }).then((res) => {
-    if (ac.signal.aborted) return; // card closed or a new capture
+  void generateGizmo(buildGizmoRequest(resp, question), { signal: ac.signal, timeoutMs: 60000 }).then((res) => {
+    if (ac.signal.aborted) {
+      gizmoLog("result dropped: card closed");
+      return;
+    }
     if (gizmoAc === ac) gizmoAc = null;
+    // Speak only into the same session, and only between segments. Otherwise the card just updates.
+    const speakOk = session === sessionSeq && !player.isPlaying();
     if (res.ok && res.html) {
       patch({ gizmo: { status: "ready", html: res.html } });
       gizmoLog(`ready in ${res.ms} ms`);
       invoke(CMD.showWindow, { label: "gizmo" }).catch((err) =>
         console.warn("[brain] show gizmo window failed:", errMsg(err)),
       );
-      speakAside("gizmo-ready", "Your diagram is ready.");
+      if (speakOk) speakAside("gizmo-ready", "Your diagram is ready.");
+      else gizmoLog("ready, not spoken (session moved on)");
     } else {
       patch({ gizmo: { status: "failed" } });
       gizmoLog(`failed after ${res.ms} ms: ${res.error ?? "unknown"}`);
-      gizmoFailedQuestion = question;
-      speakAside("gizmo-fail", "I couldn't build the diagram in time. Want me to draw it on the whiteboard instead?", true);
+      if (speakOk) {
+        gizmoFailedQuestion = question;
+        speakAside("gizmo-fail", "I couldn't build the diagram in time. Want me to draw it on the whiteboard instead?", true);
+      } else gizmoLog("failed, not spoken (session moved on)");
     }
   });
 }
@@ -742,7 +806,7 @@ function startInterruption(t: Turn, pp: PausePoint, mode: "hold" | "tap"): void 
     queue(t, [{ id: "whichpart", text: "Which part?" }], "speak");
   } else {
     t.playerIdle = true; // nothing is playing while the student speaks
-    void openMicForInterrupt(t, ix);
+    void openMicForInterrupt(t, ix, true); // push-to-talk is an explicit open
   }
 }
 
@@ -764,15 +828,16 @@ function onSpaceHoldEnd(): void {
 
 async function micCancel(): Promise<void> {
   await invoke(CMD.sttCancel).catch(() => undefined);
+  markMicClosed();
 }
 
-function openMicFrozen(t: Turn): void {
+function openMicFrozen(t: Turn, force = false): void {
   patch({ partialTranscript: "" });
   scheduleMic(() => {
     if (!isCurrent(t)) return;
     patch({ error: MIC_DOWN });
     setPhase("listening"); // typed box is the fallback
-  });
+  }, force);
 }
 
 /** Snapshot where the main answer stopped, for a follow-up question or a resume. Call before stopping the turn. */
@@ -811,7 +876,11 @@ function freezeMain(): FollowUpCtx {
 async function onInterrupt(mode: "hold" | "tap" | "interrupt"): Promise<void> {
   const t = turn;
   const ph = st().phase;
-  if (ph === "idle" || ph === "capturing" || ph === "targeting" || ph === "listening") return;
+  if (ph === "idle" || ph === "capturing" || ph === "targeting") return;
+  if (ph === "listening" || (ph === "checking" && t?.stage === "awaitingAnswer")) {
+    if (mode !== "tap") openMicNow(); // push-to-talk or interrupt opens a closed mic
+    return;
+  }
   if (t && t.stage === "frozen") return; // a follow-up mic is already open
   if (ph === "interrupted" && t?.interruption && (t.interruption.stage === "recording" || t.interruption.stage === "whichpart")) return;
 
@@ -835,7 +904,7 @@ async function onInterrupt(mode: "hold" | "tap" | "interrupt"): Promise<void> {
     queue(t2, [{ id: "whichpart", text: "Which part?" }], "speak");
     return;
   }
-  await openMicFrozen(t2);
+  openMicFrozen(t2, mode !== "tap");
 }
 
 /** Shut up: stop everything now, keep the card and shapes, and listen for a new question with follow-up context. */
@@ -876,7 +945,8 @@ function resumeOrIdle(): void {
 function closeCard(): void {
   cancelAll();
   pendingFollowUp = null;
-  resetGizmo();
+  sessionSeq++;
+  endGizmoSession();
   st().resetSession();
   patch({ notice: null }); // the notice lasts for the session only
   recentSpoken.length = 0;
@@ -1274,7 +1344,8 @@ async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolea
   cancelAll();
   st().resetSession(); // a new capture starts a new session: response, shapes, sideNote, pulse ids all cleared
   pendingFollowUp = null;
-  resetGizmo();
+  sessionSeq++;
+  resetOffer();
   setPhase("capturing");
   patch({ mode: req.mode, isFixture: !!fixture, timings: { captureAt: Date.now() } });
   try {
@@ -1501,6 +1572,7 @@ export async function startController(): Promise<() => void> {
     listen<UiIntent>(EV.uiIntent, (e) => void run(handleIntent(e.payload))),
     listen<DebugInject>(EV.debugInject, (e) => void run(handleDebugInject(e.payload))),
     listen<SttFinal>(EV.sttFinal, (e) => {
+      markMicClosed(); // the utterance ends the mic on the Rust side
       let raw = (e.payload?.text ?? "").trim();
       const ph = st().phase;
       const t = turn;
@@ -1560,6 +1632,7 @@ export async function startController(): Promise<() => void> {
     }),
     listen<SttError>(EV.sttError, (e) => {
       console.warn("[brain] stt error:", e.payload.message);
+      markMicClosed();
       patch({ error: MIC_DOWN });
       const ph = st().phase;
       if (ph === "checking" || ph === "interrupted") setPhase("listening");

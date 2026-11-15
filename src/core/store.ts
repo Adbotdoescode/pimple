@@ -96,7 +96,8 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
   patch: (partial) => set(partial),
 
   // Every new session starts clean, including the TTS fallback notice.
-  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null }),
+  // The gizmo survives a new capture; card-close clears it.
+  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null, gizmo: get().gizmo }),
 
   appendSegment: (seg) =>
     set((s) => {
