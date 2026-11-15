@@ -1,14 +1,14 @@
-# Prompt: make the Glass Tutor demo video
+# Prompt: make the Pimple demo video
 
 Copy everything below the line into a fresh agent (Fable or another capable AI agent) running on the same Mac, in the repo `~/Developer/glass-tutor`.
 
 ---
 
-You are producing the demo video for Glass Tutor, a hackathon project being submitted to Devpost. Your deliverable is a finished, polished product video built from REAL footage of the real app. Nothing in the video may be faked, mocked up or simulated: every feature shown must be recorded from the running app.
+You are producing the demo video for Pimple, a hackathon project being submitted to Devpost. Your deliverable is a finished, polished product video built from REAL footage of the real app. Nothing in the video may be faked, mocked up or simulated: every feature shown must be recorded from the running app.
 
 THE PRODUCT
 
-Glass Tutor is a background desktop tutor for macOS. A small translucent bubble in Apple's Liquid Glass style rests on the edge of the screen like a droplet of condensed water. It sees your screen, explains by voice, and draws on top of whatever you are looking at (your homework, a PDF, a web page), as if a teacher were drawing on your screen. It checks your understanding as it teaches.
+Pimple is a background desktop tutor for macOS. A small translucent bubble in Apple's Liquid Glass style rests on the edge of the screen like a droplet of condensed water. It sees your screen, explains by voice, and draws on top of whatever you are looking at (your homework, a PDF, a web page), as if a teacher were drawing on your screen. It checks your understanding as it teaches.
 
 Pitch line: "A general-purpose tutor that checks your understanding as it teaches."
 
@@ -42,7 +42,7 @@ A 2:00–2:45 video, 1920×1080 or 2560×1440, 30 or 60 fps, H.264 MP4 suitable 
 Tone: calm, confident and premium, like an Apple keynote feature segment. Fast-paced, with no dead air. Show, don't tell.
 
 STRUCTURE (adjust timings as needed)
-- 0:00–0:08 Hook. A student stares at a hard homework problem. The liquid bubble glides along the screen edge, catching the light. Title card: "Glass Tutor".
+- 0:00–0:08 Hook. A student stares at a hard homework problem. The liquid bubble glides along the screen edge, catching the light. Title card: "Pimple".
 - 0:08–0:35 Ask and see. Drag the bubble over the problem and ask out loud. The tutor answers by voice while ink arrows and labels draw themselves onto the actual diagram in sync. The caption card shows the words.
 - 0:35–1:05 The headline: interrupt. Mid-explanation, hold space and object. It stops instantly, answers the objection as a side note, says "Back to where we were…" and resumes. Cut to the "Points you questioned" list.
 - 1:05–1:25 It checks understanding. The check question, a spoken answer, and short feedback.
@@ -77,8 +77,8 @@ EDITING
 
 DELIVERABLES (put them in `demo/video/`)
 1. `script.md`: the voiceover and shot list with timings.
-2. `glass-tutor-demo.mp4`: the main cut.
-3. `glass-tutor-30s.mp4`: the social cut.
+2. `pimple-demo.mp4`: the main cut.
+3. `pimple-30s.mp4`: the social cut.
 4. `thumbnail.png`
 5. `devpost.md`:
    - a 2-sentence tagline;

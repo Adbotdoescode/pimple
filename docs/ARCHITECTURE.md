@@ -1,4 +1,4 @@
-# Glass Tutor — architecture and team rules (read fully before working)
+# Pimple (code name Glass Tutor) — architecture and team rules (read fully before working)
 
 Product spec: `PROMPT.md` (sections 1–4 are the product). Contracts: `shared/contracts.ts` (C1–C5, command and event names) and `shared/tutor_response.schema.json` (C1, strict structured-output schema). Contracts are owned by the orchestrator: do not rename or reshape anything in `shared/` without asking.
 
