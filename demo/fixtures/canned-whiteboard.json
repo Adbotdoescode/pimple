@@ -7,10 +7,22 @@
     "quote": "N = mg cos θ"
   },
   "segments": [
-    { "id": "s1", "text": "Here is a block resting on a rough incline tilted at thirty degrees." },
-    { "id": "s2", "text": "Gravity pulls it straight down with mg, which is 49 newtons, and that splits into a part along the slope and a part into it." },
-    { "id": "s3", "text": "The surface pushes back with the normal force N, 42 newtons, perpendicular to the slope, while friction f holds the block up the slope." },
-    { "id": "s4", "text": "Drag the angle slider and watch N shrink as the slope steepens, because N equals mg cos θ, and the graph traces that curve." }
+    {
+      "id": "s1",
+      "text": "Here is a block resting on a rough incline tilted at thirty degrees."
+    },
+    {
+      "id": "s2",
+      "text": "Gravity pulls it straight down with mg, which is 49 newtons, and that splits into a part along the slope and a part into it."
+    },
+    {
+      "id": "s3",
+      "text": "The surface pushes back with the normal force N, 42 newtons, perpendicular to the slope, while friction f holds the block up the slope."
+    },
+    {
+      "id": "s4",
+      "text": "Drag the angle slider and watch N shrink as the slope steepens, because N equals mg cos θ, and the graph traces that curve."
+    }
   ],
   "shapes": [
     {
@@ -18,7 +30,32 @@
       "segment_id": "s1",
       "kind": "stroke",
       "color_role": "primary",
-      "points": [[250, 800], [400, 713], [550, 627], [700, 540], [850, 454], [1050, 338]],
+      "points": [
+        [
+          250,
+          800
+        ],
+        [
+          400,
+          713
+        ],
+        [
+          550,
+          627
+        ],
+        [
+          700,
+          540
+        ],
+        [
+          850,
+          454
+        ],
+        [
+          1050,
+          338
+        ]
+      ],
       "radius": 0,
       "label": "",
       "magnitude": "",
@@ -30,7 +67,16 @@
       "segment_id": "s1",
       "kind": "line",
       "color_role": "secondary",
-      "points": [[150, 800], [1100, 800]],
+      "points": [
+        [
+          150,
+          800
+        ],
+        [
+          1100,
+          800
+        ]
+      ],
       "radius": 0,
       "label": "",
       "magnitude": "",
@@ -42,7 +88,16 @@
       "segment_id": "s1",
       "kind": "box",
       "color_role": "secondary",
-      "points": [[500, 515], [620, 625]],
+      "points": [
+        [
+          500,
+          515
+        ],
+        [
+          620,
+          625
+        ]
+      ],
       "radius": 0,
       "label": "block",
       "magnitude": "",
@@ -54,7 +109,12 @@
       "segment_id": "s1",
       "kind": "circle",
       "color_role": "accent",
-      "points": [[250, 800]],
+      "points": [
+        [
+          250,
+          800
+        ]
+      ],
       "radius": 80,
       "label": "",
       "magnitude": "",
@@ -66,21 +126,14 @@
       "segment_id": "s1",
       "kind": "text",
       "color_role": "accent",
-      "points": [[350, 785]],
+      "points": [
+        [
+          350,
+          785
+        ]
+      ],
       "radius": 0,
       "label": "θ = 30°",
-      "magnitude": "",
-      "values": [],
-      "target": ""
-    },
-    {
-      "id": "title",
-      "segment_id": "s1",
-      "kind": "text",
-      "color_role": "secondary",
-      "points": [[560, 90]],
-      "radius": 0,
-      "label": "Forces on a block on an incline",
       "magnitude": "",
       "values": [],
       "target": ""
@@ -90,11 +143,22 @@
       "segment_id": "s2",
       "kind": "vector",
       "color_role": "warn",
-      "points": [[560, 570], [560, 760]],
+      "points": [
+        [
+          560,
+          570
+        ],
+        [
+          560,
+          760
+        ]
+      ],
       "radius": 0,
       "label": "mg",
       "magnitude": "49 N",
-      "values": [0],
+      "values": [
+        0
+      ],
       "target": ""
     },
     {
@@ -102,11 +166,22 @@
       "segment_id": "s2",
       "kind": "vector",
       "color_role": "warn",
-      "points": [[560, 570], [478, 618]],
+      "points": [
+        [
+          560,
+          570
+        ],
+        [
+          478,
+          618
+        ]
+      ],
       "radius": 0,
       "label": "mg sin θ",
       "magnitude": "24.5 N",
-      "values": [1],
+      "values": [
+        1
+      ],
       "target": ""
     },
     {
@@ -114,11 +189,22 @@
       "segment_id": "s3",
       "kind": "vector",
       "color_role": "primary",
-      "points": [[560, 625], [478, 484]],
+      "points": [
+        [
+          560,
+          625
+        ],
+        [
+          478,
+          484
+        ]
+      ],
       "radius": 0,
       "label": "N",
       "magnitude": "42 N",
-      "values": [0],
+      "values": [
+        0
+      ],
       "target": ""
     },
     {
@@ -126,11 +212,22 @@
       "segment_id": "s3",
       "kind": "vector",
       "color_role": "accent",
-      "points": [[600, 600], [682, 552]],
+      "points": [
+        [
+          600,
+          600
+        ],
+        [
+          682,
+          552
+        ]
+      ],
       "radius": 0,
       "label": "f",
       "magnitude": "24.5 N",
-      "values": [0],
+      "values": [
+        0
+      ],
       "target": ""
     },
     {
@@ -138,11 +235,45 @@
       "segment_id": "s4",
       "kind": "graph",
       "color_role": "primary",
-      "points": [[1150, 150], [1530, 450]],
+      "points": [
+        [
+          1150,
+          150
+        ],
+        [
+          1530,
+          450
+        ]
+      ],
       "radius": 0,
       "label": "θ (degrees)|Normal force N|N = mg cos θ",
       "magnitude": "line",
-      "values": [0, 90, 0, 50, 1210, 174.6, 1243.3, 177.8, 1276.7, 188.4, 1310, 204.9, 1343.3, 227.5, 1376.7, 255.1, 1410, 287.3, 1443.3, 322.7, 1476.7, 360.9, 1510, 400],
+      "values": [
+        0,
+        90,
+        0,
+        50,
+        0,
+        49.0,
+        10,
+        48.3,
+        20,
+        46.0,
+        30,
+        42.4,
+        40,
+        37.5,
+        50,
+        31.5,
+        60,
+        24.5,
+        70,
+        16.8,
+        80,
+        8.5,
+        90,
+        0.0
+      ],
       "target": ""
     },
     {
@@ -150,15 +281,32 @@
       "segment_id": "s4",
       "kind": "slider",
       "color_role": "accent",
-      "points": [[1150, 560], [1530, 630]],
+      "points": [
+        [
+          1150,
+          560
+        ],
+        [
+          1530,
+          630
+        ]
+      ],
       "radius": 0,
       "label": "Angle θ",
       "magnitude": "°",
-      "values": [0, 60, 30, 1],
-      "target": "normal_force"
+      "values": [
+        0,
+        60,
+        30,
+        1
+      ],
+      "target": "normal_graph"
     }
   ],
   "check_question": "If the slope were steeper, would the normal force go up or down?",
-  "gizmo_offer": { "recommended": false, "pitch": "" },
+  "gizmo_offer": {
+    "recommended": false,
+    "pitch": ""
+  },
   "parked": []
 }
