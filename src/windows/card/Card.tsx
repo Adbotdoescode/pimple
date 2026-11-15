@@ -64,7 +64,12 @@ const BUSY_PHASES: ReadonlySet<Phase> = new Set<Phase>([
 const KEEP_CAPTION_PHASES: ReadonlySet<Phase> = new Set<Phase>(["speaking", "interrupted", "checking"]);
 
 /** Map a raw backend error to a friendly title. The raw text stays available under "Details". */
-function friendlyError(raw: string): { title: string; mic: boolean } {
+function friendlyError(raw: string): { title: string; mic: boolean; asIs?: boolean } {
+  // The brain now sends learner-ready text; show it untouched unless it looks like a raw error.
+  const rawLooking = raw.length > 120 || /[{}[\]<>]|::|\b[45]\d\d\b|https?:|\berror\b|exception|failed to|undefined|null\b/i.test(raw);
+  if (!rawLooking && /^[A-Z]/.test(raw.trim())) {
+    return { title: raw.trim(), mic: /\bmic|microphone/i.test(raw), asIs: true };
+  }
   if (/microphone|stt|vad/i.test(raw)) {
     return { title: "Microphone unavailable — type your question below", mic: true };
   }
@@ -125,6 +130,9 @@ export function Card({
   const response = s?.response ?? null;
   const caption = s?.caption ?? "";
   const error = s?.error ?? null;
+  // Landing in the contract shortly; read defensively until the type has it.
+  const noticeRaw = (s as { notice?: unknown } | null)?.notice;
+  const notice = typeof noticeRaw === "string" && noticeRaw.trim() ? noticeRaw.trim() : null;
   const parked = s?.parked ?? [];
   const contested = s?.contested ?? [];
   const checkQuestion = s?.checkQuestion || null;
@@ -350,15 +358,21 @@ export function Card({
                 </section>
               )}
 
+              {notice && (
+                <div className="notice fade-up" role="status">{notice}</div>
+              )}
+
               {err && (
                 <div className="error fade-up" role="alert">
                   <AlertTriangle size={15} strokeWidth={2} aria-hidden="true" />
                   <div className="error-body">
                     <div className="error-title">{err.title}</div>
-                    <details className="error-details">
-                      <summary>Details</summary>
-                      <div className="error-raw">{error}</div>
-                    </details>
+                    {!err.asIs && (
+                      <details className="error-details">
+                        <summary>Details</summary>
+                        <div className="error-raw">{error}</div>
+                      </details>
+                    )}
                   </div>
                 </div>
               )}
@@ -436,11 +450,15 @@ function VerifierBadge({ snapshot }: { snapshot: SessionSnapshot | null }) {
     );
   }
   if (v?.ran && v.verdict === "fail") {
+    const rawClaims = (v as { claims?: unknown }).claims;
+    const claims = Array.isArray(rawClaims)
+      ? rawClaims.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 3)
+      : [];
+    const why = claims.length > 0
+      ? `Couldn't confirm: ${claims.join(" · ")}`
+      : "A second model couldn't confirm one statement against the screen";
     return (
-      <span
-        className="chip chip-warn"
-        title="A second model couldn't confirm one statement against the screen"
-      >
+      <span className="chip chip-warn" title={why} aria-label={`Check flagged a claim. ${why}`}>
         <AlertTriangle size={12} strokeWidth={2.25} aria-hidden="true" />
         Check flagged a claim
       </span>

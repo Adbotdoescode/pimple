@@ -149,6 +149,8 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
   const isFixture = (snapshot as (SessionSnapshot & { isFixture?: boolean }) | null)?.isFixture === true;
   const backdrop = useMemo<CaptureResult | null>(() => {
     if (!snapshot || !FIXTURE_PHASES.has(phase) || !snapshot.capture) return null;
+    // A whiteboard answer draws nothing here: the opaque backdrop would cover the whiteboard window.
+    if (snapshot.response?.surface === "whiteboard") return null;
     return isFixture || forcedByUrl ? snapshot.capture : null;
   }, [snapshot, phase, isFixture, forcedByUrl]);
 

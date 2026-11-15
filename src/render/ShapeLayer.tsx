@@ -1,10 +1,9 @@
-import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Pt, Shape } from "@shared/contracts";
-import type { ShapeStyle } from "./palette";
+import { pillFor, type PillStyle, type ShapeStyle } from "./palette";
 import {
   arrowHead,
   boxOverlapArea,
-  circlePath,
   fmt,
   graphMapper,
   inflate,
@@ -14,13 +13,12 @@ import {
   linePath,
   polySegs,
   rectSegs,
-  roundedRectPath,
   segHitsBox,
-  smoothPath,
   unitAndUpNormal,
   type Box,
   type Seg,
 } from "./geometry";
+import { curvePts, handBox, handCircle, handHead, handLine, inkGeom, polyD, seedOf, textWidth, type InkOpts } from "./ink";
 import "./render.css";
 
 export type { ShapeStyle } from "./palette";
@@ -40,12 +38,13 @@ export interface ShapeLayerProps {
 }
 
 const STEP_MS = 120;   // stagger between shapes that appear together
-const DRAW_MS = 260;   // stroke-draw duration
-const STROKE_W = 3.5;
-const LABEL_OFFSET = 14;
-const CHAR_W = 9.2;      // estimated advance per character at 16 px / 700
-const LABEL_ASCENT = 15;
-const LABEL_H = 20;
+const DRAW_MS = 460;   // stroke-draw duration (keep in step with .gt-draw in render.css)
+const TIP_LINGER_MS = 240; // the pen tip lifts and fades after the stroke
+const STROKE_W = 3.8;
+const LABEL_OFFSET = 8;  // clear gap between a stroke and the edge of its label pill
+const PILL_PAD_X = 8;
+const PILL_HALF_H = 12;
+const LABEL_MID = 5.5;   // baseline to visual middle of 16 px bold text
 
 interface LabelPlacement { x: number; y: number; anchor: "start" | "middle" | "end" }
 
@@ -100,6 +99,16 @@ export function ShapeLayer(props: ShapeLayerProps): ReactElement {
 
   return (
     <g className={side ? "gt-root gt-sidenote" : "gt-root"} style={{ opacity }}>
+      <defs>
+        <linearGradient id="gt-pill-light" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="1" stopColor="#eef2f9" stopOpacity="0.8" />
+        </linearGradient>
+        <linearGradient id="gt-pill-dark" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#3a4254" stopOpacity="0.84" />
+          <stop offset="1" stopColor="#10141d" stopOpacity="0.8" />
+        </linearGradient>
+      </defs>
       {items.map(({ shape, index }) => (
         <ShapeNode
           key={shape.id}
@@ -229,9 +238,11 @@ function combineLabel(label: string | undefined, magnitude: string | undefined):
   return label || magnitude || undefined;
 }
 
-/** Text that the placer moves. Text shapes and graphs never move. */
+/** Text that the placer positions. Standalone text only moves to get off another pill; graphs never move. */
 function placeableText(s: Shape): string | undefined {
   switch (s.kind) {
+    case "text":
+      return s.label || undefined;
     case "circle":
     case "box":
     case "line":
@@ -249,8 +260,9 @@ function anchorForNormal(n: [number, number]): "start" | "middle" | "end" {
 }
 
 /** Label beside point p, pushed `dist` px along unit normal n, centred vertically on the offset point. */
-function sideLabel(px: number, py: number, n: [number, number], dist: number): LabelPlacement {
-  return { x: px + n[0] * dist, y: py + n[1] * dist + 5, anchor: anchorForNormal(n) };
+function sideLabel(px: number, py: number, n: [number, number], gap: number): LabelPlacement {
+  const dist = gap + Math.abs(n[0]) * PILL_PAD_X + Math.abs(n[1]) * PILL_HALF_H;
+  return { x: px + n[0] * dist, y: py + n[1] * dist + LABEL_MID, anchor: anchorForNormal(n) };
 }
 
 /** Ordered candidate anchors per kind. The first is the default position. */
@@ -262,12 +274,12 @@ function labelCandidates(s: Shape, toView: (p: Pt) => Pt, scale: number): LabelP
       const { cx, cy, R } = g;
       const k = Math.SQRT1_2;
       return [
-        { x: cx + R * k + 6, y: cy - R * k - 4, anchor: "start" },   // upper-right
-        { x: cx - R * k - 6, y: cy - R * k - 4, anchor: "end" },     // upper-left
-        { x: cx + R + 6, y: cy + 5, anchor: "start" },               // right
-        { x: cx + R * k + 6, y: cy + R * k + 16, anchor: "start" },  // lower-right
-        { x: cx - R - 6, y: cy + 5, anchor: "end" },                 // left
-        { x: cx, y: cy - R - 8, anchor: "middle" },                  // top
+        { x: cx + R * k + 14, y: cy - R * k - 9, anchor: "start" },  // upper-right
+        { x: cx - R * k - 14, y: cy - R * k - 9, anchor: "end" },    // upper-left
+        { x: cx + R + 16, y: cy + LABEL_MID, anchor: "start" },      // right
+        { x: cx + R * k + 14, y: cy + R * k + 20, anchor: "start" }, // lower-right
+        { x: cx - R - 16, y: cy + LABEL_MID, anchor: "end" },        // left
+        { x: cx, y: cy - R - 15, anchor: "middle" },                 // top
       ];
     }
     case "box": {
@@ -275,10 +287,10 @@ function labelCandidates(s: Shape, toView: (p: Pt) => Pt, scale: number): LabelP
       if (!g) return [];
       const { L, T, W, H } = g;
       return [
-        { x: L, y: T - 8, anchor: "start" },                 // above-left
-        { x: L + W, y: T - 8, anchor: "end" },               // above-right
-        { x: L, y: T + H + 16, anchor: "start" },            // below-left
-        { x: L + W, y: T + H + 16, anchor: "end" },          // below-right
+        { x: L + PILL_PAD_X, y: T - 14, anchor: "start" },       // above-left
+        { x: L + W - PILL_PAD_X, y: T - 14, anchor: "end" },     // above-right
+        { x: L + PILL_PAD_X, y: T + H + 25, anchor: "start" },   // below-left
+        { x: L + W - PILL_PAD_X, y: T + H + 25, anchor: "end" }, // below-right
       ];
     }
     case "line":
@@ -301,24 +313,57 @@ function labelCandidates(s: Shape, toView: (p: Pt) => Pt, scale: number): LabelP
       const [bx, by] = g.b;
       return [
         {                                                    // beyond the tip
-          x: bx + ux * 26,
-          y: by + uy * 26 + (uy > 0.35 ? 14 : uy < -0.35 ? -6 : 5),
+          x: bx + ux * (20 + Math.abs(ux) * PILL_PAD_X),
+          y: by + uy * 20 + (uy > 0.35 ? 18 : uy < -0.35 ? -8 : LABEL_MID),
           anchor: ux > 0.35 ? "start" : ux < -0.35 ? "end" : "middle",
         },
-        sideLabel(bx, by, g.n, 18),                          // either side of the tip
-        sideLabel(bx, by, [-g.n[0], -g.n[1]], 18),
+        sideLabel(bx, by, g.n, 10),                          // either side of the tip
+        sideLabel(bx, by, [-g.n[0], -g.n[1]], 10),
       ];
+    }
+    case "text": {
+      if (!isFinitePt(s.center)) return [];
+      const [x, y] = toView(s.center);
+      if (!isFiniteNum(x) || !isFiniteNum(y)) return [];
+      const step = PILL_HALF_H * 2 + 4;
+      return [0, step, -step, step * 2, -step * 2].map((dy) => ({ x, y: y + LABEL_MID + dy, anchor: "middle" as const }));
     }
     default:
       return [];
   }
 }
 
+/** Point the label belongs to; further candidates are pushed away from it. */
+function labelRef(s: Shape, toView: (p: Pt) => Pt, scale: number): Pt | null {
+  switch (s.kind) {
+    case "circle": {
+      const g = circleGeom(s, toView, scale);
+      return g ? [g.cx, g.cy] : null;
+    }
+    case "box": {
+      const g = rectGeom(s.rect, toView);
+      return g ? [g.L + g.W / 2, g.T + g.H / 2] : null;
+    }
+    case "line":
+    case "arrow": {
+      const g = segGeom(s, toView);
+      return g ? [(g.a[0] + g.b[0]) / 2, (g.a[1] + g.b[1]) / 2] : null;
+    }
+    case "vector": {
+      const g = segGeom(s, toView);
+      return g ? g.b : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** The label's glass pill, in view coordinates. Collision tests use this, not the bare text. */
 function labelBox(p: LabelPlacement, text: string): Box {
-  const w = text.length * CHAR_W;
+  const w = textWidth(text);
   const x0 = p.anchor === "start" ? p.x : p.anchor === "end" ? p.x - w : p.x - w / 2;
-  const y0 = p.y - LABEL_ASCENT;
-  return { x0, y0, x1: x0 + w, y1: y0 + LABEL_H };
+  const mid = p.y - LABEL_MID;
+  return { x0: x0 - PILL_PAD_X, y0: mid - PILL_HALF_H, x1: x0 + w + PILL_PAD_X, y1: mid + PILL_HALF_H };
 }
 
 /** Segments a shape occupies, in view coordinates, for label collision tests. */
@@ -348,22 +393,19 @@ function obstaclesOf(s: Shape, toView: (p: Pt) => Pt, scale: number): Seg[] {
     }
     case "stroke":
       return polySegs(strokePts(s, toView));
-    case "text": {
-      if (!s.label || !isFinitePt(s.center)) return [];
-      const [x, y] = toView(s.center);
-      if (!isFiniteNum(x) || !isFiniteNum(y)) return [];
-      return rectSegs(labelBox({ x, y: y + 5, anchor: "middle" }, s.label));
-    }
     default:
-      return [];
+      return [];   // text shapes are pills: the placer treats them as placed boxes, not strokes
   }
 }
 
 /** 0 means clean. Otherwise a rough cost: label overlap area, stroke hits, and leaving the viewport. */
 function scoreCandidate(box: Box, segs: Seg[], placed: Box[], vp: { width: number; height: number } | undefined): number {
   let score = 0;
-  for (const p of placed) score += boxOverlapArea(box, p);
   const grown = inflate(box, 3);
+  for (const p of placed) {
+    const area = boxOverlapArea(grown, p);
+    if (area > 0) score += 600 + area;   // a pill on a pill is nearly as bad as a pill on a stroke
+  }
   for (const s of segs) if (segHitsBox(s, grown)) score += 1000;
   if (vp && (box.x0 < 0 || box.y0 < 0 || box.x1 > vp.width || box.y1 > vp.height)) score += 1e6;
   return score;
@@ -391,18 +433,32 @@ function computePlacements(
     placed.push(labelBox(cached, text));
   }
 
-  // New labels, greedily in shape order.
-  for (const { shape } of items) {
-    const text = placeableText(shape);
-    if (!text || out.has(shape.id)) continue;
-    const cands = labelCandidates(shape, toView, scale);
-    if (cands.length === 0) continue;
-    let pick = cands[0];
+  // New labels, greedily: standalone text first (it is where the author put it), then shape labels.
+  // Each label tries its own candidates, then the same ones pushed 12, 24 and 36 px further out,
+  // and only then settles for the least-bad spot.
+  const fresh = items.filter(({ shape }) => placeableText(shape) && !out.has(shape.id));
+  fresh.sort((p, q) => Number(q.shape.kind === "text") - Number(p.shape.kind === "text"));
+  for (const { shape } of fresh) {
+    const text = placeableText(shape)!;
+    const base = labelCandidates(shape, toView, scale);
+    if (base.length === 0) continue;
+    const ref = shape.kind === "text" ? null : labelRef(shape, toView, scale);
+    let pick = base[0];
     let best = Infinity;
-    for (const cand of cands) {
-      const score = scoreCandidate(labelBox(cand, text), segs, placed, vp);
-      if (score === 0) { pick = cand; break; }
-      if (score < best) { best = score; pick = cand; }
+    search:
+    for (const push of ref ? [0, 12, 24, 36] : [0]) {
+      for (const cand0 of base) {
+        let cand = cand0;
+        if (push > 0 && ref) {
+          const b0 = labelBox(cand0, text);
+          const dx = (b0.x0 + b0.x1) / 2 - ref[0], dy = (b0.y0 + b0.y1) / 2 - ref[1];
+          const L = Math.hypot(dx, dy) || 1;
+          cand = { x: cand0.x + (dx / L) * push, y: cand0.y + (dy / L) * push, anchor: cand0.anchor };
+        }
+        const score = scoreCandidate(labelBox(cand, text), segs, placed, vp) + push * 0.5;
+        if (score === 0) { pick = cand; best = 0; break search; }
+        if (score < best) { best = score; pick = cand; }
+      }
     }
     out.set(shape.id, pick);
     placed.push(labelBox(pick, text));
@@ -439,30 +495,117 @@ function Stroke({ d, color, width, c, dash, opacity, dy }: {
 }
 
 /**
- * Main stroke, optional halo underlay (2 px per side wider), and a soft shadow underlay
- * offset 1.5 px down. Underlays are plain offset copies, never SVG or CSS filters.
+ * A hand-drawn stroke along `poly`: soft shadow and optional halo underlays (plain offset copies,
+ * never SVG or CSS filters), a pressure-style variable-width body revealed chunk by chunk, a broken
+ * gloss streak for texture, and a pen tip that rides the reveal.
  */
-function strokeNodes(d: string, c: Ctx, width = STROKE_W): ReactNode[] {
-  const out: ReactNode[] = [];
-  if (!c.side) out.push(<Stroke key="shadow" d={d} color="rgba(0,0,0,0.16)" width={width + 1.5} c={c} dy={1.5} />);
-  if (c.style.halo) out.push(<Stroke key="halo" d={d} color={c.style.halo} width={width + 4} c={c} />);
-  out.push(<Stroke key="main" d={d} color={c.style.stroke} width={width} c={c} />);
-  return out;
+function inkNodes(
+  poly: Pt[],
+  c: Ctx,
+  rnd: () => number,
+  o: InkOpts & { width?: number; tag?: string; delay?: number; opacity?: number; tip?: boolean } = {},
+): { d: string; nodes: ReactNode[] } {
+  const width = o.width ?? STROKE_W;
+  const tag = o.tag ?? "ink";
+  const delay = o.delay ?? c.delay;
+  const cc = delay === c.delay ? c : { ...c, delay };
+  if (c.side) {
+    const d = polyD(poly);
+    return { d, nodes: [<Stroke key={tag} d={d} color={c.style.stroke} width={width} c={cc} opacity={o.opacity} />] };
+  }
+  const g = inkGeom(poly, width, rnd, o);
+  const nodes: ReactNode[] = [
+    <Stroke key={`${tag}-shadow`} d={g.d} color="rgba(0,0,0,0.15)" width={width + 1} c={cc} dy={1.6} />,
+  ];
+  if (c.style.halo) nodes.push(<Stroke key={`${tag}-halo`} d={g.d} color={c.style.halo} width={width + 4.5} c={cc} />);
+  nodes.push(
+    <g key={tag} fill={c.style.stroke} opacity={o.opacity}>
+      <circle cx={fmt(g.caps[0].x)} cy={fmt(g.caps[0].y)} r={fmt(g.caps[0].r)} className="gt-ink"
+        style={{ animationDelay: `${delay}ms` }} />
+      {g.chunks.map((ch, i) => (
+        <path key={i} d={ch.d} className="gt-ink" style={{ animationDelay: `${Math.round(delay + ch.t * DRAW_MS)}ms` }} />
+      ))}
+      <circle cx={fmt(g.caps[1].x)} cy={fmt(g.caps[1].y)} r={fmt(g.caps[1].r)} className="gt-ink"
+        style={{ animationDelay: `${delay + DRAW_MS - 30}ms` }} />
+    </g>,
+  );
+  if (g.sheen) {
+    nodes.push(
+      <path key={`${tag}-sheen`} d={g.sheen} fill="none" stroke="#ffffff" strokeOpacity={0.36}
+        strokeWidth={fmt(Math.max(0.8, width * 0.24))} strokeLinecap="round" strokeDasharray="17 4 9 3 26 6 6 3"
+        transform="translate(-0.45 -0.75)" className="gt-fade" style={{ animationDelay: `${delay + DRAW_MS}ms` }} />,
+    );
+  }
+  if (o.tip !== false) nodes.push(<PenTip key={`${tag}-tip`} pts={g.pts} delay={delay} color={c.style.stroke} />);
+  return { d: g.d, nodes };
+}
+
+/**
+ * Pen tip that travels along a stroke while it draws, then lifts and fades. Driven by one Web
+ * Animation (transform + opacity only), timed like the chunk reveal: linear over DRAW_MS.
+ */
+function PenTip({ pts, delay, color }: { pts: Pt[]; delay: number; color: string }): ReactElement | null {
+  const ref = useRef<SVGGElement>(null);
+  const first = useRef({ pts, delay });
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    const p = first.current.pts;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!el || typeof el.animate !== "function" || p.length < 2 || reduce) { setDone(true); return; }
+    const total = DRAW_MS + TIP_LINGER_MS;
+    const f = DRAW_MS / total;
+    const count = Math.min(p.length, 32);
+    const frames: Keyframe[] = [];
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1);
+      const q = p[Math.round(t * (p.length - 1))];
+      frames.push({ transform: `translate(${fmt(q[0])}px, ${fmt(q[1])}px)`, opacity: 1, offset: t * f });
+    }
+    const last = p[p.length - 1];
+    frames.push({ transform: `translate(${fmt(last[0] + 5)}px, ${fmt(last[1] - 8)}px)`, opacity: 0, offset: 1 });
+    let anim: Animation;
+    try {
+      anim = el.animate(frames, { duration: total, delay: first.current.delay, fill: "both", easing: "linear" });
+    } catch {
+      setDone(true);
+      return;
+    }
+    anim.onfinish = () => setDone(true);
+    return () => anim.cancel();
+  }, []);
+  if (done) return null;
+  // Drawn pointing along -x with the point at the origin, then leaned like a pen held in the right hand.
+  return (
+    <g ref={ref} className="gt-tip">
+      <g transform="rotate(-52) scale(1.12)">
+        <path d="M0 0 L9 -3.6 L30 -3.6 Q32 -3.6 32 -1.6 L32 1.6 Q32 3.6 30 3.6 L9 3.6 Z" fill="rgba(0,0,0,0.2)"
+          transform="translate(2.4 2.2)" />
+        <path d="M9 -3.6 L28 -3.6 L28 3.6 L9 3.6 Z" fill={color} />
+        <path d="M28 -3.6 L30 -3.6 Q32 -3.6 32 -1.6 L32 1.6 Q32 3.6 30 3.6 L28 3.6 Z" fill="#2b3140" />
+        <path d="M3.2 -1.3 L9 -3.6 L9 3.6 L3.2 1.3 Z" fill="#f3dfbd" />
+        <path d="M0 0 L3.2 -1.3 L3.2 1.3 Z" fill={color} />
+        <path d="M10 -1.7 L27 -1.7" fill="none" stroke="#ffffff" strokeOpacity={0.55} strokeWidth={1.1} strokeLinecap="round" />
+        <path d="M0 0 L9 -3.6 L30 -3.6 Q32 -3.6 32 -1.6 L32 1.6 Q32 3.6 30 3.6 L9 3.6 Z" fill="none"
+          stroke="rgba(10,14,24,0.55)" strokeWidth={0.7} strokeLinejoin="round" />
+      </g>
+    </g>
+  );
 }
 
 /** Arrowhead (or any filled glyph) that fades in after its stroke. */
 function headNodes(d: string, c: Ctx, tag: string): ReactNode[] {
-  const delay = c.delay + DRAW_MS;
+  const delay = c.delay + DRAW_MS - 40;
   const cls = c.side ? undefined : "gt-rise";
   const out: ReactNode[] = [];
   if (c.style.halo) {
     out.push(
-      <path key={`${tag}-halo`} d={d} fill={c.style.halo} stroke={c.style.halo} strokeWidth={4}
+      <path key={`${tag}-halo`} d={d} fill={c.style.halo} stroke={c.style.halo} strokeWidth={4.5}
         strokeLinejoin="round" className={cls} style={{ animationDelay: `${delay}ms` }} />,
     );
   }
   out.push(
-    <path key={tag} d={d} fill={c.style.stroke} stroke={c.style.stroke} strokeWidth={1}
+    <path key={tag} d={d} fill={c.style.stroke} stroke={c.style.stroke} strokeWidth={1.4}
       strokeLinejoin="round" className={cls} style={{ animationDelay: `${delay}ms` }} />,
   );
   return out;
@@ -472,7 +615,16 @@ function labelStyle(c: Ctx): { fill: string; stroke: string } {
   return { fill: c.style.stroke, stroke: c.style.labelHalo ?? "none" };
 }
 
-/** Text label. Fades in after the stroke, unless it is a sidenote (the group handles entrance). */
+function pillOf(c: Ctx): PillStyle | null {
+  if (c.style.pill === false) return null;
+  return c.style.pill ?? pillFor(c.style.stroke);
+}
+
+/**
+ * Text label on a small glass pill: gradient body, hairline edge in the ink colour, a specular line
+ * along the top and an offset shadow copy. Fades in after the stroke, unless it is a sidenote
+ * (the group handles entrance). `size` is the font size; the pill scales with it.
+ */
 function labelEl(
   key: string,
   text: string | undefined,
@@ -482,19 +634,38 @@ function labelEl(
   c: Ctx,
   className = "gt-label",
   delay: number = c.delay + DRAW_MS,
+  size = 16,
 ): ReactNode {
   if (!text || !isFiniteNum(x) || !isFiniteNum(y)) return null;
+  const pill = pillOf(c);
+  if (!pill) {
+    return (
+      <text key={key} x={fmt(x)} y={fmt(y)} textAnchor={anchor}
+        className={c.side ? className : `${className} gt-rise`}
+        style={{ ...labelStyle(c), animationDelay: `${delay}ms` }}>
+        {text}
+      </text>
+    );
+  }
+  const k = size / 16;
+  const w = textWidth(text, size, size === 16 ? 700 : 600);
+  const tx = anchor === "start" ? x : anchor === "end" ? x - w : x - w / 2;
+  const padX = PILL_PAD_X * (0.5 + 0.5 * k);
+  const hh = PILL_HALF_H * (0.35 + 0.65 * k);
+  const px = tx - padX, py = y - LABEL_MID * k - hh, pw = w + padX * 2, ph = hh * 2;
   return (
-    <text
-      key={key}
-      x={fmt(x)}
-      y={fmt(y)}
-      textAnchor={anchor}
-      className={c.side ? className : `${className} gt-rise`}
-      style={{ ...labelStyle(c), animationDelay: `${delay}ms` }}
-    >
-      {text}
-    </text>
+    <g key={key} className={c.side ? undefined : "gt-rise"} style={{ animationDelay: `${delay}ms` }}>
+      <rect x={fmt(px - 0.5)} y={fmt(py + 1.6)} width={fmt(pw + 1)} height={fmt(ph + 0.6)} rx={fmt(hh + 0.3)}
+        fill={pill.shadow} />
+      <rect x={fmt(px)} y={fmt(py)} width={fmt(pw)} height={fmt(ph)} rx={fmt(hh)}
+        fill={`url(#gt-pill-${pill.tone})`} stroke={c.style.stroke} strokeOpacity={0.34} strokeWidth={0.8} />
+      <path d={`M${fmt(px + hh * 0.8)} ${fmt(py + 1.3)} L${fmt(px + pw - hh * 0.8)} ${fmt(py + 1.3)}`} fill="none"
+        stroke={pill.shine} strokeWidth={1} strokeLinecap="round" />
+      <text x={fmt(tx + w / 2)} y={fmt(y)} textAnchor="middle" className={className}
+        style={{ fill: c.style.stroke, stroke: "none" }}>
+        {text}
+      </text>
+    </g>
   );
 }
 
@@ -503,12 +674,13 @@ function labelEl(
 function buildCircle(s: Shape, c: Ctx): Built | null {
   const g = circleGeom(s, c.toView, c.scale);
   if (!g) return null;
-  const d = circlePath(g.cx, g.cy, g.R);
+  const rnd = seedOf(s.id);
+  const ink = inkNodes(handCircle(g.cx, g.cy, g.R, rnd), c, rnd, { loop: true });
   const lp = placedAt(c, s);
   return {
-    main: d,
+    main: ink.d,
     nodes: [
-      ...strokeNodes(d, c),
+      ...ink.nodes,
       lp ? labelEl("label", s.label, lp.x, lp.y, lp.anchor, c) : null,
     ],
   };
@@ -517,12 +689,13 @@ function buildCircle(s: Shape, c: Ctx): Built | null {
 function buildBox(s: Shape, c: Ctx): Built | null {
   const g = rectGeom(s.rect, c.toView);
   if (!g) return null;
-  const d = roundedRectPath(g.L, g.T, g.W, g.H, 6);
+  const rnd = seedOf(s.id);
+  const ink = inkNodes(handBox(g.L, g.T, g.W, g.H, rnd), c, rnd, { loop: true });
   const lp = placedAt(c, s);
   return {
-    main: d,
+    main: ink.d,
     nodes: [
-      ...strokeNodes(d, c),
+      ...ink.nodes,
       lp ? labelEl("label", s.label, lp.x, lp.y, lp.anchor, c) : null,
     ],
   };
@@ -535,12 +708,14 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
   const { a, b } = g;
 
   const isVector = kind === "vector";
-  const width = isVector ? 4 : STROKE_W;
-  const head = kind === "line" ? null : arrowHead(a, b, 15, 12);
-  const d = linePath(a, head ? head.shaftEnd : b);
+  const width = isVector ? 4.4 : STROKE_W;
+  const rnd = seedOf(s.id);
+  const head = kind === "line" ? null : arrowHead(a, b, isVector ? 17 : 15, isVector ? 14 : 12);
+  const ink = inkNodes(handLine(a, head ? head.shaftEnd : b, rnd), c, rnd, { width, taperEnd: !head });
+  const d = ink.d;
 
-  const nodes: ReactNode[] = strokeNodes(d, c, width);
-  if (head) nodes.push(...headNodes(head.d, c, "head"));
+  const nodes: ReactNode[] = ink.nodes;
+  if (head) nodes.push(...headNodes(handHead(b, g.u, isVector ? 17 : 15, isVector ? 14 : 12, rnd), c, "head"));
 
   const lp = placedAt(c, s);
   if (isVector) {
@@ -567,29 +742,17 @@ function buildSegment(s: Shape, c: Ctx, kind: "line" | "arrow" | "vector"): Buil
 function buildStroke(s: Shape, c: Ctx): Built | null {
   const pts = strokePts(s, c.toView);
   if (pts.length < 2) return null;
-  const d = smoothPath(pts);
-  return { main: d, nodes: strokeNodes(d, c) };
+  const rnd = seedOf(s.id);
+  const ink = inkNodes(curvePts(pts), c, rnd);
+  return { main: ink.d, nodes: ink.nodes };
 }
 
 function buildText(s: Shape, c: Ctx): Built | null {
   if (!isFinitePt(s.center) || !s.label) return null;
   const [x, y] = c.toView(s.center);
   if (!isFiniteNum(x) || !isFiniteNum(y)) return null;
-  return {
-    nodes: [
-      <text
-        key="text"
-        x={fmt(x)}
-        y={fmt(y)}
-        dy="0.35em"
-        textAnchor="middle"
-        className={c.side ? "gt-label" : "gt-label gt-rise"}
-        style={{ ...labelStyle(c), animationDelay: `${c.delay}ms` }}
-      >
-        {s.label}
-      </text>,
-    ],
-  };
+  const lp = c.placements.get(s.id) ?? { x, y: y + LABEL_MID, anchor: "middle" as const };
+  return { nodes: [labelEl("text", s.label, lp.x, lp.y, lp.anchor, c, "gt-label", c.delay)] };
 }
 
 function buildGraph(s: Shape, c: Ctx): Built | null {
@@ -676,8 +839,7 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
       });
     } else if (pts.length >= 2) {
       nodes.push(
-        <Stroke key={`s${j}`} d={smoothPath(pts)} color={c.style.stroke} width={3} c={{ ...c, delay: base }}
-          opacity={opacity} />,
+        ...inkNodes(curvePts(pts), c, seedOf(`${s.id}/s${j}`), { width: 3.2, tag: `s${j}`, delay: base, opacity }).nodes,
       );
     }
     if (ser.label) {
@@ -687,7 +849,7 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
       const ly = Math.max(pt + 12, last[1] - 8);
       nodes.push(
         labelEl(`slabel${j}`, ser.label, lx, ly, nearRight ? "end" : "start", c,
-          "gt-label gt-label-series", base + DRAW_MS),
+          "gt-label gt-label-series", base + DRAW_MS, 13),
       );
     }
   });

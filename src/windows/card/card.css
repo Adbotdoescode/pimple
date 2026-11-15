@@ -760,3 +760,12 @@ body,
     animation: none !important;
   }
 }
+
+/* Unobtrusive service note (for example a voice fallback). */
+.notice {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+  letter-spacing: 0.1px;
+}

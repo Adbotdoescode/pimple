@@ -5,6 +5,14 @@ export interface ShapeStyle {
   halo?: string;       // underlay behind the stroke
   labelHalo?: string;  // halo behind label text; undefined means no label halo
   fill?: string;
+  /** Glass pill behind labels. Omit for the default (derived from the stroke); false turns pills off. */
+  pill?: PillStyle | false;
+}
+
+export interface PillStyle {
+  tone: "light" | "dark";
+  shine: string;   // specular line along the top edge
+  shadow: string;  // offset underlay copy, never a filter
 }
 
 const LIGHT_BG: Record<ColorRole, string> = {
@@ -68,6 +76,16 @@ export function contrastRatio(l1: number, l2: number): number {
 /** Legibility halo for a label drawn in `stroke`: white-ish for dark strokes, near-black for light ones. */
 export function labelHaloFor(stroke: string): string {
   return relLumFromHex(stroke) < 0.35 ? WHITE_HALO : INK_HALO;
+}
+
+/**
+ * Glass pill for a label drawn in `stroke`: a light pill for dark inks, a dark pill for light inks,
+ * so the text contrasts with its own pill whatever is behind it.
+ */
+export function pillFor(stroke: string): PillStyle {
+  return relLumFromHex(stroke) < 0.35
+    ? { tone: "light", shine: "rgba(255,255,255,0.95)", shadow: "rgba(15,23,42,0.16)" }
+    : { tone: "dark", shine: "rgba(255,255,255,0.34)", shadow: "rgba(0,0,0,0.34)" };
 }
 
 function pick(role: ColorRole, light: boolean, variant: "main" | "sidenote"): string {
