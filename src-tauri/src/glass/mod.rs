@@ -7,6 +7,7 @@ pub mod capture;
 #[cfg(debug_assertions)]
 pub mod debug_server;
 pub mod keys;
+pub mod lens;
 pub mod shortcuts;
 pub mod stt;
 pub mod tray;
@@ -34,6 +35,7 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "show_window",
     "hide_window",
     "read_source_file",
+    "lens_grab",
 ];
 
 pub fn is_glass_command(name: &str) -> bool {
@@ -59,6 +61,7 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         windows::show_window,
         windows::hide_window,
         read_source_file,
+        lens::lens_grab,
     ]
 }
 

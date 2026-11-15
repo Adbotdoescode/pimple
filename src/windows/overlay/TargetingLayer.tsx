@@ -86,42 +86,20 @@ export function TargetingLayer({ origin }: { origin: Origin }) {
 }
 
 function Lens({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  // The bubble itself is the lens now (a WebGL drop that refracts the live screen), so the overlay
+  // only hints at the capture box. Nothing is drawn inside the glass: it would be refracted.
   const half = r * 1.12; // capture box: bounding square plus the 12% padding the capture uses
+  const c = Math.min(14, half * 0.25);
+  const corner = (sx: number, sy: number) => {
+    const x = cx + sx * half;
+    const y = cy + sy * half;
+    return `M${x - sx * c} ${y} H${x} V${y - sy * c}`;
+  };
+  const d = [corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1)].join(" ");
   return (
     <>
-      <rect
-        x={cx - half}
-        y={cy - half}
-        width={half * 2}
-        height={half * 2}
-        rx={Math.min(12, half * 0.2)}
-        fill="none"
-        stroke="rgba(255,255,255,0.35)"
-        strokeWidth={1}
-        strokeDasharray="4 4"
-      />
-      <circle cx={cx} cy={cy} r={r} fill="rgba(255,255,255,0.04)" stroke="none" />
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={6}
-        opacity={0.45}
-        filter={`url(#${GLOW_ID})`}
-      />
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth={4} />
-      <circle
-        className="gt-march"
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        stroke="#FFFFFF"
-        strokeWidth={2}
-        strokeDasharray="8 6"
-      />
+      <path d={d} fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth={3} strokeLinecap="round" />
+      <path d={d} fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} strokeLinecap="round" />
     </>
   );
 }

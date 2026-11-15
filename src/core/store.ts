@@ -10,8 +10,23 @@ import {
   type TutorResponse,
 } from "../../shared/contracts";
 
-/** The broadcast snapshot. isFixture is true when the capture came from a debug fixture path. */
-export type BrainSnapshot = SessionSnapshot & { isFixture: boolean };
+/** Verifier summary for the card. claims: up to 3 distinct claim strings from flagged sentences. */
+export interface VerifierView {
+  ran: boolean;
+  verdict?: "pass" | "fail";
+  ms?: number;
+  claims?: string[];
+}
+
+/**
+ * The broadcast snapshot, extended locally (the orchestrator adds these to contracts later).
+ * isFixture: the capture came from a debug fixture. notice: session-level note (e.g. TTS fallback), cleared on card-close.
+ */
+export type BrainSnapshot = Omit<SessionSnapshot, "verifier"> & {
+  isFixture: boolean;
+  notice: string | null;
+  verifier: VerifierView | null;
+};
 
 /** Everything the brain keeps: the broadcast snapshot plus the full capture (base64, never broadcast). */
 export interface SessionData extends BrainSnapshot {
@@ -31,6 +46,7 @@ export interface SessionStore extends SessionData {
 export function initialSnapshot(settings: AppSettings): BrainSnapshot {
   return {
     isFixture: false,
+    notice: null,
     phase: "idle",
     mode: null,
     capture: null,
@@ -87,7 +103,8 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
     set(partial);
   },
 
-  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null }),
+  // The notice survives a new capture; card-close clears it.
+  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: get().notice }),
 
   appendSegment: (seg) =>
     set((s) => {
@@ -116,6 +133,7 @@ export function getSnapshot(): BrainSnapshot {
   const s = sessionStore.getState();
   return {
     isFixture: s.isFixture,
+    notice: s.notice,
     phase: s.phase,
     mode: s.mode,
     capture: s.capture ? { ...s.capture, imageBase64: "" } : null,

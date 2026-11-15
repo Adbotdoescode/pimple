@@ -1,0 +1,18 @@
+[
+  {
+    "id": "incline-normal-force",
+    "fixture": "demo/fixtures/incline.png",
+    "question": "Why is the normal force smaller than the weight on this incline?",
+    "reference": "The normal force only balances the part of gravity that pushes into the slope. For a frictionless incline at angle θ, N = mg cos θ, which is less than mg for any angle above 0°. With m = 5 kg and θ = 30°, N ≈ 42.4 N while mg ≈ 49 N.",
+    "key_facts": [
+      "N = mg cos θ",
+      "N ≈ 42.4 N for m = 5 kg and θ = 30°",
+      "The component of the weight along the slope is mg sin θ"
+    ],
+    "known_wrong": [
+      "The normal force equals mg on any surface",
+      "N = mg sin θ",
+      "The normal force is larger than the weight on an incline"
+    ]
+  }
+]

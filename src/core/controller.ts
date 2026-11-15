@@ -57,7 +57,10 @@ interface VerifierStats {
   ranAny: boolean;
   droppedAny: boolean;
   maxMs: number;
+  claims: string[]; // distinct claims from flagged sentences, max 3
 }
+
+const MIC_DOWN = "Mic unavailable — type your question below";
 
 /**
  * Per-attempt gate for verified streaming. Segments are verified in parallel but released in order:
@@ -339,40 +342,38 @@ function sideHandlers(t: Turn, alive: () => boolean): TutorStreamHandlers {
   };
 }
 
-async function startListening(): Promise<void> {
-  patch({ partialTranscript: "" });
-  setPhase("listening");
+/** One attempt to open the mic. Returns false (and logs) if it cannot; never retries. */
+async function tryMic(): Promise<boolean> {
   try {
     await invoke(CMD.sttStart);
+    return true;
   } catch (err) {
-    // Stay in listening so the typed box can still be used.
     console.warn("[brain] stt_start failed:", errMsg(err));
-    patch({ error: "Mic unavailable — type your question" });
+    return false;
   }
 }
 
+async function startListening(): Promise<void> {
+  patch({ partialTranscript: "" });
+  setPhase("listening");
+  // Stay in listening on failure so the typed box can still be used.
+  if (!(await tryMic())) patch({ error: MIC_DOWN });
+}
+
 async function openMicForCheck(t: Turn): Promise<void> {
-  try {
-    await invoke(CMD.sttStart);
-  } catch (err) {
-    if (!isCurrent(t)) return;
-    console.warn("[brain] stt_start failed:", errMsg(err));
-    t.stage = "done";
-    patch({ error: "Mic unavailable — type your question" });
-    setPhase("idle");
-  }
+  if (await tryMic()) return;
+  if (!isCurrent(t)) return;
+  t.stage = "done";
+  patch({ error: MIC_DOWN });
+  setPhase("listening"); // the typed box takes the answer
 }
 
 /** Opens the mic for a push-to-talk or "which part" answer. On failure the main explanation resumes. */
 async function openMicForInterrupt(t: Turn, ix: Interruption): Promise<void> {
-  try {
-    await invoke(CMD.sttStart);
-  } catch (err) {
-    if (!isCurrent(t) || t.interruption !== ix) return;
-    console.warn("[brain] stt_start failed:", errMsg(err));
-    patch({ error: "Mic unavailable — carrying on" });
-    beginBack(t);
-  }
+  if (await tryMic()) return;
+  if (!isCurrent(t) || t.interruption !== ix) return;
+  patch({ error: MIC_DOWN });
+  beginBack(t);
 }
 
 /** Ends the turn: optionally mention parked questions first, then idle. */
@@ -461,14 +462,33 @@ function advance(t: Turn): void {
   }
 }
 
-function fail(t: Turn, message: string): void {
+/** A short, user-facing message for an error from Claude, the key store or the network. */
+function friendlyError(err: unknown): string {
+  const msg = errMsg(err);
+  if (/Anthropic key missing/i.test(msg)) return "Anthropic key missing — add it in Settings → Keys";
+  if (/connection|network|failed to fetch|ENOTFOUND|ECONN|timed out|timeout/i.test(msg)) {
+    return "I couldn't reach Claude. Check your connection and try again.";
+  }
+  return msg.slice(0, 160);
+}
+
+/** Stop everything for this turn, show the error, and reopen the mic so the student can just ask again. */
+async function recoverToListening(message: string): Promise<void> {
+  turn?.ac.abort();
+  turn = null;
+  player.stop();
+  patch({ error: message, partialTranscript: "" });
+  setPhase("listening");
+  await micCancel();
+  await tryMic(); // no retry loop: if the mic is down, the error stands and the typed box is the fallback
+}
+
+function fail(t: Turn, err: unknown): void {
   if (!isCurrent(t)) return; // a cancelled turn's error is expected noise
-  console.warn("[brain] error:", message);
+  console.warn("[brain] error:", errMsg(err));
   t.stage = "done";
   t.interruption = null;
-  player.stop();
-  patch({ error: message });
-  setPhase("idle");
+  void recoverToListening(friendlyError(err));
 }
 
 /** Space-bar interruption: pause the main explanation and start the "which part" or push-to-talk step. */
@@ -520,11 +540,10 @@ async function micCancel(): Promise<void> {
 
 async function openMicFrozen(t: Turn): Promise<void> {
   patch({ partialTranscript: "" });
-  try {
-    await invoke(CMD.sttStart);
-  } catch (err) {
-    console.warn("[brain] stt_start failed:", errMsg(err));
-    if (isCurrent(t)) patch({ error: "Mic unavailable — type your question" });
+  if (await tryMic()) return;
+  if (isCurrent(t)) {
+    patch({ error: MIC_DOWN });
+    setPhase("listening"); // typed box is the fallback
   }
 }
 
@@ -627,6 +646,7 @@ function closeCard(): void {
   cancelAll();
   pendingFollowUp = null;
   st().resetSession();
+  patch({ notice: null }); // the notice lasts for the session only
   setPhase("idle");
 }
 
@@ -674,7 +694,7 @@ async function handleObjection(t: Turn, ix: Interruption, text: string): Promise
     maybeShowWhiteboard(t, final.surface);
     advance(t);
   } catch (err) {
-    fail(t, errMsg(err));
+    fail(t, err);
   }
 }
 
@@ -764,7 +784,7 @@ async function handleCheckAnswer(t: Turn, answer: string): Promise<void> {
     t.streamDone = true;
     advance(t);
   } catch (err) {
-    fail(t, errMsg(err));
+    fail(t, err);
   }
 }
 
@@ -792,7 +812,14 @@ function commitMetaOnly(t: Turn, r: TutorResponse): void {
 }
 
 function publishVerifier(g: Gate): void {
-  patch({ verifier: { ran: g.ranAny, verdict: g.droppedAny ? "fail" : "pass", ms: g.maxMs } });
+  patch({ verifier: { ran: g.ranAny, verdict: g.droppedAny ? "fail" : "pass", ms: g.maxMs, claims: [...g.claims] } });
+}
+
+function addClaims(g: Gate, claims: string[]): void {
+  for (const c of claims) {
+    if (g.claims.length >= 3) return;
+    if (!g.claims.includes(c)) g.claims.push(c);
+  }
 }
 
 /** Release every resolved segment at the front of the gate, in order. */
@@ -850,6 +877,7 @@ function onGatedVerdict(
   if (!live(t, g)) return;
   g.ranAny = g.ranAny || r.ran;
   g.droppedAny = g.droppedAny || !r.ok;
+  if (!r.ok) addClaims(g, r.claims);
   g.maxMs = Math.max(g.maxMs, r.ms);
 
   // Nothing has been spoken while the first sentence is pending: regenerate the whole answer once.
@@ -863,6 +891,7 @@ function onGatedVerdict(
       ranAny: g.ranAny,
       droppedAny: g.droppedAny,
       maxMs: g.maxMs,
+      claims: g.claims,
     });
     return;
   }
@@ -926,6 +955,7 @@ function runGatedAttempt(t: Turn, base: TutorCallInput, allowRegen: boolean, car
     ranAny: carry?.ranAny ?? false,
     droppedAny: carry?.droppedAny ?? false,
     maxMs: carry?.maxMs ?? 0,
+    claims: [...(carry?.claims ?? [])],
   };
   t.gate = g;
   const onTurnAbort = () => g.ac.abort();
@@ -946,7 +976,7 @@ function runGatedAttempt(t: Turn, base: TutorCallInput, allowRegen: boolean, car
     })
     .catch((err) => {
       if (!live(t, g)) return;
-      fail(t, errMsg(err));
+      fail(t, err);
     })
     .finally(() => t.ac.signal.removeEventListener("abort", onTurnAbort));
 }
@@ -998,7 +1028,7 @@ async function ask(question: string): Promise<void> {
     if (input.settings.verifierEnabled) await runGatedAttempt(t, input, true);
     else await askStreaming(t, input);
   } catch (err) {
-    fail(t, errMsg(err));
+    fail(t, err);
   }
 }
 
@@ -1187,9 +1217,7 @@ export async function startController(): Promise<() => void> {
   const run = (p: Promise<void>) =>
     p.catch((err) => {
       console.error("[brain] handler failed:", err);
-      cancelAll();
-      patch({ error: errMsg(err) });
-      setPhase("idle");
+      void recoverToListening(friendlyError(err));
     });
 
   const unlisten = await Promise.all([
@@ -1213,7 +1241,17 @@ export async function startController(): Promise<() => void> {
       const ph = st().phase;
       if (ph === "listening" || ph === "checking" || ph === "interrupted") patch({ partialTranscript: e.payload.text });
     }),
-    listen<SttError>(EV.sttError, (e) => patch({ error: e.payload.message })),
+    listen<SttError>(EV.sttError, (e) => {
+      console.warn("[brain] stt error:", e.payload.message);
+      patch({ error: MIC_DOWN });
+      const ph = st().phase;
+      if (ph === "checking" || ph === "interrupted") setPhase("listening");
+    }),
+    listen<{ reason: string }>(EV.ttsFallback, (e) => {
+      const reason = (e.payload?.reason ?? "").slice(0, 80);
+      console.warn("[brain] tts fallback:", reason);
+      patch({ notice: `ElevenLabs unavailable — using the Mac voice${reason ? ` (${reason})` : ""}` });
+    }),
     listen(EV.spaceTap, () => void run(onInterrupt("tap"))),
     listen(EV.spaceHoldStart, () => void run(onInterrupt("hold"))),
     listen(EV.spaceHoldEnd, () => onSpaceHoldEnd()),

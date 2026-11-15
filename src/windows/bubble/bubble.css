@@ -394,3 +394,40 @@ html:has(.gt-stage) #root {
     transition-duration: 1ms;
   }
 }
+
+/* ───────── Liquid lens (WebGL) ─────────
+   When the shader is running it draws the body, rim, shadow and dispersion itself; the CSS glass
+   layers step aside and only the state marks (core, bars, sweep, rings, flash) stay on top. */
+.gt-lens-on .gt-shadow,
+.gt-lens-on .gt-body,
+.gt-lens-on .gt-inner,
+.gt-lens-on .gt-chroma,
+.gt-lens-on .gt-rim,
+.gt-lens-on .gt-gloss,
+.gt-lens-on .gt-spec,
+.gt-lens-on .gt-glow {
+  display: none;
+}
+.gt-lens-on .gt-bubble:hover,
+.gt-lens-on .gt-bubble:active {
+  transform: none;
+}
+.gt-lens-on .gt-bubble[data-state="idle"] .gt-face {
+  animation: none;
+}
+/* State marks must read on white and on dark pages: bright centre, dark hairline, soft halo. */
+.gt-lens-on .gt-core {
+  width: 9px;
+  height: 9px;
+  background: radial-gradient(circle at 40% 35%, #ffffff 0%, #8fd4ff 45%, #5b7cff 100%);
+  box-shadow:
+    0 0 0 0.75px rgba(20, 40, 90, 0.45),
+    0 0 7px 2px rgba(90, 190, 255, 0.6),
+    0 0 16px 5px rgba(140, 110, 255, 0.28);
+}
+.gt-lens-on .gt-bubble[data-state="target"] .gt-core {
+  opacity: 0;
+}
+.gt-lens-on .gt-bar {
+  box-shadow: 0 0 0 0.75px rgba(20, 40, 90, 0.4), 0 0 8px 1px rgba(90, 200, 255, 0.55);
+}

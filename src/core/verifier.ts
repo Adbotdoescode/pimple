@@ -7,6 +7,8 @@ const VERIFIER_TIMEOUT_MS = 4000;
 const SEGMENT_TIMEOUT_MS = 3000;
 const REWRITE_TIMEOUT_MS = 2000;
 const PASS: VerifierResult = { verdict: "pass", unsupported_claims: [] };
+// A "claim" that says the thing is correct is not a flag (the checker sometimes lists its own passes).
+const NOT_A_FLAG = /arithmetic is correct|is correct|correctly/i;
 
 function shapeLabel(s: Shape): string {
   const parts = [s.label, s.magnitude, s.slider?.label].filter((x): x is string => !!x);
@@ -50,7 +52,7 @@ async function callVerifier(args: {
   const text = msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
   const parsed = JSON.parse(text) as { unsupported_claims?: unknown };
   const claims = Array.isArray(parsed.unsupported_claims)
-    ? parsed.unsupported_claims.filter((c): c is string => typeof c === "string")
+    ? parsed.unsupported_claims.filter((c): c is string => typeof c === "string" && !NOT_A_FLAG.test(c))
     : [];
   // Verdict follows the list, so the two can never disagree.
   return { verdict: claims.length > 0 ? "fail" : "pass", unsupported_claims: claims };

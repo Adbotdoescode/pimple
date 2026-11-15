@@ -33,12 +33,13 @@ import {
 } from "./spring";
 import { dockCard } from "./cardDock";
 import { LassoTracker, type LassoLoop } from "./lasso";
+import { lensState } from "./liquidLens";
 
 const SMALL = 104;
 const R_REST = 28;
 const R_LENS = 64;
 const R_MAX = 220;
-const EDGE_GAP = 12;
+const EDGE_GAP = -8; // negative: the droplet is half-merged into the screen edge (centre 20 pt in)
 const EDGE_MARGIN_Y = 24;
 const PARK_GAP = 16;
 const PARK_MARGIN = 8;
@@ -147,6 +148,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     modeSince: 0,
     phase: phase as Phase,
     idleSince: 0,
+    lastRegion: null as RectPts | null, // last committed target; the card keeps clear of it
   });
 
   /** State change with one concise log line (forwarded to the dev log). */
@@ -176,18 +178,23 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       const ly = fin(p.y - s.geom.y, s.geom.h / 2);
       el.style.setProperty("--lx", `${lx.toFixed(2)}px`);
       el.style.setProperty("--ly", `${ly.toFixed(2)}px`);
-      el.style.transform =
-        k < 0.002
-          ? "translateZ(0)"
-          : `rotate(${th.toFixed(4)}rad) scale(${(1 + 0.12 * k).toFixed(4)}, ${(1 - 0.1 * k).toFixed(4)}) rotate(${(-th).toFixed(4)}rad)`;
+      // Squash, stretch, glow and shadow are all drawn by the liquid-lens shader now.
       el.style.opacity = s.hidden ? "0" : "1";
-      // Outer glow breathes with speed; quantised so the filter is not re-rasterised every frame.
-      const gk = Math.round(k * 20) / 20;
-      if (gk !== s.glowK) {
-        s.glowK = gk;
-        el.style.filter = `drop-shadow(0 0 ${(6 + 8 * gk).toFixed(1)}px rgba(130, 200, 255, ${(0.15 + 0.25 * gk).toFixed(3)}))`;
-      }
     }
+    void th;
+    const L = lensState;
+    L.cx = fin(p.x, L.cx);
+    L.cy = fin(p.y, L.cy);
+    L.r = clamp(fin(s.rad.x, R_REST), R_REST * 0.9, R_MAX * 1.05);
+    L.tx = s.tx;
+    L.ty = s.ty;
+    L.fx = s.frame.x;
+    L.fy = s.frame.y;
+    L.fw = s.frame.w;
+    L.fh = s.frame.h;
+    L.mode = s.mode;
+    L.hidden = s.hidden;
+    L.ready = s.geomReady;
     const d = clamp(fin(s.rad.x, R_REST), R_REST, R_MAX) * 2;
     if (Math.abs(d - s.dRendered) > 0.2) {
       s.dRendered = d;
@@ -348,12 +355,13 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         sendIntent({ type: "settings-changed", settings: { bubbleEdge: side } });
       }
     }
+    render();
     ensureWindow("small");
     const settledMode = s.mode;
     s.chain = s.chain.then(() => {
       const c = S.current;
       if (c.mode !== settledMode) return;
-      return dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr);
+      return dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr, c.lastRegion);
     });
   }, [ensureWindow, render, setMode, sideOf]);
 
@@ -426,11 +434,21 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     setMode("parking", s.held ? "commit (held still)" : "commit");
     s.lensAt = 0;
     s.rT = R_REST;
-    const p = parkTarget(region);
+    // Spring to the screen edge AWAY from the target so the glass never covers its explanation.
+    const f = s.frame;
+    const away: Edge = region.x + region.w / 2 > f.x + f.w / 2 ? "left" : "right";
+    const p = edgeTarget(away);
+    s.lastRegion = region;
     s.tx = p.x;
-    s.ty = p.y;
+    s.ty = clamp(
+      fin(region.y + region.h / 2, p.y),
+      f.y + EDGE_MARGIN_Y + R_REST,
+      f.y + f.h - EDGE_MARGIN_Y - R_REST,
+    );
+    blog(`[bubble] park at ${away} edge (${s.tx.toFixed(0)},${s.ty.toFixed(0)}), away from the target`);
+    void parkTarget;
     startLoop();
-  }, [clearLens, parkTarget, resetLasso, setMode, startLoop]);
+  }, [clearLens, edgeTarget, parkTarget, resetLasso, setMode, startLoop]);
 
   const startReturn = useCallback((force?: Edge, reason = "return") => {
     const s = S.current;

@@ -2,7 +2,21 @@ import { useEffect, useRef, type CSSProperties, type KeyboardEvent } from "react
 import type { Phase, UiIntent } from "@shared/contracts";
 import { useBubbleGestures, type BubbleGestureOptions } from "./useBubbleGestures";
 import { useSttLevel } from "./useSttLevel";
+import { lensState } from "./liquidLens";
 import "./bubble.css";
+
+/** Phase colour the liquid lens picks up at its rim and halo: [r, g, b, strength]. */
+const TINT: Record<string, [number, number, number, number]> = {
+  idle: [0.55, 0.82, 1, 0],
+  target: [0.55, 0.85, 1, 0.1],
+  capture: [1, 1, 1, 0.5],
+  listen: [0.3, 0.85, 1, 0.5],
+  check: [1, 0.72, 0.25, 0.55],
+  think: [0.62, 0.5, 1, 0.5],
+  verify: [0.45, 0.6, 1, 0.5],
+  speak: [0.75, 0.9, 1, 0.55],
+  interrupt: [1, 0.66, 0.2, 0.7],
+};
 
 type BubbleState =
   | "idle"
@@ -51,6 +65,28 @@ export function Bubble({ phase, onIntent, diameter = 56, motion = 0, gestures }:
   const level = useSttLevel(listening);
   const levelRef = useRef(0);
   levelRef.current = level;
+
+  // Tint + breathing halo for the WebGL drop (speaking pulses, thinking breathes, mic follows level).
+  useEffect(() => {
+    lensState.tint = TINT[state] ?? TINT.idle;
+    let raf = 0;
+    const t0 = performance.now();
+    const tick = () => {
+      const t = (performance.now() - t0) / 1000;
+      lensState.pulse =
+        state === "speak"
+          ? 0.5 + 0.5 * Math.sin(t * 7)
+          : state === "think" || state === "verify"
+            ? 0.5 + 0.5 * Math.sin(t * 3)
+            : state === "listen" || state === "check"
+              ? Math.min(1, Math.sqrt(Math.max(0, levelRef.current)) * 1.6)
+              : 0;
+      raf = requestAnimationFrame(tick);
+    };
+    if (state !== "idle" && state !== "target") raf = requestAnimationFrame(tick);
+    else lensState.pulse = 0;
+    return () => cancelAnimationFrame(raf);
+  }, [state]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const barRefs = useRef<(HTMLSpanElement | null)[]>([]);
