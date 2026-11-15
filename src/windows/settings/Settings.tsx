@@ -358,6 +358,12 @@ export function Settings({
                     checked={settings.fastMode}
                     onChange={(v) => change({ fastMode: v })}
                   />
+                  <ToggleRow
+                    title="Open the mic automatically"
+                    subtitle="Off: hold Space or tap the mic in the card to talk"
+                    checked={settings.micAutoOpen !== false}
+                    onChange={(v) => change({ micAutoOpen: v })}
+                  />
                 </div>
               </Blob>
               <Blob title="Whiteboard">
