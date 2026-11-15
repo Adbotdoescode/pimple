@@ -100,6 +100,9 @@ function graphValueAt(g: GraphSpec, x: number): number | null {
   return pts[pts.length - 1][1];
 }
 
+/** Concepts arrive lowercase; the header shows them with a capital first letter. */
+const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** "N (N)" → "N": the unit suffix is dropped from the read-out. */
 const shortName = (label: string) => label.replace(/\s*\(.*\)\s*$/, "").trim() || "y";
 
@@ -232,7 +235,7 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
   // cannot move them off the screenshot.
   const prep = (shapes: Shape[]) =>
     backdrop
-      ? fitShapes(mapImageShapesToBoard(shapes, backdrop.w, backdrop.h), undefined, 0)
+      ? fitShapes(mapImageShapesToBoard(shapes, backdrop.w, backdrop.h), undefined, 0, { grow: false })
       : fitShapes(shapes);
   const mainShapes = useMemo(
     () => applySliders(prep(response?.shapes ?? []), sliderValues),
@@ -474,7 +477,7 @@ export function Whiteboard(props: WhiteboardProps) {
         <div className="wb-titles">
           <div className="wb-eyebrow">WHITEBOARD</div>
           <h1 className="wb-title" title={response?.concept}>
-            {response?.concept ?? "Nothing drawn yet"}
+            {response ? capitalise(response.concept) : "Nothing drawn yet"}
           </h1>
         </div>
         <div className="wb-actions">

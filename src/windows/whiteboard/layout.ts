@@ -6,12 +6,20 @@ import type { Pt, Shape } from "@shared/contracts";
 
 export interface Box { x: number; y: number; w: number; h: number }
 export interface BoardSize { w: number; h: number }
+/** grow: scale small compositions up to fill the board (whiteboard answers; off for overlay backdrops). */
+export interface FitOptions { grow?: boolean }
 
+const DEFAULT_BOARD: BoardSize = { w: 1600, h: 1000 };
 const TEXT_CHAR_W = 11;
 const TEXT_H = 28;
 const LABEL_PAD = 30;
 const TEXT_GAP = 8;
-const MAX_TEXT_PASSES = 30;
+const MAX_PASSES = 40;
+const GROW_MAX = 1.35;
+const NUDGE_STEPS = [14, -14, 28, -28];
+// Room the axis labels need beside a graph's plot (board units).
+const GRAPH_ZONE_LEFT = 64;
+const GRAPH_ZONE_BOTTOM = 56;
 
 const isNum = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 const isPt = (p: unknown): p is Pt =>
@@ -84,6 +92,13 @@ function shiftFor(a0: number, a1: number, b0: number, b1: number): number {
   return 0;
 }
 
+function overlaps(a: Box, b: Box): boolean {
+  return (
+    Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0 &&
+    Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0
+  );
+}
+
 /**
  * Copy a shape with its geometry mapped through f. k scales radii and rect sizes;
  * text labels keep their size (only the anchor moves).
@@ -102,18 +117,105 @@ function mapShape(s: Shape, f: (p: Pt) => Pt, k = 1): Shape {
   return out;
 }
 
+/** Scale every shape uniformly by k about the centre of box. */
+function scaleAbout(shapes: Shape[], box: Box, k: number): Shape[] {
+  const cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+  const f = (p: Pt): Pt => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
+  return shapes.map((s) => mapShape(s, f, k));
+}
+
+function translateAll(shapes: Shape[], dx: number, dy: number): Shape[] {
+  if (!dx && !dy) return shapes;
+  return shapes.map((s) => mapShape(s, (p): Pt => [p[0] + dx, p[1] + dy]));
+}
+
+/** Axis-label zone of a graph: the plot rect plus room for its axis labels. */
+function graphZone(g: Shape): Box | null {
+  if (!isRect(g.rect)) return null;
+  const [x, y, w, h] = g.rect;
+  return { x: x - GRAPH_ZONE_LEFT, y, w: w + GRAPH_ZONE_LEFT, h: h + GRAPH_ZONE_BOTTOM };
+}
+
+/** Smallest move that takes box b clear of zone z (with a gap). */
+function escapeDelta(b: Box, z: Box): Pt {
+  const opts: Pt[] = [
+    [0, z.y - (b.y + b.h) - TEXT_GAP], // up
+    [0, z.y + z.h - b.y + TEXT_GAP], // down
+    [z.x - (b.x + b.w) - TEXT_GAP, 0], // left
+    [z.x + z.w - b.x + TEXT_GAP, 0], // right
+  ];
+  return opts.reduce((best, d) => (Math.hypot(d[0], d[1]) < Math.hypot(best[0], best[1]) ? d : best));
+}
+
+/** Liang–Barsky: does segment a–b pass through box? */
+function segHitsBox(a: Pt, b: Pt, box: Box): boolean {
+  const xmin = box.x, xmax = box.x + box.w, ymin = box.y, ymax = box.y + box.h;
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const p = [-dx, dx, -dy, dy];
+  const q = [a[0] - xmin, xmax - a[0], a[1] - ymin, ymax - a[1]];
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false;
+    } else {
+      const r = q[i] / p[i];
+      if (p[i] < 0) {
+        if (r > t1) return false;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return false;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Perpendicular nudge for a text box that a segment runs through. Tries ±14 then ±28 units
+ * off the segment and keeps the first position with fewer hits (zero preferred).
+ */
+function nudgeOffSegments(b: Box, segs: [Pt, Pt][]): Pt | null {
+  const hitsAt = (box: Box) => segs.reduce((n, [p, q]) => n + (segHitsBox(p, q, box) ? 1 : 0), 0);
+  const base = hitsAt(b);
+  if (base === 0) return null;
+  const hit = segs.find(([p, q]) => segHitsBox(p, q, b));
+  if (!hit) return null;
+  const [p, q] = hit;
+  const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+  if (len === 0) return null;
+  const nx = -(q[1] - p[1]) / len, ny = (q[0] - p[0]) / len;
+  let best: Pt | null = null;
+  let bestHits = base;
+  for (const d of NUDGE_STEPS) {
+    const dx = nx * d, dy = ny * d;
+    const h = hitsAt({ x: b.x + dx, y: b.y + dy, w: b.w, h: b.h });
+    if (h < bestHits) {
+      best = [dx, dy];
+      bestHits = h;
+    }
+    if (bestHits === 0) break;
+  }
+  return best;
+}
+
 /**
  * Fit shapes into the virtual board (default 1600 x 1000):
  *  (a) drop shapes without geometry (sliders without a rect are kept; the view stacks them);
- *  (b) if the union is larger than the safe area, scale it uniformly about its centre, then
- *      slide it minimally inside the safe area;
- *  (c) push overlapping text labels down, then clamp every shape back inside the safe area.
+ *  (b) if the union is larger than the safe area, scale it down about its centre, then slide it
+ *      inside; if it is smaller and grow is on, scale up (capped at 1.35) and centre it;
+ *  (c) text de-overlap, up to 40 passes: push a text below an earlier overlapping text, move a text
+ *      clear of a graph's axis-label zone, and nudge a text perpendicular off a line/arrow/vector;
+ *  (d) clamp every shape back inside the safe area.
+ * Non-text shapes are never moved by (c).
  */
 export function fitShapes(
   shapes: Shape[],
-  board: BoardSize = { w: 1600, h: 1000 },
+  board: BoardSize = DEFAULT_BOARD,
   margin = 32,
+  opts: FitOptions = {},
 ): Shape[] {
+  const grow = opts.grow ?? true;
   let work: Shape[] = [];
   for (const s of shapes) {
     if (s.kind === "slider" && !isRect(s.rect)) work.push({ ...s });
@@ -123,53 +225,101 @@ export function fitShapes(
   const x0 = margin, y0 = margin, x1 = board.w - margin, y1 = board.h - margin;
   const safeW = x1 - x0, safeH = y1 - y0;
 
-  // (b) scale down if needed
+  // (b) shrink to fit
   const u = unionOf(work);
   if (u && (u.w > safeW || u.h > safeH)) {
-    const k = Math.min(safeW / u.w, safeH / u.h);
-    const cx = u.x + u.w / 2, cy = u.y + u.h / 2;
-    const scaleP = (p: Pt): Pt => [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
-    work = work.map((s) => mapShape(s, scaleP, k));
+    work = scaleAbout(work, u, Math.min(safeW / u.w, safeH / u.h));
   }
 
   // (b) slide inside the safe area
   const u2 = unionOf(work);
   if (u2) {
-    const dx = shiftFor(u2.x, u2.x + u2.w, x0, x1);
-    const dy = shiftFor(u2.y, u2.y + u2.h, y0, y1);
-    if (dx || dy) work = work.map((s) => mapShape(s, (p): Pt => [p[0] + dx, p[1] + dy]));
+    work = translateAll(
+      work,
+      shiftFor(u2.x, u2.x + u2.w, x0, x1),
+      shiftFor(u2.y, u2.y + u2.h, y0, y1),
+    );
   }
 
-  // (c) text de-overlap: push the later label down until clear
-  for (let pass = 0; pass < MAX_TEXT_PASSES; pass++) {
-    let moved = false;
-    for (let i = 0; i < work.length; i++) {
-      const a = work[i];
-      const ba = a.kind === "text" ? shapeBBox(a) : null;
-      if (!ba) continue;
-      for (let j = i + 1; j < work.length; j++) {
-        const b = work[j];
-        const bb = b.kind === "text" ? shapeBBox(b) : null;
-        if (!bb) continue;
-        const ox = Math.min(ba.x + ba.w, bb.x + bb.w) - Math.max(ba.x, bb.x);
-        const oy = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
-        if (ox > 0 && oy > 0) {
-          const d = oy + TEXT_GAP;
-          work[j] = mapShape(b, (p): Pt => [p[0], p[1] + d]);
-          moved = true;
+  // (b) grow to fill: scale up about the centre, capped, then centre in the safe area
+  if (grow) {
+    const g = unionOf(work);
+    if (g && g.w > 0 && g.h > 0) {
+      const k = Math.min(GROW_MAX, safeW / g.w, safeH / g.h);
+      if (k > 1) {
+        work = scaleAbout(work, g, k);
+        const g2 = unionOf(work);
+        if (g2) {
+          work = translateAll(
+            work,
+            (x0 + x1) / 2 - (g2.x + g2.w / 2),
+            (y0 + y1) / 2 - (g2.y + g2.h / 2),
+          );
         }
       }
     }
+  }
+
+  // (c) text de-overlap. Segments and non-text shapes stay where they are.
+  const segs: [Pt, Pt][] = [];
+  for (const s of work) {
+    if ((s.kind === "line" || s.kind === "arrow" || s.kind === "vector") && isPt(s.from) && isPt(s.to)) {
+      segs.push([s.from, s.to]);
+    }
+  }
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let moved = false;
+
+    // text vs text: push the later one down until clear
+    for (let i = 0; i < work.length; i++) {
+      const ba = work[i].kind === "text" ? shapeBBox(work[i]) : null;
+      if (!ba) continue;
+      for (let j = i + 1; j < work.length; j++) {
+        const bb = work[j].kind === "text" ? shapeBBox(work[j]) : null;
+        if (!bb || !overlaps(ba, bb)) continue;
+        const oy = Math.min(ba.y + ba.h, bb.y + bb.h) - Math.max(ba.y, bb.y);
+        const d = oy + TEXT_GAP;
+        work[j] = mapShape(work[j], (p): Pt => [p[0], p[1] + d]);
+        moved = true;
+      }
+    }
+
+    // text vs graph axis-label zone: move it clear the shortest way
+    for (let i = 0; i < work.length; i++) {
+      if (work[i].kind !== "text") continue;
+      const tb = shapeBBox(work[i]);
+      if (!tb) continue;
+      for (const g of work) {
+        if (g.kind !== "graph") continue;
+        const z = graphZone(g);
+        if (!z || !overlaps(tb, z)) continue;
+        const [dx, dy] = escapeDelta(tb, z);
+        work[i] = mapShape(work[i], (p): Pt => [p[0] + dx, p[1] + dy]);
+        moved = true;
+        break;
+      }
+    }
+
+    // text vs line/arrow/vector: nudge perpendicular off the segment
+    for (let i = 0; i < work.length; i++) {
+      if (work[i].kind !== "text") continue;
+      const tb = shapeBBox(work[i]);
+      if (!tb) continue;
+      const d = nudgeOffSegments(tb, segs);
+      if (d) {
+        work[i] = mapShape(work[i], (p): Pt => [p[0] + d[0], p[1] + d[1]]);
+        moved = true;
+      }
+    }
+
     if (!moved) break;
   }
 
-  // (c) clamp every shape individually back inside the safe area
+  // (d) clamp every shape back inside the safe area
   return work.map((s) => {
     const b = shapeBBox(s);
     if (!b) return s;
-    const dx = shiftFor(b.x, b.x + b.w, x0, x1);
-    const dy = shiftFor(b.y, b.y + b.h, y0, y1);
-    return dx || dy ? mapShape(s, (p): Pt => [p[0] + dx, p[1] + dy]) : s;
+    return translateAll([s], shiftFor(b.x, b.x + b.w, x0, x1), shiftFor(b.y, b.y + b.h, y0, y1))[0];
   });
 }
 
@@ -180,7 +330,7 @@ export function fitShapes(
 export function imageRectOnBoard(
   imgW: number,
   imgH: number,
-  board: BoardSize = { w: 1600, h: 1000 },
+  board: BoardSize = DEFAULT_BOARD,
   margin = 24,
 ): [number, number, number, number] {
   if (!(imgW > 0) || !(imgH > 0)) return [0, 0, board.w, board.h];
