@@ -261,18 +261,18 @@ def dump(name, obj):
 def main():
     draw_incline(THEMES["light"], os.path.join(FIX, "incline-light.png"))
     draw_incline(THEMES["dark"], os.path.join(FIX, "incline-dark.png"))
-    draw_colourful(os.path.join(FIX, "colourful.png"))
+    draw_colourful(os.path.join(FIX, "orbit-colourful.png"))
 
     inc = incline_response()
     dump("incline-light.json", inc)
     dump("incline-dark.json", inc)
-    dump("colourful.json", colourful_response())
+    dump("orbit-colourful.json", colourful_response())
     dump("sidenote.json", sidenote_response())
 
     debug_overlay(os.path.join(FIX, "incline-light.png"), inc["shapes"],
                   os.path.join(GEN, "debug-incline-light.png"))
-    debug_overlay(os.path.join(FIX, "colourful.png"), colourful_response()["shapes"],
-                  os.path.join(GEN, "debug-colourful.png"))
+    debug_overlay(os.path.join(FIX, "orbit-colourful.png"), colourful_response()["shapes"],
+                  os.path.join(GEN, "debug-orbit-colourful.png"))
     debug_overlay(os.path.join(FIX, "incline-light.png"), sidenote_response()["shapes"],
                   os.path.join(GEN, "debug-sidenote.png"))
 

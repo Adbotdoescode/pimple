@@ -12,8 +12,8 @@ incline-light.png   Light textbook page: Problem 4, block on a frictionless 30°
 incline-light.json  Canned tutor response for incline-light.png (4 segments, 7 shapes).
 incline-dark.png    Same layout in dark mode, same coordinates as light.
 incline-dark.json   Same canned response as incline-light.json (identical copy).
-colourful.png       Orange/magenta page with teal panel, orbit diagram (sun, planet).
-colourful.json      Canned tutor response for colourful.png (3 segments, 5 shapes).
+orbit-colourful.png Orange/magenta page with teal panel, orbit diagram (sun, planet).
+orbit-colourful.json Canned tutor response for orbit-colourful.png (3 segments, 5 shapes).
 sidenote.json       Side-note payload for the incline image (not a capture on its own):
                     one secondary vector "mg cos 30°" into the ramp, segment n1.
 _gen/               Generator script (make_fixtures.py) and debug overlays (debug-*.png).
@@ -26,8 +26,8 @@ Render the light incline with its canned response, no API call:
 Dark incline:
   cd /Users/adam/Developer/glass-tutor && scripts/gt-debug.sh capture=/Users/adam/Developer/glass-tutor/demo/fixtures/incline-dark.png shapes=/Users/adam/Developer/glass-tutor/demo/fixtures/incline-dark.json
 
-Colourful stress test:
-  cd /Users/adam/Developer/glass-tutor && scripts/gt-debug.sh capture=/Users/adam/Developer/glass-tutor/demo/fixtures/colourful.png shapes=/Users/adam/Developer/glass-tutor/demo/fixtures/colourful.json
+Orbit colourful stress test:
+  cd /Users/adam/Developer/glass-tutor && scripts/gt-debug.sh capture=/Users/adam/Developer/glass-tutor/demo/fixtures/orbit-colourful.png shapes=/Users/adam/Developer/glass-tutor/demo/fixtures/orbit-colourful.json
 
 Regenerate all PNGs and JSON (only needs Pillow):
   python3 /Users/adam/Developer/glass-tutor/demo/fixtures/_gen/make_fixtures.py
