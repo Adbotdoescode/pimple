@@ -824,7 +824,9 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
   }
 
   // Axis labels
-  nodes.push(labelEl("xlabel", g.x_label, (pl + pr) / 2, pb + 28, "middle", c, "gt-label gt-label-sm"));
+  // Axis titles sit on the graph's own panel, so they need no pill.
+  const bare: Ctx = { ...c, style: { ...c.style, pill: false } };
+  nodes.push(labelEl("xlabel", g.x_label, (pl + pr) / 2, pb + 28, "middle", bare, "gt-label gt-label-sm"));
   if (g.y_label) {
     const yx = L + 14;
     const yy = (pt + pb) / 2;
@@ -862,12 +864,22 @@ function buildGraph(s: Shape, c: Ctx): Built | null {
       );
     }
     if (ser.label) {
-      const last = pts[pts.length - 1];
-      const nearRight = last[0] > pr - 80;
-      const lx = nearRight ? last[0] - 8 : last[0] + 8;
-      const ly = Math.max(pt + 12, last[1] - 8);
+      // Beside the curve a little past half way, on its upper side (alternating for later series),
+      // kept inside the panel. Away from the axes, their arrow tips and the end of the curve.
+      const k = Math.min(pts.length - 1, Math.max(0, Math.round((pts.length - 1) * 0.55)));
+      const p = pts[k];
+      const frame = pts.length >= 2
+        ? unitAndUpNormal(pts[Math.max(0, k - 1)], pts[Math.min(pts.length - 1, k + 1)])
+        : null;
+      const up: [number, number] = frame ? frame.n : [0, -1];
+      const n: [number, number] = j % 2 === 0 ? up : [-up[0], -up[1]];
+      const lp = sideLabel(p[0], p[1], n, 14);
+      const w = textWidth(ser.label, 13, 600) + PILL_PAD_X * 2;
+      const x0 = lp.anchor === "start" ? lp.x : lp.anchor === "end" ? lp.x - w : lp.x - w / 2;
+      const shift = Math.max(L + 6 - x0, Math.min(0, L + W - 6 - (x0 + w)));
+      const ly = Math.min(pb - 14, Math.max(T + 18, lp.y));
       nodes.push(
-        labelEl(`slabel${j}`, ser.label, lx, ly, nearRight ? "end" : "start", c,
+        labelEl(`slabel${j}`, ser.label, lp.x + shift, ly, lp.anchor, c,
           "gt-label gt-label-series", base + DRAW_MS, 13),
       );
     }
