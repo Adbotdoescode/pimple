@@ -293,7 +293,6 @@ export function Card({
               setMini(false);
             }}
             aria-label={`Expand tutor card. ${PHASE_LABEL[phase]}`}
-            title="Expand"
           >
             <span
               className={`dot dot-${tone}${phase === "listening" ? " dot-pulse" : ""}`}
@@ -329,7 +328,6 @@ export function Card({
               setMini(false);
             }}
             aria-label="Expand tutor card"
-            title="Expand"
           >
             <Maximize2 size={13} strokeWidth={2.2} aria-hidden="true" />
           </button>

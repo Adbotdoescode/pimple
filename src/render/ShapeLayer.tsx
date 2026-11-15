@@ -323,6 +323,12 @@ function labelCandidates(s: Shape, toView: (p: Pt) => Pt, scale: number): LabelP
         },
         sideLabel(bx, by, g.n, 10),                          // either side of the tip
         sideLabel(bx, by, [-g.n[0], -g.n[1]], 10),
+        // Beyond the tip but slid to one side (for tips near an edge or another stroke).
+        { x: bx + ux * 22 + 12, y: by + uy * 22 + (uy > 0.35 ? 18 : uy < -0.35 ? -8 : LABEL_MID), anchor: "end" },
+        { x: bx + ux * 22 - 12, y: by + uy * 22 + (uy > 0.35 ? 18 : uy < -0.35 ? -8 : LABEL_MID), anchor: "start" },
+        // Beside the middle of the shaft.
+        sideLabel((g.a[0] + bx) / 2, (g.a[1] + by) / 2, g.n, LABEL_OFFSET),
+        sideLabel((g.a[0] + bx) / 2, (g.a[1] + by) / 2, [-g.n[0], -g.n[1]], LABEL_OFFSET),
       ];
     }
     case "text": {

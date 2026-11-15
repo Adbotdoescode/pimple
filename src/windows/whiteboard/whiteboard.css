@@ -124,7 +124,9 @@
 }
 
 .wb-titles {
-  min-width: 0;
+  /* The title keeps at least half the header; the chips give way first. */
+  flex: 1 1 auto;
+  min-width: 50%;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -151,14 +153,17 @@
 }
 
 .wb-actions {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .wb-chip {
-  max-width: 340px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--wb-chip);
@@ -170,6 +175,7 @@
 }
 
 .wb-btn {
+  flex: none;
   width: 32px;
   height: 32px;
   padding: 0;
