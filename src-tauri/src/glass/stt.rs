@@ -410,7 +410,7 @@ fn finish_turn(app: &AppHandle, id: u64, reason: &str) {
 
     let result: Result<String, String> = if !heard_speech || samples.is_empty() {
         if input_silent {
-            Err("The microphone delivered only silence. Check that Glass Tutor (or the terminal running it) has Microphone access in System Settings > Privacy & Security.".into())
+            Err("The microphone delivered only silence. Check that Pimple (or the terminal running it) has Microphone access in System Settings > Privacy & Security.".into())
         } else {
             Ok(String::new())
         }

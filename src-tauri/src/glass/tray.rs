@@ -13,14 +13,14 @@ pub fn create_tray(app: &AppHandle) {
             .item(&MenuItemBuilder::with_id("keys", "Keys…").build(app)?)
             .item(&MenuItemBuilder::with_id("whiteboard", "Whiteboard").build(app)?)
             .separator()
-            .item(&MenuItemBuilder::with_id("quit", "Quit Glass Tutor").build(app)?)
+            .item(&MenuItemBuilder::with_id("quit", "Quit Pimple").build(app)?)
             .build()?;
         let icon_path = app
             .path()
             .resolve("resources/tray_idle.png", tauri::path::BaseDirectory::Resource)?;
         let mut b = TrayIconBuilder::with_id("glass-tutor")
             .menu(&menu)
-            .tooltip("Glass Tutor")
+            .tooltip("Pimple")
             .show_menu_on_left_click(true)
             .on_menu_event(|app, event| {
                 let action = event.id.as_ref().to_string();

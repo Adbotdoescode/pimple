@@ -26,6 +26,7 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "stt_model_status",
     "tts_synthesize",
     "tts_credit",
+    "tts_voices",
     "get_secret",
     "set_secret",
     "keys_status",
@@ -37,6 +38,7 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "read_source_file",
     "lens_grab",
     "bubble_set_frame",
+    "cursor_pos",
 ];
 
 pub fn is_glass_command(name: &str) -> bool {
@@ -53,6 +55,7 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         stt::stt_model_status,
         tts::tts_synthesize,
         tts::tts_credit,
+        tts::tts_voices,
         keys::get_secret,
         keys::set_secret,
         keys::keys_status,
@@ -64,6 +67,7 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         read_source_file,
         lens::lens_grab,
         lens::bubble_set_frame,
+        lens::cursor_pos,
     ]
 }
 

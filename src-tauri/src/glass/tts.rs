@@ -332,3 +332,97 @@ pub async fn tts_credit() -> Result<TtsCredit, String> {
         provider: "elevenlabs".to_string(),
     })
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TtsVoice {
+    pub voice_id: String,
+    pub name: String,
+    pub category: Option<String>,
+    pub preview_url: Option<String>,
+    pub labels: std::collections::HashMap<String, String>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawVoicesResponse {
+    #[serde(default)]
+    voices: Vec<RawVoice>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawVoice {
+    voice_id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    preview_url: Option<String>,
+    #[serde(default)]
+    labels: std::collections::HashMap<String, serde_json::Value>,
+}
+
+const VOICES_TTL: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Voice list cache: (fetched at, voices). Ten-minute TTL.
+static VOICES_CACHE: std::sync::Mutex<Option<(std::time::Instant, Vec<TtsVoice>)>> =
+    std::sync::Mutex::new(None);
+
+fn cached_voices() -> Option<Vec<TtsVoice>> {
+    let guard = VOICES_CACHE.lock().ok()?;
+    match guard.as_ref() {
+        Some((at, voices)) if at.elapsed() < VOICES_TTL => Some(voices.clone()),
+        _ => None,
+    }
+}
+
+/// invoke("tts_voices") → TtsVoice[]  (GET /v1/voices, no credit cost; cached 10 min)
+#[tauri::command]
+pub async fn tts_voices() -> Result<Vec<TtsVoice>, String> {
+    if let Some(voices) = cached_voices() {
+        return Ok(voices);
+    }
+
+    let api_key = read_secret("elevenlabs")?
+        .ok_or_else(|| "no elevenlabs key configured".to_string())?;
+    let resp = reqwest::Client::new()
+        .get("https://api.elevenlabs.io/v1/voices")
+        .header("xi-api-key", api_key.as_str())
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|e| format!("voices request failed: {}", e.without_url()))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(format!("voices HTTP {}", status.as_u16()));
+    }
+    let raw: RawVoicesResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("voices parse: {}", e.without_url()))?;
+
+    let voices: Vec<TtsVoice> = raw
+        .voices
+        .into_iter()
+        .map(|v| TtsVoice {
+            voice_id: v.voice_id,
+            name: v.name,
+            category: v.category,
+            preview_url: v.preview_url,
+            labels: v
+                .labels
+                .into_iter()
+                .filter_map(|(k, val)| match val {
+                    serde_json::Value::String(s) => Some((k, s)),
+                    _ => None,
+                })
+                .collect(),
+        })
+        .collect();
+
+    if let Ok(mut guard) = VOICES_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), voices.clone()));
+    }
+    log::info!("tts voices fetched count={}", voices.len());
+    Ok(voices)
+}

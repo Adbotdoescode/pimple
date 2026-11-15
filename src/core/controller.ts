@@ -22,6 +22,7 @@ import { rewriteSentence, verifySegment } from "./verifier";
 import { createTtsPlayer } from "./ttsPlayer";
 import { wireToTutorResponse } from "./jsonStream";
 import { sessionStore, type SessionData } from "./store";
+import { mergeSettings, saveSettings } from "./settingsStore";
 
 type Player = ReturnType<typeof createTtsPlayer>;
 
@@ -1228,9 +1229,13 @@ async function handleIntent(i: UiIntent): Promise<void> {
       await ask(q);
       return;
     }
-    case "settings-changed":
-      patch({ settings: { ...st().settings, ...i.settings } });
+    case "settings-changed": {
+      // Applied live (voice, models, provider are read per call) and persisted, without secrets.
+      const next = mergeSettings(st().settings, i.settings);
+      patch({ settings: next });
+      saveSettings(next);
       return;
+    }
     case "accept-gizmo":
     case "decline-gizmo":
     case "open-whiteboard":
@@ -1300,7 +1305,7 @@ function recordFirstAudio(t: Turn, id: string): void {
 export async function startController(): Promise<() => void> {
   player = createTtsPlayer({
     getVoiceId: () => st().settings.voiceId,
-    getProviderOverride: () => runOverride,
+    getProviderOverride: () => runOverride ?? st().settings.ttsProvider, // the Rust GT_TTS ceiling still applies
     onFallback: (reason) => console.warn("[brain] tts fallback:", reason),
   });
   const offStarted = player.onSegmentStarted(onSegmentStarted);
