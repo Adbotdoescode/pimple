@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   imagePxToScreen,
   type CaptureResult,
@@ -116,6 +117,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  const cuts = useWindowCuts();
   const current = snapshot?.currentSegmentId ?? null;
   const phase: Phase = snapshot?.phase ?? "idle";
   // Entering a drag: the previous session's shapes fade out quickly, and the backdrop hides at once.
@@ -193,6 +195,21 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
         background: "transparent",
       }}
     >
+      <defs>
+        {CUT_SOURCES.map((name) => {
+          const r = cuts[name];
+          if (!r) return null;
+          return (
+            <clipPath key={name} id={`gt-cut-${name}`} clipPathUnits="userSpaceOnUse">
+              <path clipRule="evenodd" d={cutPath(r, origin, viewport)} />
+            </clipPath>
+          );
+        })}
+      </defs>
+      {/* Our own windows (whiteboard, gizmo) are cut out of the drawing: one nested clip per window,
+          so overlapping windows still cut correctly. The tree keeps its shape, so nothing remounts. */}
+      <g clipPath={cuts.whiteboard ? "url(#gt-cut-whiteboard)" : undefined}>
+      <g clipPath={cuts.gizmo ? "url(#gt-cut-gizmo)" : undefined}>
       {backdropHeld.value && !inTarget && (
         <g style={{ opacity: backdropHeld.visible ? 1 : 0, transition: `opacity ${MAIN_FADE_MS}ms ease` }}>
           <g className="gt-fixture-in">
@@ -230,6 +247,8 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
           />
         </g>
       )}
+      </g>
+      </g>
       <TargetingLayer origin={origin} />
     </svg>
     <EdgeGlow active={glowOn} phase={phase} width={viewport.width} height={viewport.height} />
@@ -250,6 +269,65 @@ function edgeMood(phase: Phase): string {
   if (phase === "speaking") return "gt-edge-speaking";
   if (phase === "listening") return "gt-edge-listening";
   return "gt-edge-calm";
+}
+
+/* ───────────── cut-outs for our own windows ───────────── */
+
+const CUT_SOURCES = ["whiteboard", "gizmo"] as const;
+type CutSource = (typeof CUT_SOURCES)[number];
+interface CutRect { x: number; y: number; w: number; h: number }
+const CUT_RADIUS = 26;
+
+/**
+ * Rects (global screen points) of the whiteboard and gizmo windows while they are visible, from
+ * their "whiteboard:rect" / "gizmo:rect" events ({x, y, w, h, visible}). The overlay panel sits
+ * above those windows, so the drawing is clipped away where they are.
+ */
+function useWindowCuts(): Partial<Record<CutSource, CutRect>> {
+  const [cuts, setCuts] = useState<Partial<Record<CutSource, CutRect>>>({});
+  useEffect(() => {
+    let gone = false;
+    const offs: Array<() => void> = [];
+    for (const name of CUT_SOURCES) {
+      try {
+        listen<{ x?: unknown; y?: unknown; w?: unknown; h?: unknown; visible?: unknown }>(`${name}:rect`, (e) => {
+          const p = e.payload ?? {};
+          const nums = [p.x, p.y, p.w, p.h];
+          const ok = p.visible === true && nums.every((v) => typeof v === "number" && Number.isFinite(v))
+            && (p.w as number) > 1 && (p.h as number) > 1;
+          setCuts((prev) => {
+            const next = { ...prev };
+            if (ok) next[name] = { x: p.x as number, y: p.y as number, w: p.w as number, h: p.h as number };
+            else delete next[name];
+            return next;
+          });
+        })
+          .then((un) => {
+            if (gone) un();
+            else offs.push(un);
+          })
+          .catch(() => {});
+      } catch {
+        // Not inside Tauri (headless preview): nothing to cut.
+      }
+    }
+    return () => {
+      gone = true;
+      offs.forEach((f) => f());
+    };
+  }, []);
+  return cuts;
+}
+
+/** The whole view with one rounded hole (even-odd), in view coordinates. */
+function cutPath(r: CutRect, origin: Origin, vp: { width: number; height: number }): string {
+  const x = r.x - origin.x, y = r.y - origin.y;
+  const q = Math.min(CUT_RADIUS, r.w / 2, r.h / 2);
+  const x2 = x + r.w, y2 = y + r.h;
+  const outer = `M-200 -200 H${vp.width + 200} V${vp.height + 200} H-200 Z`;
+  const hole = `M${x + q} ${y} H${x2 - q} Q${x2} ${y} ${x2} ${y + q} V${y2 - q} Q${x2} ${y2} ${x2 - q} ${y2} `
+    + `H${x + q} Q${x} ${y2} ${x} ${y2 - q} V${y + q} Q${x} ${y} ${x + q} ${y} Z`;
+  return `${outer} ${hole}`;
 }
 
 /** Height of the menu bar in points: the screen's visible frame when the webview reports it, else 30. */
