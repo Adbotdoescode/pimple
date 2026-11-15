@@ -533,10 +533,12 @@ function inkNodes(
     return { d, nodes: [<Stroke key={tag} d={d} color={c.style.stroke} width={width} c={cc} opacity={o.opacity} />] };
   }
   const g = inkGeom(poly, width, rnd, o);
+  // Underlays trail the ink slightly, so their round caps never poke out ahead of the pen tip.
+  const under = { ...c, delay: delay + 35 };
   const nodes: ReactNode[] = [
-    <Stroke key={`${tag}-shadow`} d={g.d} color="rgba(0,0,0,0.15)" width={width + 1} c={cc} dy={1.6} />,
+    <Stroke key={`${tag}-shadow`} d={g.d} color="rgba(0,0,0,0.15)" width={width + 1} c={under} dy={1.6} />,
   ];
-  if (c.style.halo) nodes.push(<Stroke key={`${tag}-halo`} d={g.d} color={c.style.halo} width={width + 4.5} c={cc} />);
+  if (c.style.halo) nodes.push(<Stroke key={`${tag}-halo`} d={g.d} color={c.style.halo} width={width + 4.5} c={under} />);
   nodes.push(
     <g key={tag} fill={c.style.stroke} opacity={o.opacity}>
       <circle cx={fmt(g.caps[0].x)} cy={fmt(g.caps[0].y)} r={fmt(g.caps[0].r)} className="gt-ink"
