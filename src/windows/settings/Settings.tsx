@@ -167,8 +167,10 @@ export function Settings({
   // "onboarding:show" event), or when keys_status first reports the Anthropic key missing.
   const [onboarding, setOnboarding] = useState(false);
   const [onbStart, setOnbStart] = useState<OnbStep | undefined>(undefined);
+  const [onbKey, setOnbKey] = useState(0);
   const startOnboarding = useCallback((at: OnbStep = "welcome") => {
     setOnbStart(at);
+    setOnbKey((k) => k + 1);
     setOnboarding(true);
   }, []);
   useEffect(() => {
@@ -382,6 +384,7 @@ export function Settings({
           onFinish={finishOnboarding}
           onExit={exitOnboarding}
           startStep={onbStart}
+          startKey={onbKey}
         />
       )}
 

@@ -44,6 +44,7 @@ export function Onboarding({
   onFinish,
   onExit,
   startStep,
+  startKey = 0,
 }: {
   keys: KeyStatus | null;
   keysUnavailable: boolean;
@@ -55,6 +56,8 @@ export function Onboarding({
   /** Leave the flow for the normal tabs. */
   onExit: () => void;
   startStep?: OnbStep;
+  /** Bumped each time the flow is (re)opened, so the same start step applies again. */
+  startKey?: number;
 }) {
   const hasAnthropic = !!keys?.anthropic;
   const hasEleven = !!keys?.elevenlabs;
@@ -71,7 +74,7 @@ export function Onboarding({
   const [dir, setDir] = useState(1);
   useEffect(() => {
     if (startStep) setStep(startStep);
-  }, [startStep]);
+  }, [startStep, startKey]);
 
   const index = Math.max(0, steps.indexOf(step));
   const move = (delta: number) => {
