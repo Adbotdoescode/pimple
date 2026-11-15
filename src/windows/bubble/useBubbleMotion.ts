@@ -16,6 +16,7 @@
 // the window jump.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { info } from "@tauri-apps/plugin-log";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import type { Phase, RectPts, UiIntent } from "@shared/contracts";
 import { EV, emitEvent, emitEventTo, invokeCmd, onEvent } from "../../lib/ipc";
@@ -55,7 +56,22 @@ interface Rect { x: number; y: number; w: number; h: number }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 const fin = (v: number, fallback: number) => (Number.isFinite(v) ? v : fallback);
-const nextFrame = () => new Promise<void>((res) => requestAnimationFrame(() => res()));
+/** Next animation frame, with a timeout so a throttled webview can never stall the window queue. */
+const nextFrame = () =>
+  new Promise<void>((res) => {
+    const t = setTimeout(res, 60);
+    requestAnimationFrame(() => {
+      clearTimeout(t);
+      res();
+    });
+  });
+const IDLE_WATCHDOG_MS = 3000;
+
+/** State-change log: console plus the Rust log plugin (only the brain's console is forwarded). */
+export function blog(msg: string): void {
+  console.info(msg);
+  info(`[js] ${msg}`).catch(() => {});
+}
 
 const logged = new Set<string>();
 function logErr(tag: string, e: unknown): void {
@@ -127,6 +143,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     // real pointer tracking (independent of useBubbleGestures, which can go stale)
     down: null as null | { id: number; x: number; y: number; el: HTMLElement | null },
     shrinkPending: false,
+    homeEdge: edge as Edge, // rest edge before the current excursion (cancel returns here)
+    modeSince: 0,
+    phase: phase as Phase,
+    idleSince: 0,
   });
 
   /** State change with one concise log line (forwarded to the dev log). */
@@ -134,7 +154,8 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     const s = S.current;
     const from = s.mode;
     s.mode = to;
-    console.info(
+    s.modeSince = performance.now();
+    blog(
       `[bubble] ${from} → ${to} (${reason}) cx=${s.pos.x.toFixed(0)} cy=${s.pos.y.toFixed(0)} r=${s.rad.x.toFixed(0)} target=(${s.tx.toFixed(0)},${s.ty.toFixed(0)}) win=${s.win}${s.lasso ? " lasso" : ""}${s.held ? " held" : ""}`,
     );
   }, []);
@@ -213,6 +234,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     } else if (s.held || s.down) {
       // Never shrink under a pressed pointer: the release would land outside the window and the
       // gesture would go stale. Shrink on release instead.
+      if (!s.shrinkPending) blog("[bubble] shrink deferred: pointer still down");
       s.shrinkPending = true;
       return;
     } else if (s.win === "small") {
@@ -232,6 +254,8 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
             h: SMALL,
           };
 
+    const desc = (r: Rect) => `${r.x.toFixed(0)},${r.y.toFixed(0)},${r.w.toFixed(0)}x${r.h.toFixed(0)}`;
+    blog(`[bubble] win ${s.win} → ${want} at ${desc(next)} (glass cx=${s.pos.x.toFixed(0)} cy=${s.pos.y.toFixed(0)})`);
     s.hidden = true;
     render();
     await nextFrame();
@@ -252,6 +276,9 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     await nextFrame();
     s.hidden = false;
     render();
+    blog(
+      `[bubble] win now ${want} at ${desc(next)}; glass local=(${(s.pos.x - next.x).toFixed(0)},${(s.pos.y - next.y).toFixed(0)})`,
+    );
   }, [render]);
 
   const ensureWindow = useCallback(
@@ -315,6 +342,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     render();
     if (s.mode === "rest") {
       const side = sideOf(s.pos.x);
+      s.homeEdge = side;
       if (side !== s.wantEdge) {
         s.wantEdge = side; // optimistic, so a stale snapshot does not bounce it back
         sendIntent({ type: "settings-changed", settings: { bubbleEdge: side } });
@@ -392,7 +420,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     clearLens();
     resetLasso();
     if (s.held) s.suppress = true;
-    console.info(
+    blog(
       `[bubble] commit ${mode} region=(${region.x.toFixed(0)},${region.y.toFixed(0)},${region.w.toFixed(0)}x${region.h.toFixed(0)})`,
     );
     setMode("parking", s.held ? "commit (held still)" : "commit");
@@ -429,7 +457,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     clearLens();
     resetLasso();
     if (s.held) s.suppress = true;
-    startReturn(undefined, "cancel");
+    startReturn(s.homeEdge, "cancel");
   }, [clearLens, resetLasso, startReturn]);
 
   loopRef.current = (now: number) => {
@@ -486,13 +514,14 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       // Only a real pointerdown in this gesture, moved >= 4 pt, may start a drag.
       const d = s.down;
       if (!d || Math.hypot(p.x - d.x, p.y - d.y) < DRAG_SLOP - 0.5) {
-        console.info(`[bubble] ignored drag start without a live pointerdown at (${p.x.toFixed(0)},${p.y.toFixed(0)})`);
+        blog(`[bubble] ignored drag start without a live pointerdown at (${p.x.toFixed(0)},${p.y.toFixed(0)})`);
         return;
       }
       const now = performance.now();
       s.held = true;
       s.suppress = false;
       const wasTargeting = s.mode === "dragging" || s.mode === "armed";
+      if (s.mode === "rest") s.homeEdge = sideOf(s.pos.x);
       if (!wasTargeting) {
         sendIntent({ type: "target-start" });
         s.rT = R_REST;
@@ -510,7 +539,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       ensureWindow("big");
       startLoop();
     },
-    [ensureWindow, resetLasso, setMode, startLoop],
+    [ensureWindow, resetLasso, setMode, sideOf, startLoop],
   );
 
   const onDragMove = useCallback((p: { x: number; y: number }) => {
@@ -532,7 +561,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         s.lasso = true;
         s.lensAt = 0;
         s.rT = R_REST;
-        console.info(`[bubble] lasso detected (${loop.points.length} pts)`);
+        blog(`[bubble] lasso detected (${loop.points.length} pts)`);
       }
       s.loop = loop; // latest closed loop wins
       s.loopAt = now;
@@ -543,6 +572,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     const s = S.current;
     const wasHeld = s.held;
     s.held = false;
+    s.down = null; // the gesture hook only ends a drag on pointerup / pointercancel
     if (s.suppress) {
       s.suppress = false;
     } else if (s.mode === "dragging") {
@@ -576,7 +606,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         }
       }
       if (s.held) {
-        console.info(`[bubble] pointer ended (${reason})`);
+        blog(`[bubble] pointer ended (${reason})`);
         onDragEnd();
       } else if (s.shrinkPending) {
         s.shrinkPending = false;
@@ -729,16 +759,40 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
   useEffect(() => {
     const prev = prevPhase.current;
     prevPhase.current = phase;
-    if (prev === "idle" || phase !== "idle") return;
     const s = S.current;
+    s.phase = phase;
+    if (phase === "idle" && prev !== "idle") s.idleSince = performance.now();
+    if (prev === "idle" || phase !== "idle") return;
+    if (s.mode === "returning") return; // already heading home (e.g. our own cancel)
     if (s.mode === "dragging" && s.held && s.down) return; // user is holding it; they decide
     if (s.mode === "dragging") s.held = false; // stale drag: the session ended under it
     if (s.mode === "armed" || s.mode === "dragging") {
+      // Targeting was cancelled elsewhere: go back where we came from.
       clearLens();
       resetLasso();
+      startReturn(s.homeEdge, `targeting cancelled (${prev} → idle)`);
+      return;
     }
+    // Natural session end: nearest edge.
     startReturn(undefined, `session ${prev} → idle`);
   }, [phase, clearLens, resetLasso, startReturn]);
+
+  // Watchdog: away from rest, nothing held, and the session idle for 3 s → go home.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = S.current;
+      if (s.phase !== "idle" || s.held || s.down) return;
+      if (s.mode === "rest" || s.mode === "returning") return;
+      const since = Math.max(s.idleSince, s.modeSince);
+      if (performance.now() - since < IDLE_WATCHDOG_MS) return;
+      if (s.mode === "armed" || s.mode === "dragging") {
+        clearLens();
+        resetLasso();
+      }
+      startReturn(s.homeEdge, `watchdog: idle ${IDLE_WATCHDOG_MS / 1000}s in ${s.mode}`);
+    }, 500);
+    return () => clearInterval(id);
+  }, [clearLens, resetLasso, startReturn]);
 
   return {
     wrapRef,

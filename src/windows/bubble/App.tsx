@@ -3,7 +3,7 @@ import type { UiIntent } from "@shared/contracts";
 import { EV, emitEvent } from "../../lib/ipc";
 import { useSession } from "../../lib/sessionMirror";
 import { Bubble } from "./Bubble";
-import { useBubbleMotion } from "./useBubbleMotion";
+import { blog, useBubbleMotion } from "./useBubbleMotion";
 
 // The wrapper is a fixed 504 pt square (2·R_MAX + 64) centred on (--lx, --ly) in window-local px.
 // It is always transformed, which makes it the containing block for Bubble's position:fixed stage;
@@ -29,6 +29,7 @@ export default function App() {
   const edge = useSession((s) => s.settings?.bubbleEdge) ?? "right";
   const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase, edge);
   const send = (i: UiIntent): void => {
+    if (i.type === "bubble-click") blog(`[bubble] click (phase ${phase})`);
     emitEvent(EV.uiIntent, i).catch((e) =>
       console.error("bubble: ui:intent emit failed", e instanceof Error ? e.message : e),
     );
