@@ -29,7 +29,7 @@
       "segment_id": "s2",
       "kind": "vector",
       "color_role": "warn",
-      "points": [[555, 472], [497, 472]],
+      "points": [[555, 492], [497, 492]],
       "radius": 0,
       "label": "restoring force",
       "magnitude": "F = −kx",

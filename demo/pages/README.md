@@ -18,7 +18,7 @@ Realistic web pages used as screenshot fixtures for the tutor overlay. Each page
 ## Re-rendering a fixture
 
 ```
-cd /Users/adam/Developer/glass-tutor && ./node_modules/.bin/playwright screenshot --viewport-size=1440,900 file:///Users/adam/Developer/glass-tutor/demo/pages/incline.html demo/fixtures/incline.png
+cd /Users/adam/Developer/glass-tutor && npx -y playwright@1.64.0 screenshot --viewport-size=1440,900 file:///Users/adam/Developer/glass-tutor/demo/pages/incline.html demo/fixtures/incline.png
 ```
 
 Use the same command for `dense-paragraph`, `dark-equation`, and the other pages, changing the input and output names.
