@@ -126,3 +126,15 @@ Steps:
 2. Drag the "Bubble radius r" slider, then press "▶ Grow to Earth".
 
 Expected: looks like the reference images in `design/gizmo-examples/`. Live values on the right update as you drag; Play animates the slider to Earth's distance and the Sun shrinks to a dot as the view zooms out.
+
+## 11. Live interactive diagram (gizmo)
+
+Feature: on request, Pimple generates an interactive diagram (slider, play button, live values, coloured equation) in its own "Pimple — Diagram" window while the explanation continues.
+
+Steps:
+1. Open `incline.html`, click the bubble and ask: "What happens to the normal force and friction as the angle of the ramp changes?"
+2. When the tutor asks "Want an interactive diagram for this?", say "yes" (or click Yes in the card). You can also say "make me an interactive diagram of this" at any time during a session.
+3. Keep listening to the explanation; after about 30–40 s the diagram window opens and the tutor says "Your diagram is ready."
+4. Drag the slider and press the play pill.
+
+Expected: the card shows "Building your diagram…" while it generates; the window shows a light, card-based diagram in the style of `design/gizmo-examples/`, with numbers matching the page (49 N, 42.4 N, 24.5 N, slips past about 24°). Verified 15:27 (generated in 39 s). If generation fails or takes over 45 s, the tutor says so and offers to draw it on the whiteboard instead. It never builds one without your yes. Tip: answer the offer with a short "yes" or "no"; talking to someone else in the room can be heard by the mic.
