@@ -35,9 +35,13 @@ export default function App() {
   useEffect(() => {
     const resp = snap.response;
     const first = resp?.segments[0];
-    const key = resp && first ? `${resp.concept}|${first.id}` : null;
+    const key = resp && first ? `${resp.surface}|${resp.concept}|${first.id}|${first.text}` : null;
     if (seenKey.current === undefined) seenKey.current = key; // baseline on mount
-    if (!resp || !first) return; // wait until the first segment exists so the key is stable
+    if (!resp) {
+      seenKey.current = null; // a new session's answer always counts as new
+      return;
+    }
+    if (!first) return; // wait until the first segment exists so the key is stable
     if (key === seenKey.current) return;
     seenKey.current = key;
     if (resp.surface === "whiteboard") {
