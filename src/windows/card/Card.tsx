@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { info } from "@tauri-apps/plugin-log";
 import {
   AlertTriangle,
   ArrowUp,
@@ -63,6 +65,23 @@ const BUSY_PHASES: ReadonlySet<Phase> = new Set<Phase>([
 /** Phases where the last caption stays on screen between segments (no flash to empty). */
 const KEEP_CAPTION_PHASES: ReadonlySet<Phase> = new Set<Phase>(["speaking", "interrupted", "checking"]);
 
+/**
+ * Control buttons never take keyboard focus: the card is a non-activating panel that can be key
+ * while another app is frontmost, so a focused button would fire on a Return/Space typed elsewhere.
+ */
+const NO_FOCUS = {
+  tabIndex: -1,
+  onMouseDown: (e: MouseEvent<HTMLButtonElement>) => e.preventDefault(),
+};
+
+/** Ignore clicks on ✕, Stop and Interrupt for this long after the window moves, resizes or changes phase. */
+const CLICK_SETTLE_MS = 500;
+
+function blurActiveButton() {
+  const active = document.activeElement;
+  if (active instanceof HTMLButtonElement) active.blur();
+}
+
 /** Map a raw backend error to a friendly title. The raw text stays available under "Details". */
 function friendlyError(raw: string): { title: string; mic: boolean; asIs?: boolean } {
   // The brain now sends learner-ready text; show it untouched unless it looks like a raw error.
@@ -115,6 +134,36 @@ export function Card({
   /** Set when the learner expands the pill by hand; auto-minimise then waits for the next session. */
   const manualExpand = useRef(false);
 
+  /** Last time the window moved, resized or changed phase; clicks right after are ignored. */
+  const lastGeometryChange = useRef(Date.now());
+  function clickTooSoon() {
+    return Date.now() - lastGeometryChange.current < CLICK_SETTLE_MS;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: Array<() => void> = [];
+    const stamp = () => {
+      lastGeometryChange.current = Date.now();
+    };
+    stamp();
+    try {
+      const win = getCurrentWindow();
+      Promise.all([win.onMoved(stamp), win.onResized(stamp)])
+        .then((fns) => {
+          if (cancelled) fns.forEach((f) => f());
+          else unlisten = fns;
+        })
+        .catch(() => {});
+    } catch {
+      // Not running inside Tauri (e.g. a plain browser preview): nothing to listen to.
+    }
+    return () => {
+      cancelled = true;
+      unlisten.forEach((f) => f());
+    };
+  }, []);
+
   function setMini(next: boolean, by: "user" | "auto" = "user") {
     if (by === "user") {
       if (!next) manualExpand.current = true;
@@ -144,6 +193,7 @@ export function Card({
   // A new session forgets the manual choice.
   const phaseNow: Phase = snapshot?.phase ?? "idle";
   useEffect(() => {
+    lastGeometryChange.current = Date.now();
     if (phaseNow === "capturing" || phaseNow === "targeting" || phaseNow === "idle") manualExpand.current = false;
     // A pill the dock asked for does not carry over into the next session.
     if ((phaseNow === "capturing" || phaseNow === "targeting") && autoMini.current) setMini(false, "auto");
@@ -237,7 +287,11 @@ export function Card({
           <button
             type="button"
             className="mini-main"
-            onClick={() => setMini(false)}
+            {...NO_FOCUS}
+            onClick={() => {
+              blurActiveButton();
+              setMini(false);
+            }}
             aria-label={`Expand tutor card. ${PHASE_LABEL[phase]}`}
             title="Expand"
           >
@@ -254,7 +308,12 @@ export function Card({
             <button
               type="button"
               className="glass-btn glass-btn-stop"
-              onClick={() => onIntent({ type: "shut-up" })}
+              {...NO_FOCUS}
+              onClick={(e) => {
+                if (e.detail === 0 || clickTooSoon()) return;
+                blurActiveButton();
+                onIntent({ type: "shut-up" });
+              }}
               aria-label="Stop talking"
               title="Stop"
             >
@@ -264,7 +323,11 @@ export function Card({
           <button
             type="button"
             className="glass-btn"
-            onClick={() => setMini(false)}
+            {...NO_FOCUS}
+            onClick={() => {
+              blurActiveButton();
+              setMini(false);
+            }}
             aria-label="Expand tutor card"
             title="Expand"
           >
@@ -293,7 +356,11 @@ export function Card({
             <button
               type="button"
               className="glass-btn"
-              onClick={() => setMini(true)}
+              {...NO_FOCUS}
+              onClick={() => {
+                blurActiveButton();
+                setMini(true);
+              }}
               aria-label="Minimise tutor card"
               title="Minimise"
             >
@@ -302,7 +369,13 @@ export function Card({
             <button
               type="button"
               className="glass-btn glass-btn-close"
-              onClick={() => onIntent({ type: "card-close" })}
+              {...NO_FOCUS}
+              onClick={(e: MouseEvent<HTMLButtonElement>) => {
+                if (!e.isTrusted || e.detail === 0 || clickTooSoon()) return;
+                info(`[js] [card] close click at ${e.clientX},${e.clientY}`).catch(() => {});
+                blurActiveButton();
+                onIntent({ type: "card-close" });
+              }}
               aria-label="Close and end this session"
               title="Close"
             >
@@ -388,7 +461,11 @@ export function Card({
                         key={`${i}-${text}`}
                         type="button"
                         className="parked-row"
-                        onClick={() => onIntent({ type: "ask-parked", index: i })}
+                        {...NO_FOCUS}
+                        onClick={() => {
+                          blurActiveButton();
+                          onIntent({ type: "ask-parked", index: i });
+                        }}
                       >
                         <span className="parked-text">{text}</span>
                         <ChevronRight size={15} strokeWidth={2} className="parked-chev" aria-hidden="true" />
@@ -421,7 +498,12 @@ export function Card({
             <button
               type="button"
               className="action action-stop"
-              onClick={() => onIntent({ type: "shut-up" })}
+              {...NO_FOCUS}
+              onClick={(e) => {
+                if (e.detail === 0 || clickTooSoon()) return;
+                blurActiveButton();
+                onIntent({ type: "shut-up" });
+              }}
               aria-label="Stop talking now"
             >
               <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" />
@@ -430,7 +512,12 @@ export function Card({
             <button
               type="button"
               className="action action-interrupt"
-              onClick={() => onIntent({ type: "interrupt" })}
+              {...NO_FOCUS}
+              onClick={(e) => {
+                if (e.detail === 0 || clickTooSoon()) return;
+                blurActiveButton();
+                onIntent({ type: "interrupt" });
+              }}
               aria-label="Interrupt and speak"
             >
               <Mic size={14} strokeWidth={2.2} aria-hidden="true" />
@@ -459,8 +546,12 @@ export function Card({
             <button
               type="button"
               className="send"
+              {...NO_FOCUS}
               disabled={!canSend}
-              onClick={submit}
+              onClick={() => {
+                blurActiveButton();
+                submit();
+              }}
               aria-label="Send question"
             >
               <ArrowUp size={15} strokeWidth={2.4} aria-hidden="true" />
