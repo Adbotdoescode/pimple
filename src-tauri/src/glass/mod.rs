@@ -36,6 +36,7 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "hide_window",
     "read_source_file",
     "lens_grab",
+    "bubble_set_frame",
 ];
 
 pub fn is_glass_command(name: &str) -> bool {
@@ -62,6 +63,7 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         windows::hide_window,
         read_source_file,
         lens::lens_grab,
+        lens::bubble_set_frame,
     ]
 }
 

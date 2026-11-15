@@ -32,7 +32,7 @@ export interface LensState {
 
 /** Written by useBubbleMotion (geometry) and Bubble (tint); read here every frame. */
 export const lensState: LensState = {
-  cx: 0, cy: 0, r: 28, tx: 0, ty: 0, fx: 0, fy: 0, fw: 1728, fh: 1117,
+  cx: 0, cy: 0, r: 34, tx: 0, ty: 0, fx: 0, fy: 0, fw: 1728, fh: 1117,
   mode: "rest", hidden: false, ready: false, tint: [0.5, 0.8, 1, 0], pulse: 0,
 };
 
@@ -139,16 +139,24 @@ void main() {
     // Glass lighting: inner shadow, specular rim, counter light, gloss, hairline.
     vec2 L = normalize(vec2(-0.55, -0.83));
     float nl = dot(n, L);
-    float bw = 1.4 + 0.05 * u_r;
-    float band = smoothstep(-3.2 * bw, -bw, d) * smoothstep(0.0, -0.6 * bw, d);
-    col *= 1.0 - 0.20 * pow(rho, 5.0) * (0.55 - 0.45 * nl);
+    float bw = 0.8 + 0.02 * u_r;
+    float band = smoothstep(-3.0 * bw, -bw, d) * smoothstep(0.0, -0.5 * bw, d);
+    // Clear glass, not milk: the light-facing side of the interior carries a soft refracted
+    // shade, the far side a caustic; a thin dark ring just inside the edge gives it thickness.
+    float body = pow(rho, 2.2);
+    col *= 1.0 - 0.17 * body * (0.5 + 0.5 * nl);
+    col *= 1.0 - 0.10 * pow(rho, 10.0);
+    col += vec3(0.12) * body * max(-nl, 0.0) * (1.0 - dot(col, vec3(0.333)));
+    col *= vec3(0.972, 0.988, 1.0);
     col = mix(col, u_tint.rgb, u_tint.a * (0.06 + 0.42 * pow(rho, 3.0)));
-    col += vec3(1.0) * band * (0.85 * pow(max(nl, 0.0), 2.5) + 0.30 * pow(max(-nl, 0.0), 4.0) + 0.10);
+    // Crisp specular rim: bright arc toward the light, a thinner counter-light arc opposite.
+    col += vec3(1.0) * band * (1.0 * pow(max(nl, 0.0), 3.0) + 0.5 * pow(max(-nl, 0.0), 6.0));
     float z = sqrt(max(1.0 - rho * rho * 0.97, 0.0));
     vec3 N = normalize(vec3(n * rho, z));
-    float gl = pow(max(dot(N, normalize(vec3(-0.42, -0.62, 0.66))), 0.0), 28.0);
-    col += vec3(gl) * 0.55;
-    col = mix(col, col * 0.45, smoothstep(-1.1, 0.0, d) * 0.55);
+    float hl = max(dot(N, normalize(vec3(-0.40, -0.60, 0.69))), 0.0);
+    float gl = 0.95 * smoothstep(0.972, 0.99, hl) + 0.10 * pow(hl, 10.0);
+    col += vec3(gl);
+    col = mix(col, col * 0.42, smoothstep(-1.0, 0.0, d) * 0.6);
     float a = mix(0.42, 1.0, u_hasTex);
     a = mix(a, 1.0, clamp(band + gl + rim, 0.0, 1.0));
     inside = vec4(clamp(col, 0.0, 1.0) * a, a);

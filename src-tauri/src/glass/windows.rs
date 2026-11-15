@@ -11,12 +11,12 @@ use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, P
 use super::capture::RectPts;
 
 /// Bubble window (larger than the visible circle so CSS shadows/glow/pulse are not clipped).
-pub const BUBBLE_SIZE: f64 = 104.0;
+pub const BUBBLE_SIZE: f64 = 124.0;
 /// Visible glass circle, drawn by CSS centred in the bubble window.
-pub const BUBBLE_DIAMETER: f64 = 56.0;
+pub const BUBBLE_DIAMETER: f64 = 68.0;
 /// Gap between the visible circle and the screen's right edge. Negative: the droplet is
-/// half-merged into the edge (its centre sits 20 pt inside the screen).
-pub const BUBBLE_EDGE_GAP: f64 = -8.0;
+/// half-merged into the edge (its centre sits 8 pt inside the screen, the bulge about 42 pt out).
+pub const BUBBLE_EDGE_GAP: f64 = -26.0;
 pub const CARD_SIZE: (f64, f64) = (380.0, 260.0);
 
 /// Panel levels: overlay sits above normal apps; bubble and card above the overlay.

@@ -58,7 +58,7 @@ export interface BubbleProps {
   gestures?: Partial<Omit<BubbleGestureOptions, "onClick">>;
 }
 
-export function Bubble({ phase, onIntent, diameter = 56, motion = 0, gestures }: BubbleProps) {
+export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }: BubbleProps) {
   const state: BubbleState = STATE_OF[phase] ?? "idle";
   const listening = state === "listen" || state === "check";
 

@@ -121,26 +121,36 @@ function Lasso({ pts, closed }: { pts: Pt[]; closed: boolean }) {
     bbox = { x: x0, y: y0, w: Math.max(...xs) + pad - x0, h: Math.max(...ys) + pad - y0 };
   }
 
+  // Liquid ribbon: a clear glass tube with a dispersed (rainbow) edge. Layered strokes only, no
+  // SVG filters (WebKit rasterises them blurry): contact shadow, tube body, the three dispersed
+  // channels pulled apart sideways, a running spectrum, then the specular thread on top.
+  const line = { fill: "none", strokeLinecap: "round", strokeLinejoin: "round" } as const;
   return (
     <>
-      {closed && pts.length > 2 && <path d={d} fill="rgba(255,255,255,0.06)" stroke="none" />}
-      {/* Soft glow: two wide low-opacity copies stand in for a blur (blur filters fail on flat bboxes). */}
-      <path d={d} fill="none" stroke={stroke} strokeWidth={14} strokeLinecap="round" strokeLinejoin="round" opacity={0.15} />
-      <path d={d} fill="none" stroke={stroke} strokeWidth={8} strokeLinecap="round" strokeLinejoin="round" opacity={0.5} />
-      <path d={d} fill="none" stroke={stroke} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
-      {bbox && (
-        <rect
-          x={bbox.x}
-          y={bbox.y}
-          width={bbox.w}
-          height={bbox.h}
-          rx={6}
-          fill="none"
-          stroke="rgba(255,255,255,0.35)"
-          strokeWidth={1}
-          strokeDasharray="4 4"
-        />
-      )}
+      {closed && pts.length > 2 && <path d={d} fill="rgba(255,255,255,0.10)" stroke="none" />}
+      <path d={d} {...line} stroke="rgba(10,20,40,0.16)" strokeWidth={13} transform="translate(0 2)" />
+      <path d={d} {...line} stroke="rgba(10,20,40,0.30)" strokeWidth={10} />
+      <path d={d} {...line} stroke="rgba(255,255,255,0.55)" strokeWidth={8.5} />
+      <path d={d} {...line} stroke="rgba(255,64,96,0.55)" strokeWidth={6} transform="translate(-1.6 -1.2)" />
+      <path d={d} {...line} stroke="rgba(60,220,255,0.55)" strokeWidth={6} transform="translate(1.6 1.2)" />
+      <path d={d} {...line} stroke="rgba(255,214,64,0.45)" strokeWidth={4.5} transform="translate(1.2 -1.4)" />
+      <path d={d} {...line} stroke={stroke} strokeWidth={5} opacity={0.55} />
+      <path d={d} {...line} stroke="rgba(255,255,255,0.72)" strokeWidth={4} />
+      <path d={d} {...line} stroke="#FFFFFF" strokeWidth={1.4} transform="translate(-1 -1.1)" />
+      {bbox && <path d={brackets(bbox)} {...line} stroke="rgba(0,0,0,0.25)" strokeWidth={3} />}
+      {bbox && <path d={brackets(bbox)} {...line} stroke="rgba(255,255,255,0.8)" strokeWidth={1.5} />}
     </>
   );
+}
+
+/** Corner brackets around a box (the same capture hint the lens uses). */
+function brackets(b: { x: number; y: number; w: number; h: number }): string {
+  const c = Math.min(14, b.w * 0.25, b.h * 0.25);
+  const corner = (x: number, y: number, sx: number, sy: number) => `M${x - sx * c} ${y} H${x} V${y - sy * c}`;
+  return [
+    corner(b.x, b.y, -1, -1),
+    corner(b.x + b.w, b.y, 1, -1),
+    corner(b.x + b.w, b.y + b.h, 1, 1),
+    corner(b.x, b.y + b.h, -1, 1),
+  ].join(" ");
 }

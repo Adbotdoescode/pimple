@@ -145,3 +145,24 @@ pub fn lens_grab(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> Result<tauri
     let _ = std::ptr::null::<c_void>();
     grab(&app, x, y, w, h).map(tauri::ipc::Response::new)
 }
+
+/// ({x,y,w,h} global points) → resize and move the bubble window in ONE main-thread turn, so the
+/// shrink back to the small window at the screen edge lands in a single frame (no visible blink).
+#[tauri::command(async)]
+pub fn bubble_set_frame(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> Result<(), String> {
+    if ![x, y, w, h].iter().all(|v| v.is_finite()) || w < 1.0 || h < 1.0 {
+        return Err("bubble_set_frame: bad rect".into());
+    }
+    let win = app.get_webview_window("bubble").ok_or("bubble_set_frame: no bubble window")?;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.run_on_main_thread(move || {
+        let a = win.set_size(tauri::LogicalSize::new(w, h)).map_err(|e| e.to_string());
+        let b = win.set_position(tauri::LogicalPosition::new(x, y)).map_err(|e| e.to_string());
+        let _ = tx.send(a.and(b));
+    })
+    .map_err(|e| e.to_string())?;
+    match rx.recv_timeout(std::time::Duration::from_millis(400)) {
+        Ok(r) => r,
+        Err(_) => Ok(()),
+    }
+}

@@ -15,7 +15,8 @@
 // 104 × 104 around the circle. Both transitions hide the glass for ~3 frames so the user never sees
 // the window jump.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { info } from "@tauri-apps/plugin-log";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import type { Phase, RectPts, UiIntent } from "@shared/contracts";
@@ -35,11 +36,11 @@ import { dockCard } from "./cardDock";
 import { LassoTracker, type LassoLoop } from "./lasso";
 import { lensState } from "./liquidLens";
 
-const SMALL = 104;
-const R_REST = 28;
+const SMALL = 124;
+const R_REST = 34; // idle droplet: 68 pt across, bulging about 42 pt out of the screen edge
 const R_LENS = 64;
 const R_MAX = 220;
-const EDGE_GAP = -8; // negative: the droplet is half-merged into the screen edge (centre 20 pt in)
+const EDGE_GAP = -26; // negative: the droplet is half-merged into the screen edge (centre 8 pt in)
 const EDGE_MARGIN_Y = 24;
 const PARK_GAP = 16;
 const PARK_MARGIN = 8;
@@ -180,6 +181,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       el.style.setProperty("--ly", `${ly.toFixed(2)}px`);
       // Squash, stretch, glow and shadow are all drawn by the liquid-lens shader now.
       el.style.opacity = s.hidden ? "0" : "1";
+      // Docked at an edge, the drop's centre is almost on the edge: CSS nudges the state marks
+      // (core, bars) into the visible bulge.
+      const dock = s.mode === "rest" || s.mode === "parked" ? (p.x > s.frame.x + s.frame.w / 2 ? "right" : "left") : "";
+      if (el.dataset.dock !== dock) el.dataset.dock = dock;
     }
     void th;
     const L = lensState;
@@ -277,6 +282,28 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       render();
       await nextFrame();
     } else {
+      // Shrink in ONE native frame change and never hide: until the webview has re-laid out at
+      // the small size, the small window only shows the old layout's empty top-left corner, and
+      // the new local offset is applied in the same frame the viewport becomes small. No blink.
+      let atomic = false;
+      try {
+        await invoke("bubble_set_frame", { x: next.x, y: next.y, w: next.w, h: next.h });
+        atomic = true;
+      } catch (e) {
+        logErr("bubble_set_frame", e);
+      }
+      if (atomic) {
+        const t0 = performance.now();
+        while (window.innerWidth > next.w + 2 && performance.now() - t0 < 300) await nextFrame();
+        s.geom = next;
+        s.win = want;
+        s.hidden = false;
+        render();
+        blog(
+          `[bubble] win now ${want} at ${desc(next)} (atomic, ${(performance.now() - t0).toFixed(0)} ms); glass local=(${(s.pos.x - next.x).toFixed(0)},${(s.pos.y - next.y).toFixed(0)})`,
+        );
+        return;
+      }
       s.hidden = true;
       render();
       await nextFrame();
@@ -727,6 +754,25 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         .then((u) => (disposed ? u() : unlisten.push(u)))
         .catch((e) => logErr("listen", e));
     track(onEvent(EV.keyReturn, () => commit()));
+    // The card can collapse to a pill or grow: keep it beside the drop when its size changes.
+    let redock = 0;
+    TauriWindow.getByLabel("card")
+      .then((card) => {
+        if (!card || disposed) return;
+        track(
+          card.onResized(() => {
+            window.clearTimeout(redock);
+            redock = window.setTimeout(() => {
+              const c = S.current;
+              if (c.mode !== "rest" && c.mode !== "parked") return;
+              c.chain = c.chain
+                .then(() => dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr, c.lastRegion))
+                .catch((e) => logErr("card redock", e));
+            }, 60);
+          }),
+        );
+      })
+      .catch((e) => logErr("card lookup", e));
     track(onEvent(EV.keyEscape, () => cancel()));
 
     // Initial geometry: where Rust put us, and which display we are on.
