@@ -1,11 +1,81 @@
-//! Keychain-backed secrets. Owner: Domain 2. Implemented. NEVER log secret values.
-//! Shells out to /usr/bin/security (no Keychain prompt for items it created).
+//! API keys backed by the operating system's credential store. Never log secret values.
 use serde::Serialize;
 use std::collections::HashMap;
+#[cfg(not(target_os = "windows"))]
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 const ACCOUNT: &str = "glass-tutor";
+
+#[cfg(target_os = "windows")]
+mod windows_store {
+    use std::{ptr, slice};
+    use windows::{
+        core::{HRESULT, PCWSTR, PWSTR},
+        Win32::{
+            Foundation::ERROR_NOT_FOUND,
+            Security::Credentials::{
+                CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW,
+                CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+            },
+        },
+    };
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub(super) fn read(service: &str) -> Result<Option<String>, String> {
+        let target = wide(service);
+        let mut entry: *mut CREDENTIALW = ptr::null_mut();
+        unsafe {
+            match CredReadW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None, &mut entry) {
+                Ok(()) => {}
+                Err(e) if e.code() == HRESULT::from_win32(ERROR_NOT_FOUND.0) => return Ok(None),
+                Err(e) => return Err(format!("Credential Manager could not read the key: {e}")),
+            }
+            if entry.is_null() {
+                return Err("Credential Manager returned no entry".into());
+            }
+            let blob = &*entry;
+            let value = if blob.CredentialBlobSize == 0 || blob.CredentialBlob.is_null() {
+                Ok(None)
+            } else {
+                let bytes = slice::from_raw_parts(blob.CredentialBlob, blob.CredentialBlobSize as usize);
+                std::str::from_utf8(bytes).map(|text| Some(text.to_owned()))
+                    .map_err(|_| "Credential Manager returned an invalid key".to_owned())
+            };
+            CredFree(entry.cast());
+            value
+        }
+    }
+
+    pub(super) fn write(service: &str, value: &str) -> Result<(), String> {
+        let mut target = wide(service);
+        let mut user = wide(super::ACCOUNT);
+        let mut bytes = value.as_bytes().to_vec();
+        let entry = CREDENTIALW {
+            Type: CRED_TYPE_GENERIC,
+            TargetName: PWSTR(target.as_mut_ptr()),
+            CredentialBlobSize: u32::try_from(bytes.len()).map_err(|_| "Key is too long")?,
+            CredentialBlob: bytes.as_mut_ptr(),
+            Persist: CRED_PERSIST_LOCAL_MACHINE,
+            UserName: PWSTR(user.as_mut_ptr()),
+            ..Default::default()
+        };
+        unsafe { CredWriteW(&entry, 0) }
+            .map_err(|e| format!("Credential Manager could not save the key: {e}"))
+    }
+
+    pub(super) fn delete(service: &str) -> Result<(), String> {
+        let target = wide(service);
+        match unsafe { CredDeleteW(PCWSTR(target.as_ptr()), CRED_TYPE_GENERIC, None) } {
+            Ok(()) => Ok(()),
+            Err(e) if e.code() == HRESULT::from_win32(ERROR_NOT_FOUND.0) => Ok(()),
+            Err(e) => Err(format!("Credential Manager could not remove the key: {e}")),
+        }
+    }
+}
 
 fn service_for(name: &str) -> Result<&'static str, String> {
     match name {
@@ -18,6 +88,14 @@ fn service_for(name: &str) -> Result<&'static str, String> {
 
 pub fn read_secret(name: &str) -> Result<Option<String>, String> {
     let service = service_for(name)?;
+    read_stored_secret(service)
+}
+
+#[cfg(target_os = "windows")]
+use windows_store::{delete as delete_stored_secret, read as read_stored_secret, write as write_stored_secret};
+
+#[cfg(not(target_os = "windows"))]
+fn read_stored_secret(service: &str) -> Result<Option<String>, String> {
     let out = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-s", service, "-a", ACCOUNT, "-w"])
         .stdin(Stdio::null())
@@ -44,6 +122,11 @@ pub fn set_secret(name: String, value: String) -> Result<(), String> {
     if value.is_empty() {
         return Err("empty value".into());
     }
+    write_stored_secret(service, value)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn write_stored_secret(service: &str, value: &str) -> Result<(), String> {
     let out = Command::new("/usr/bin/security")
         .args([
             "add-generic-password",
@@ -59,7 +142,7 @@ pub fn set_secret(name: String, value: String) -> Result<(), String> {
         .output()
         .map_err(|e| format!("security failed to run: {e}"))?;
     if out.status.success() {
-        log::info!("Stored secret '{name}' in Keychain");
+        log::info!("Stored secret '{service}' in Keychain");
         Ok(())
     } else {
         Err(format!(
@@ -83,17 +166,22 @@ pub fn keys_status() -> Result<HashMap<String, bool>, String> {
 #[tauri::command]
 pub fn delete_secret(name: String) -> Result<(), String> {
     let service = service_for(&name)?;
+    delete_stored_secret(service)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn delete_stored_secret(service: &str) -> Result<(), String> {
     let out = Command::new("/usr/bin/security")
         .args(["delete-generic-password", "-s", service, "-a", ACCOUNT])
         .stdin(Stdio::null())
         .output()
         .map_err(|e| format!("security failed to run: {e}"))?;
     if out.status.success() {
-        log::info!("Removed secret '{name}' from Keychain");
+        log::info!("Removed secret '{service}' from Keychain");
         return Ok(());
     }
     // Not found (or already gone): the desired end state holds.
-    if matches!(read_secret(&name), Ok(None)) {
+    if matches!(read_stored_secret(service), Ok(None)) {
         return Ok(());
     }
     Err(format!(

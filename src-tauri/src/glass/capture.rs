@@ -5,6 +5,7 @@
 //! is a sharper crop of the padded region, cut from the native shot before any downscaling.
 //! `read_debug_file`: debug helper, reads an absolute path as text.
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -18,13 +19,18 @@ use tauri_nspanel::ManagerExt;
 use super::windows::main_display_frame;
 
 const PAD_FRACTION: f64 = 0.12;
-const MAX_EDGE: u32 = 1568;
+pub(super) const MAX_EDGE: u32 = 1568;
 const HIDE_SETTLE: Duration = Duration::from_millis(70);
 const PANEL_LABELS: [&str; 3] = ["bubble", "overlay", "card"];
 /// Normal windows hidden for the shot and not restored afterwards.
 const WINDOW_LABELS: [&str; 2] = ["whiteboard", "gizmo"];
+#[cfg(not(target_os = "windows"))]
 const SCREENCAPTURE: &str = "/usr/sbin/screencapture";
+#[cfg(not(target_os = "windows"))]
 const SIPS: &str = "/usr/bin/sips";
+
+#[cfg(target_os = "windows")]
+use super::windows_capture::{crop_jpeg, fit_to_edge, pixel_size, read_fixture, screencapture};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RectPts {
@@ -86,7 +92,7 @@ fn capture_blocking(
     fixture: Option<String>,
 ) -> Result<CaptureResult, String> {
     let total_t = Instant::now();
-    let (display, display_id) = target_display(app);
+    let (display, display_id, display_scale) = target_display(app);
     let captured_at = now_ms();
     let dir = captures_dir(app)?;
     let native_path = dir.join(format!("cap-{captured_at}-native.jpg"));
@@ -102,7 +108,7 @@ fn capture_blocking(
             if !src.is_absolute() || !src.is_file() {
                 return Err(format!("fixture is not an existing absolute file: {src:?}"));
             }
-            run_sips(&["-s", "format", "jpeg"], &src, Some(&native_path))?;
+            read_fixture(&src, &native_path)?;
             let (iw, ih) = pixel_size(&native_path)?;
             let scale = (iw as f64 / display.w).max(ih as f64 / display.h);
             let nr = RectPts {
@@ -120,7 +126,7 @@ fn capture_blocking(
             let hide_ms = hide_t.elapsed().as_millis();
 
             let shot_t = Instant::now();
-            let shot = screencapture(display, &native_path);
+            let shot = screencapture(display, display_scale, &native_path);
             // Restore before anything else, even when the capture failed.
             restore_ours(app, &hidden);
             let shot_ms = shot_t.elapsed().as_millis();
@@ -144,13 +150,7 @@ fn capture_blocking(
             let y0 = ((fr.y - native_region.y) * native_scale).round().clamp(0.0, nh as f64 - 1.0);
             let cw = (fr.w * native_scale).round().clamp(1.0, nw as f64 - x0);
             let ch = (fr.h * native_scale).round().clamp(1.0, nh as f64 - y0);
-            let (ys, xs) = (format!("{}", y0 as u32), format!("{}", x0 as u32));
-            let (hs, ws) = (format!("{}", ch as u32), format!("{}", cw as u32));
-            run_sips(
-                &["--cropOffset", ys.as_str(), xs.as_str(), "-c", hs.as_str(), ws.as_str()],
-                &native_path,
-                Some(&focus_path),
-            )?;
+            crop_jpeg(&native_path, &focus_path, x0 as u32, y0 as u32, cw as u32, ch as u32)?;
             let native_crop = pixel_size(&focus_path)?;
             let (fw, fh) = fit_to_edge(&focus_path)?;
             log::info!(
@@ -274,7 +274,7 @@ fn monitor_frame(m: &tauri::Monitor) -> RectPts {
 
 /// Frame (points) and 1-based display id of the monitor the bubble is on, matching
 /// `bubble_display` and `screencapture -D`. Falls back to the primary monitor.
-fn target_display(app: &AppHandle) -> (RectPts, u32) {
+fn target_display(app: &AppHandle) -> (RectPts, u32, f64) {
     let current = app
         .get_webview_window("bubble")
         .and_then(|w| w.current_monitor().ok().flatten());
@@ -287,9 +287,9 @@ fn target_display(app: &AppHandle) -> (RectPts, u32) {
                 .position(|o| o.position() == m.position() && o.size() == m.size())
                 .map(|i| i as u32 + 1)
                 .unwrap_or(1);
-            (monitor_frame(&m), id)
+            (monitor_frame(&m), id, m.scale_factor())
         }
-        None => (main_display_frame(app), 1),
+        None => (main_display_frame(app), 1, 1.0),
     }
 }
 
@@ -419,7 +419,8 @@ fn restore_ours(app: &AppHandle, hidden: &[&'static str]) {
 }
 
 /// One screencapture of `region` (points) at native resolution.
-fn screencapture(region: RectPts, out: &Path) -> Result<(), String> {
+#[cfg(not(target_os = "windows"))]
+fn screencapture(region: RectPts, _scale: f64, out: &Path) -> Result<(), String> {
     let rect = format!(
         "{},{},{},{}",
         region.x as i64, region.y as i64, region.w as i64, region.h as i64
@@ -439,6 +440,7 @@ fn screencapture(region: RectPts, out: &Path) -> Result<(), String> {
 }
 
 /// Runs sips with `flags` and input `src`, plus `--out` when given. Errors carry sips' stderr.
+#[cfg(not(target_os = "windows"))]
 fn run_sips(flags: &[&str], src: &Path, out: Option<&Path>) -> Result<(), String> {
     let mut cmd = Command::new(SIPS);
     cmd.args(flags).arg(src);
@@ -455,6 +457,7 @@ fn run_sips(flags: &[&str], src: &Path, out: Option<&Path>) -> Result<(), String
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn pixel_size(path: &Path) -> Result<(u32, u32), String> {
     let o = Command::new(SIPS)
         .args(["-g", "pixelWidth", "-g", "pixelHeight"])
@@ -485,6 +488,7 @@ fn pixel_size(path: &Path) -> Result<(u32, u32), String> {
 
 /// Downscales in place so the long edge is at most MAX_EDGE (never upscales). Returns the
 /// final pixel size.
+#[cfg(not(target_os = "windows"))]
 fn fit_to_edge(path: &Path) -> Result<(u32, u32), String> {
     let (w, h) = pixel_size(path)?;
     if w.max(h) <= MAX_EDGE {
@@ -493,4 +497,18 @@ fn fit_to_edge(path: &Path) -> Result<(u32, u32), String> {
     let max = MAX_EDGE.to_string();
     run_sips(&["-Z", max.as_str()], path, None)?;
     pixel_size(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_fixture(src: &Path, out: &Path) -> Result<(), String> {
+    run_sips(&["-s", "format", "jpeg"], src, Some(out))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn crop_jpeg(src: &Path, out: &Path, x: u32, y: u32, w: u32, h: u32) -> Result<(), String> {
+    run_sips(
+        &["--cropOffset", &y.to_string(), &x.to_string(), "-c", &h.to_string(), &w.to_string()],
+        src,
+        Some(out),
+    )
 }

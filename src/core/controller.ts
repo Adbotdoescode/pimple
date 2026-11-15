@@ -1797,7 +1797,7 @@ export async function startController(): Promise<() => void> {
     listen<{ reason: string }>(EV.ttsFallback, (e) => {
       const reason = (e.payload?.reason ?? "").slice(0, 80);
       console.warn("[brain] tts fallback:", reason);
-      patch({ notice: `ElevenLabs unavailable — using the Mac voice${reason ? ` (${reason})` : ""}` });
+      patch({ notice: `ElevenLabs unavailable — using the system voice${reason ? ` (${reason})` : ""}` });
     }),
     listen("keys:changed", () => void refreshNeedsSetup()),
     listen("onboarding:show", () => void refreshNeedsSetup()),

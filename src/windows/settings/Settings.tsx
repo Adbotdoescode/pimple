@@ -419,7 +419,7 @@ export function Settings({
                       value={settings.ttsProvider}
                       options={[
                         { value: "elevenlabs", label: "ElevenLabs" },
-                        { value: "say", label: "macOS voice" },
+                        { value: "say", label: "System voice" },
                         { value: "off", label: "Off" },
                       ]}
                       onChange={(v) => change({ ttsProvider: v })}
@@ -514,7 +514,7 @@ export function Settings({
                   <KeyRow
                     name="elevenlabs"
                     label="ElevenLabs"
-                    hint="Optional. Without it Pimple uses the macOS voice"
+                    hint="Optional. Without it Pimple uses the system voice"
                     present={keys === null ? null : !!keys.elevenlabs}
                     unavailable={keysUnavailable}
                     onSaved={refreshKeys}
@@ -549,7 +549,7 @@ export function Settings({
                 </div>
               )}
               <p className="footnote">
-                Keys live in your macOS Keychain and leave this Mac only to call the provider.
+                Keys live in your system credential store and leave this computer only to call the provider.
               </p>
             </>
           )}

@@ -11,6 +11,7 @@ import {
   requestScreenRecordingPermission,
 } from "tauri-plugin-macos-permissions-api";
 import { CMD, type SecretName } from "@shared/contracts";
+import { isWindows } from "@/lib/platform";
 import { VoicePicker } from "./VoicePicker";
 import { CheckIcon } from "./icons";
 
@@ -86,7 +87,7 @@ export function Onboarding({
   const canContinue = step !== "anthropic" || hasAnthropic;
   let nextLabel = "Continue";
   if (step === "welcome") nextLabel = "Get started";
-  else if (step === "elevenlabs" && !hasEleven) nextLabel = "Skip, use the Mac voice";
+  else if (step === "elevenlabs" && !hasEleven) nextLabel = "Skip, use the system voice";
   else if (step === "permissions") nextLabel = "Continue";
   else if (step === "done") nextLabel = "Start using Pimple";
 
@@ -150,7 +151,7 @@ export function Onboarding({
             <KeyStep
               name="elevenlabs"
               title="Give Pimple a voice"
-              lede="Optional. Without it Pimple uses the Mac voice."
+              lede="Optional. Without it Pimple uses the system voice."
               host="elevenlabs.io"
               url="https://elevenlabs.io/app/settings/api-keys"
               present={keys === null ? null : hasEleven}
@@ -171,7 +172,7 @@ export function Onboarding({
             </section>
           )}
 
-          {step === "permissions" && <Permissions />}
+          {step === "permissions" && (isWindows ? <WindowsMicrophone /> : <Permissions />)}
 
           {step === "done" && (
             <section className="blob onb-card onb-welcome">
@@ -184,7 +185,7 @@ export function Onboarding({
               <h2 className="onb-title">You're all set</h2>
               <p className="onb-lede">Look for the droplet on the edge of your screen</p>
               <p className="onb-note">
-                Pimple stays in the menu bar. Open this window from there whenever you want to move the
+                Pimple stays in the {isWindows ? "system tray" : "menu bar"}. Open this window from there whenever you want to move the
                 droplet, change the voice or replace a key.
               </p>
             </section>
@@ -411,12 +412,30 @@ function KeyStep({
           Open {host}
         </button>
       </div>
-      <p className="onb-fine">Stored in your macOS Keychain. It leaves this Mac only to call {label}.</p>
+      <p className="onb-fine">
+        Stored in {isWindows ? "Windows Credential Manager" : "your macOS Keychain"}.
+        Pimple sends it only when calling {label}.
+      </p>
     </section>
   );
 }
 
 type PermId = "screen" | "mic" | "ax";
+function WindowsMicrophone() {
+  return (
+    <section className="blob onb-card">
+      <div className="blob-head">
+        <h2>Microphone access</h2>
+        <p>Allow desktop apps to access your microphone in Windows Settings to ask questions aloud.</p>
+      </div>
+      <button type="button" className="btn" onClick={() => open("ms-settings:privacy-microphone")}>
+        Open microphone settings
+      </button>
+      <p className="onb-fine">You can also type questions into Pimple.</p>
+    </section>
+  );
+}
+
 const PERMS: {
   id: PermId;
   title: string;

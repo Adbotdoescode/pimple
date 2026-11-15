@@ -1,4 +1,4 @@
-//! C3 TTS synthesis: ElevenLabs (eleven_flash_v2_5) with `say` fallback, disk-cached under app_cache_dir()/tts.
+//! C3 TTS synthesis: ElevenLabs with a local voice fallback, disk-cached under app_cache_dir()/tts.
 //! Provider ceiling: env GT_TTS ("elevenlabs" | "say" | "off"), exported by scripts/dev.sh.
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,10 +11,15 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::keys::read_secret;
 
 const ELEVEN_MODEL: &str = "eleven_flash_v2_5";
+#[cfg(not(target_os = "windows"))]
 const SAY_MODEL: &str = "say";
+#[cfg(target_os = "windows")]
+const SAY_MODEL: &str = "windows-speech";
 const SAY_VOICE: &str = "default";
 const DEFAULT_VOICE: &str = "SAz9YHcvj6GT2YYXdXww";
+#[cfg(not(target_os = "windows"))]
 const SAY_BIN: &str = "/usr/bin/say";
+#[cfg(not(target_os = "windows"))]
 const SAY_RATE: &str = "190";
 /// 22050 Hz * 16-bit mono.
 const SAY_PCM_BYTES_PER_SEC: u64 = 22_050 * 2;
@@ -216,9 +221,24 @@ async fn synth_say(dir: &Path, text: &str) -> Result<TtsSynthResult, String> {
     }
 
     let tmp = dir.join(format!("{key}.tmp.wav"));
+    if let Err(error) = write_local_speech(&tmp, text).await {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error);
+    }
+
+    let size = std::fs::metadata(&tmp)
+        .map_err(|e| format!("stat say output: {e}"))?
+        .len();
+    let ms = size.saturating_sub(WAV_HEADER_BYTES) * 1000 / SAY_PCM_BYTES_PER_SEC;
+    let path = finalize(dir, &key, "wav", &tmp, ms)?;
+    Ok(synth_result(path, "say", false, ms))
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn write_local_speech(path: &Path, text: &str) -> Result<(), String> {
     let status = tokio::process::Command::new(SAY_BIN)
         .arg("-o")
-        .arg(&tmp)
+        .arg(path)
         .arg("--file-format=WAVE")
         .arg("--data-format=LEI16@22050")
         .arg("-r")
@@ -228,17 +248,56 @@ async fn synth_say(dir: &Path, text: &str) -> Result<TtsSynthResult, String> {
         .status()
         .await
         .map_err(|e| format!("spawn say: {e}"))?;
-    if !status.success() {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!("say exited with {status}"));
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("say exited with {status}"))
     }
+}
 
-    let size = std::fs::metadata(&tmp)
-        .map_err(|e| format!("stat say output: {e}"))?
-        .len();
-    let ms = size.saturating_sub(WAV_HEADER_BYTES) * 1000 / SAY_PCM_BYTES_PER_SEC;
-    let path = finalize(dir, &key, "wav", &tmp, ms)?;
-    Ok(synth_result(path, "say", false, ms))
+#[cfg(target_os = "windows")]
+async fn write_local_speech(path: &Path, text: &str) -> Result<(), String> {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+
+    // Pass lesson text via stdin, never as a PowerShell command or argument.
+    const SYNTHESIZE: &str = r#"
+        $ErrorActionPreference = 'Stop'
+        [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+        Add-Type -AssemblyName System.Speech
+        $voice = [System.Speech.Synthesis.SpeechSynthesizer]::new()
+        try {
+            $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
+                22050, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
+                [System.Speech.AudioFormat.AudioChannel]::Mono)
+            $voice.SetOutputToWaveFile($env:PIMPLE_SPEECH_WAV, $format)
+            $voice.Speak([Console]::In.ReadToEnd())
+        } finally {
+            $voice.Dispose()
+        }
+    "#;
+
+    let system_root = std::env::var_os("SystemRoot").ok_or("Windows directory unavailable")?;
+    let powershell = PathBuf::from(system_root).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let mut child = tokio::process::Command::new(powershell)
+        .args(["-NoProfile", "-NonInteractive", "-Command", SYNTHESIZE])
+        .env("PIMPLE_SPEECH_WAV", path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("Start Windows speech: {e}"))?;
+    let mut input = child.stdin.take().ok_or("Windows speech input unavailable")?;
+    input.write_all(text.as_bytes()).await.map_err(|e| format!("Write Windows speech input: {e}"))?;
+    drop(input);
+    let status = child.wait().await.map_err(|e| format!("Wait for Windows speech: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Windows speech exited with {status}"))
+    }
 }
 
 /// Log the failure (status only, never the key) and emit tts:fallback.

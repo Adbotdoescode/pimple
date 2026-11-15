@@ -1,8 +1,6 @@
 {
   "bundle": {
-    "resources": {
-      "resources": "resources",
-      "transcribe-libs": "."
-    }
+    "targets": ["nsis"],
+    "resources": ["resources/**/*"]
   }
 }

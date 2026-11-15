@@ -2,8 +2,11 @@
 //! Labels match the ARCHITECTURE window table. All geometry in macOS points.
 use serde::Serialize;
 use tauri::utils::config::BackgroundThrottlingPolicy;
+#[cfg(target_os = "macos")]
 use tauri::window::{Effect, EffectState, EffectsBuilder};
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri::{LogicalPosition, LogicalSize};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{tauri_panel, CollectionBehavior, ManagerExt, PanelBuilder, PanelLevel, StyleMask};
@@ -20,7 +23,9 @@ pub const BUBBLE_EDGE_GAP: f64 = -26.0;
 pub const CARD_SIZE: (f64, f64) = (380.0, 260.0);
 
 /// Panel levels: overlay sits above normal apps; bubble and card above the overlay.
+#[cfg(target_os = "macos")]
 const OVERLAY_LEVEL: i32 = 25; // NSStatusWindowLevel
+#[cfg(target_os = "macos")]
 const BUBBLE_LEVEL: i32 = 27;
 
 #[cfg(target_os = "macos")]
@@ -85,7 +90,7 @@ pub fn create_all(app: &AppHandle) {
     // whiteboard: a frameless sheet of blurred glass (native vibrancy under a transparent webview).
     // The web content draws the whole surface, its own close button and a drag region, and places
     // the window next to the bubble from JS.
-    if let Err(e) = WebviewWindowBuilder::new(app, "whiteboard", url("whiteboard"))
+    let whiteboard = WebviewWindowBuilder::new(app, "whiteboard", url("whiteboard"))
         .title("Pimple — Whiteboard")
         .inner_size(1120.0, 720.0)
         .min_inner_size(640.0, 420.0)
@@ -96,16 +101,17 @@ pub fn create_all(app: &AppHandle) {
         .resizable(true)
         .accept_first_mouse(true)
         .skip_taskbar(true)
+        .center();
+    #[cfg(target_os = "macos")]
+    let whiteboard = whiteboard
         .effects(
             EffectsBuilder::new()
                 .effect(Effect::FullScreenUI)
                 .state(EffectState::Active)
                 .radius(30.0)
                 .build(),
-        )
-        .center()
-        .build()
-    {
+        );
+    if let Err(e) = whiteboard.build() {
         log::error!("create whiteboard: {e}");
     }
 
@@ -131,8 +137,11 @@ pub fn create_all(app: &AppHandle) {
             .inner_size(760.0, 660.0)
             .min_inner_size(640.0, 560.0)
             .visible(false)
-            .transparent(true)
+            .transparent(cfg!(target_os = "macos"))
             .accept_first_mouse(true)
+            .center();
+        #[cfg(target_os = "macos")]
+        let b = b
             .effects(
                 EffectsBuilder::new()
                     .effect(Effect::HudWindow)
@@ -140,9 +149,6 @@ pub fn create_all(app: &AppHandle) {
                     .radius(26.0)
                     .build(),
             )
-            .center();
-        #[cfg(target_os = "macos")]
-        let b = b
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)
             .traffic_light_position(tauri::Position::Logical(LogicalPosition { x: 20.0, y: 24.0 }));
@@ -153,6 +159,47 @@ pub fn create_all(app: &AppHandle) {
 
     #[cfg(target_os = "macos")]
     create_panels(app, d, bubble_x, bubble_y);
+    #[cfg(target_os = "windows")]
+    create_windows_panels(app, d, bubble_x, bubble_y);
+}
+
+#[cfg(target_os = "windows")]
+fn create_windows_panels(app: &AppHandle, display: RectPts, bubble_x: f64, bubble_y: f64) {
+    let (card_w, card_h) = CARD_SIZE;
+    let panels = [
+        ("overlay", display.x, display.y, display.w, display.h, false),
+        ("bubble", bubble_x, bubble_y, BUBBLE_SIZE, BUBBLE_SIZE, false),
+        ("card", display.x + display.w - 60.0 - card_w,
+            bubble_y + (BUBBLE_SIZE + BUBBLE_DIAMETER) / 2.0 + 10.0, card_w, card_h, true),
+    ];
+    for (label, x, y, width, height, focusable) in panels {
+        let result = WebviewWindowBuilder::new(app, label, url(label))
+            .title("Pimple")
+            .inner_size(width, height)
+            .position(x, y)
+            .visible(false)
+            .focused(false)
+            .focusable(focusable)
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .skip_taskbar(true)
+            .resizable(false)
+            .always_on_top(true)
+            .build()
+            .and_then(|window| {
+                if label == "overlay" {
+                    window.set_ignore_cursor_events(true)?;
+                }
+                if label != "card" {
+                    window.show()?;
+                }
+                Ok(())
+            });
+        if let Err(error) = result {
+            log::error!("create {label} panel: {error}");
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -278,12 +325,14 @@ fn create_panels(app: &AppHandle, d: RectPts, bubble_x: f64, bubble_y: f64) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn is_panel(label: &str) -> bool {
     matches!(label, "bubble" | "overlay" | "card")
 }
 
 /// Sheets float over the student's work and are shown without activating the app: activating an
 /// accessory app raises its other windows too (a backgrounded settings window would jump forward).
+#[cfg(target_os = "macos")]
 fn is_sheet(label: &str) -> bool {
     matches!(label, "whiteboard" | "gizmo")
 }
@@ -306,6 +355,10 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
     let w = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("no window '{label}'"))?;
+    #[cfg(target_os = "windows")]
+    if is_panel(&label) {
+        return w.show().map_err(|e| e.to_string());
+    }
     if label != "brain" {
         #[cfg(target_os = "macos")]
         let sheet = is_sheet(&label);
@@ -335,6 +388,10 @@ pub fn show_window(app: AppHandle, label: String) -> Result<(), String> {
             order_front_regardless(&app, &w);
         } else {
             let _ = w.set_focus();
+        }
+        #[cfg(target_os = "windows")]
+        if label == "whiteboard" {
+            let _ = w.set_always_on_top(true);
         }
         #[cfg(not(target_os = "macos"))]
         let _ = w.set_focus();

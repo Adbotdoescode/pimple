@@ -192,9 +192,10 @@ pub fn bubble_set_frame(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> Resul
 /// at rest so the droplet can lean toward a cursor that is NEAR it (its window gets no mouse
 /// events outside its own small frame).
 #[tauri::command(async)]
-pub fn cursor_pos() -> Result<(f64, f64), String> {
+pub fn cursor_pos(app: AppHandle) -> Result<(f64, f64), String> {
     #[cfg(target_os = "macos")]
     {
+        let _ = app;
         #[link(name = "CoreGraphics", kind = "framework")]
         extern "C" {
             fn CGEventCreate(source: *const c_void) -> *mut c_void;
@@ -210,8 +211,17 @@ pub fn cursor_pos() -> Result<(f64, f64), String> {
             Ok((p.x, p.y))
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
+        use windows::Win32::{Foundation::POINT, UI::WindowsAndMessaging::GetCursorPos};
+        let mut position = POINT::default();
+        unsafe { GetCursorPos(&mut position) }.map_err(|e| format!("Read cursor position: {e}"))?;
+        let scale = app.get_webview_window("bubble").and_then(|w| w.scale_factor().ok()).unwrap_or(1.0);
+        Ok((f64::from(position.x) / scale, f64::from(position.y) / scale))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
         Err("cursor_pos: macOS only".into())
     }
 }

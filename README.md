@@ -2,7 +2,7 @@
 
 **A tutor that lives on your screen, explains out loud, draws on top of what you're looking at, and checks your understanding as it teaches.**
 
-Pimple is a small Liquid Glass bubble that sits at the edge of your Mac's screen. Click it (or point it at part of the screen) and ask a question out loud about whatever you're working on: a physics problem, a chemistry equation, a paragraph of history, a bug in your code. It answers in a few spoken sentences while it circles, underlines and draws arrows and vectors directly on your screen, in sync with each sentence. When it's done, it asks you one question that makes you think, and gives quick feedback on your answer.
+Pimple is a small bubble that sits at the edge of your screen. Click it (or point it at part of the screen) and ask a question out loud about whatever you're working on: a physics problem, a chemistry equation, a paragraph of history, a bug in your code. It answers in a few spoken sentences while it circles, underlines and draws arrows and vectors directly on your screen, in sync with each sentence. When it's done, it asks you one question that makes you think, and gives quick feedback on your answer.
 
 You can stop it at any moment. Hold Space to challenge a point mid-sentence and it answers that exact point as a side note, then picks up where it left off. If your screen doesn't show what it needs, it opens a whiteboard and draws from scratch.
 
@@ -11,7 +11,7 @@ Built in four hours at a hackathon, on top of [Handy](https://github.com/cjpais/
 ## Features
 
 - **Sees your screen.** Click the bubble to use the whole screen, drag it over a region (scroll to resize the lens), or circle something with a lasso. For a region, the tutor gets the full screen as context plus a sharp crop of what you pointed at.
-- **Voice in, voice out.** Offline speech-to-text (Parakeet V3, on-device). The tutor speaks with an ElevenLabs voice (flash model, cached on disk), falling back to the macOS voice.
+- **Voice in, voice out.** Offline speech-to-text (Parakeet V3, on-device). The tutor speaks with an ElevenLabs voice (flash model, cached on disk), falling back to the system voice.
 - **Draws while it talks.** Circles, boxes, arrows, force vectors with components, strokes, labels and graphs, rendered as animated ink on a click-through overlay. Each sentence's drawings appear while that sentence is spoken. Colours adapt to whatever is underneath.
 - **Tightly scoped answers.** Two to four short spoken sentences about exactly what you asked. Off-topic asides are parked in the card for later.
 - **Interrupt anything.** Hold Space (or press Interrupt) while it's thinking, talking or checking. Tap Space and it asks "Which part?". The objection is answered as a dashed side note, logged under "Points you questioned", and the explanation resumes. Stop (or Esc) silences it immediately and opens the mic.
@@ -74,7 +74,9 @@ Contracts between the parts (response schema, capture, voice I/O, session snapsh
 
 ## Setup (from source)
 
-Requirements: macOS on Apple Silicon, [Rust](https://rustup.rs), [Bun](https://bun.sh), Xcode Command Line Tools.
+### macOS
+
+Requirements: Apple Silicon, [Rust](https://rustup.rs), [Bun](https://bun.sh), and Xcode Command Line Tools.
 
 ```bash
 bun install
@@ -89,6 +91,18 @@ bun run tauri dev          # or scripts/dev.sh (logs to /tmp/glass-tutor-dev.log
 They are saved in the macOS Keychain (service `glass-tutor.*`, account `glass-tutor`; internal identifiers keep the original working name "Glass Tutor"). `GT_TTS=say` or `GT_TTS=off` forces the free macOS voice or silence, which is useful while developing.
 
 macOS will ask once for **Screen Recording** (to see the screen), **Microphone** (to hear you) and **Accessibility** (for the Space-bar shortcut). The speech model (Parakeet V3, about 700 MB) downloads on first launch.
+
+### Windows
+
+Install Rust with the MSVC toolchain, Bun, CMake, Microsoft C++ Build Tools with the **Desktop development with C++** workload, and Edge WebView2 Runtime.
+
+```powershell
+bun install --frozen-lockfile
+bun run tauri build --no-bundle
+Copy-Item -LiteralPath src-tauri\resources -Destination src-tauri\target\release -Recurse -Force
+```
+
+Launch `src-tauri\target\release\glass-tutor.exe` from its build directory. Pimple lives in the system tray. Enter an Anthropic API key in setup and allow microphone access for desktop apps if you want to speak your questions. Windows Credential Manager stores the keys, and the Windows voice works without an ElevenLabs key. The bubble and card use a frosted effect on Windows. Press `Ctrl+Alt+Space` to start a session.
 
 ## Build
 

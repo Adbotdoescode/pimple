@@ -7,6 +7,7 @@
 // compressed rim, per-channel dispersion that blooms into rainbow fringes with speed.
 // If no frame ever arrives (no Screen Recording permission), it renders a procedural clear glass.
 import { invoke } from "@tauri-apps/api/core";
+import { isWindows } from "@/lib/platform";
 
 export interface LensState {
   /** Drop centre and radius, global points. */
@@ -245,7 +246,7 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
   const moving = () => lensState.mode !== "rest" && lensState.mode !== "parked";
   const pull = async (now: number) => {
     const s = lensState;
-    if (grabbing || !s.ready || document.hidden) return;
+    if (isWindows || grabbing || !s.ready || document.hidden) return;
     const every = failures > 3 ? 2000 : moving() ? 30 : 220;
     if (now - lastGrab < every) return;
     lastGrab = now;

@@ -51,7 +51,7 @@ anyhow = "1.0.95"
 hound = "3.5.1"
 log = "0.4.25"
 env_filter = "0.1.0"
-tokio = { version = "1.43.0", features = ["process"] }
+tokio = { version = "1.43.0", features = ["process", "io-util"] }
 earshot = "1.2.2"
 enigo = "0.6.1"
 # Feedback sounds. No `recording`: microphone capture is handy-recorder's.
@@ -106,6 +106,7 @@ tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-single-instance = "2.3.2"
 
 [target.'cfg(windows)'.dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 # Used to reach ICoreWebView2Settings3 through the webview's controller
 # (disabling browser accelerator keys in the main window). Must match the
 # version wry links against so the COM types are identical.
@@ -114,6 +115,7 @@ windows = { version = "0.61.3", features = [
   "System_UserProfile",
   "Win32_Media_Audio_Endpoints",
   "Win32_Security",
+  "Win32_Security_Credentials",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_DataExchange",
   "Win32_System_LibraryLoader",
@@ -127,27 +129,8 @@ windows = { version = "0.61.3", features = [
 ] }
 winreg = "0.55"
 
-# Whisper backend per Windows arch. x86_64 ships the Vulkan GPU backend and
-# keeps the dynamic-backends posture (loadable per-ISA CPU modules + Vulkan),
-# where runtime ISA scoring (GGML_CPU_ALL_VARIANTS) earns the extra shipped DLLs.
-#
-# Windows-on-ARM is CPU-only: its Adreno Vulkan drivers are immature, and
-# ggml-vulkan's shader generator (vulkan-shaders-gen) does not build under the
-# clang-cl/lld toolchain that ggml's ARM CPU backend requires. dynamic-backends
-# buys nothing on ARM — ALL_VARIANTS is an x86 concept, so a DL build there is
-# just a single portable CPU module shipped as a DLL. So ARM links transcribe-cpp
-# STATICALLY (no features = static CPU-only): the one CPU backend is compiled into
-# handy.exe and we ship zero DLLs, which sidesteps the installer's per-DLL
-# signtool verify entirely. CI pins -DGGML_NATIVE=OFF (see build.yml) so the
-# static build targets a portable ARM baseline, not the build runner's CPU.
-[target.'cfg(all(windows, target_arch = "x86_64"))'.dependencies]
-transcribe-cpp = { version = "0.4.2", default-features = false, features = [
-  "dynamic-backends",
-  "vulkan",
-] }
-
+# Pimple uses the statically linked CPU speech backend on Windows.
 [target.'cfg(all(windows, target_arch = "aarch64"))'.dependencies]
-transcribe-cpp = { version = "0.4.2", default-features = false }
 # libopus's ARM runtime CPU probe (celt/arm/armcpu.c) sees clang-cl's _MSC_VER
 # and calls MSVC's __emit, which clang lacks; presuming NEON instead trips a
 # libopus CMake bug (celt_inner_prod_neon left undeclared). Build plain C:

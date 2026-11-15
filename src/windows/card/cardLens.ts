@@ -10,6 +10,7 @@
 import { useEffect, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isWindows } from "@/lib/platform";
 
 const PULL_MS = 170;       // steady refresh while the card is up
 const MOVE_PULL_MS = 45;   // while the card is being dragged
@@ -165,7 +166,7 @@ export function useCardLens(
     const panel = panelRef.current;
     const canvas = canvasRef.current;
     if (!panel || !canvas || !active) return;
-    if (unsupported || !("__TAURI_INTERNALS__" in window)) return; // browser preview or old build: frosted look
+    if (isWindows || unsupported || !("__TAURI_INTERNALS__" in window)) return;
 
     const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
     if (!gl) return;

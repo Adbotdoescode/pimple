@@ -199,7 +199,7 @@ export function VoicePicker({
           </p>
           <p className="voices-empty-sub">
             {load.kind === "nokey"
-              ? "Paste it under Keys. Until then Pimple speaks with the macOS voice."
+              ? "Paste it under Keys. Until then Pimple speaks with the system voice."
               : load.kind === "unavailable"
                 ? "Pimple needs a restart to pick this up. Checking again every few seconds."
                 : "Check your connection, then try again. Your current voice still works."}

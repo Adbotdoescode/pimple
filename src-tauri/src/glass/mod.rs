@@ -13,6 +13,8 @@ pub mod stt;
 pub mod tray;
 pub mod tts;
 pub mod windows;
+#[cfg(target_os = "windows")]
+mod windows_capture;
 
 use tauri::{AppHandle, Emitter, Manager};
 

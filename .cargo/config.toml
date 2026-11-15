@@ -1,1 +1,7 @@
 [build]
+
+[env]
+# The speech dependency includes UTF-8 C++ source. MSVC otherwise uses the
+# system's legacy code page when a source file does not have a BOM.
+CXXFLAGS_x86_64_pc_windows_msvc = "/utf-8"
+CXXFLAGS_aarch64_pc_windows_msvc = "/utf-8"
