@@ -35,6 +35,7 @@ import {
 import { dockCard } from "./cardDock";
 import { LassoTracker, type LassoLoop } from "./lasso";
 import { lensState } from "./liquidLens";
+import { useSessionMirror } from "../../lib/sessionMirror";
 
 const SMALL = 124;
 const R_REST = 34; // idle droplet: 68 pt across, bulging about 42 pt out of the screen edge
@@ -756,23 +757,32 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     track(onEvent(EV.keyReturn, () => commit()));
     // The card can collapse to a pill or grow: keep it beside the drop when its size changes.
     let redock = 0;
+    const redockSoon = (ms: number) => {
+      window.clearTimeout(redock);
+      redock = window.setTimeout(() => {
+        const c = S.current;
+        if (c.mode !== "rest" && c.mode !== "parked") return;
+        c.chain = c.chain
+          .then(() => dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr, c.lastRegion))
+          .catch((e) => logErr("card redock", e));
+      }, ms);
+    };
     TauriWindow.getByLabel("card")
       .then((card) => {
         if (!card || disposed) return;
-        track(
-          card.onResized(() => {
-            window.clearTimeout(redock);
-            redock = window.setTimeout(() => {
-              const c = S.current;
-              if (c.mode !== "rest" && c.mode !== "parked") return;
-              c.chain = c.chain
-                .then(() => dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr, c.lastRegion))
-                .catch((e) => logErr("card redock", e));
-            }, 60);
-          }),
-        );
+        track(card.onResized(() => redockSoon(60)));
       })
       .catch((e) => logErr("card lookup", e));
+    // New drawings arrive while the tutor talks: move the card out of their way (debounced).
+    let shapeKey = "";
+    const unsubShapes = useSessionMirror.subscribe((st) => {
+      const sn = st.snapshot;
+      const key = `${sn.capture?.capturedAt ?? 0}:${sn.response?.surface ?? ""}:${sn.response?.shapes?.length ?? 0}:${sn.sideNote?.shapes?.length ?? 0}`;
+      if (key === shapeKey) return;
+      shapeKey = key;
+      redockSoon(200);
+    });
+    unlisten.push(unsubShapes, () => window.clearTimeout(redock));
     track(onEvent(EV.keyEscape, () => cancel()));
 
     // Initial geometry: where Rust put us, and which display we are on.
@@ -840,7 +850,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     prevPhase.current = phase;
     const s = S.current;
     s.phase = phase;
-    if (phase === "idle" && prev !== "idle") s.idleSince = performance.now();
+    if (phase === "idle" && prev !== "idle") {
+      s.idleSince = performance.now();
+      s.lastRegion = null; // the next session has its own target (or none, for a click)
+    }
     if (prev === "idle" || phase !== "idle") return;
     if (s.mode === "returning") return; // already heading home (e.g. our own cancel)
     if (s.mode === "dragging" && s.held && s.down) return; // user is holding it; they decide
