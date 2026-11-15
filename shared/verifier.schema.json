@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "unsupported_claims"],
+  "properties": {
+    "verdict": { "enum": ["pass", "fail"] },
+    "unsupported_claims": { "type": "array", "items": { "type": "string" } }
+  }
+}

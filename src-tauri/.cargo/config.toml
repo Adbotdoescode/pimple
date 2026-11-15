@@ -1,0 +1,4 @@
+# macOS 27 beta SDK in the Command Line Tools is unreadable by this ld; pin 26.5.
+[env]
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+MACOSX_DEPLOYMENT_TARGET = "11.0"

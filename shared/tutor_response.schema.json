@@ -1,0 +1,106 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["concept", "surface", "grounding", "segments", "shapes", "check_question", "gizmo_offer", "parked"],
+  "properties": {
+    "concept": { "type": "string" },
+    "summary_sentence": { "type": "string" },
+    "surface": { "enum": ["overlay", "whiteboard"] },
+    "grounding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_type", "source_ref", "quote"],
+      "properties": {
+        "source_type": { "enum": ["screen", "fixed_source"] },
+        "source_ref": { "type": "string" },
+        "quote": { "type": "string" }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "shapes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "segment_id", "color_role"],
+        "properties": {
+          "id": { "type": "string" },
+          "segment_id": { "type": "string" },
+          "kind": { "enum": ["circle", "box", "line", "arrow", "vector", "stroke", "text", "graph", "slider"] },
+          "color_role": { "enum": ["primary", "secondary", "accent", "warn"] },
+          "center": { "type": "array", "items": { "type": "number" } },
+          "radius": { "type": "number" },
+          "rect": { "type": "array", "items": { "type": "number" } },
+          "from": { "type": "array", "items": { "type": "number" } },
+          "to": { "type": "array", "items": { "type": "number" } },
+          "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } },
+          "label": { "type": "string" },
+          "magnitude": { "type": "string" },
+          "components": { "type": "boolean" },
+          "graph": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x_min", "x_max", "y_min", "y_max", "x_label", "y_label", "series"],
+            "properties": {
+              "x_min": { "type": "number" },
+              "x_max": { "type": "number" },
+              "y_min": { "type": "number" },
+              "y_max": { "type": "number" },
+              "x_label": { "type": "string" },
+              "y_label": { "type": "string" },
+              "series": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["label", "style", "points"],
+                  "properties": {
+                    "label": { "type": "string" },
+                    "style": { "enum": ["line", "points"] },
+                    "points": { "type": "array", "items": { "type": "array", "items": { "type": "number" } } }
+                  }
+                }
+              }
+            }
+          },
+          "slider": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "min", "max", "value", "step", "unit", "shape_id"],
+            "properties": {
+              "label": { "type": "string" },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "value": { "type": "number" },
+              "step": { "type": "number" },
+              "unit": { "type": "string" },
+              "shape_id": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "check_question": { "type": "string" },
+    "gizmo_offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommended", "pitch"],
+      "properties": {
+        "recommended": { "type": "boolean" },
+        "pitch": { "type": "string" }
+      }
+    },
+    "parked": { "type": "array", "items": { "type": "string" } }
+  }
+}
