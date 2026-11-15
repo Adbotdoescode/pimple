@@ -21,6 +21,8 @@ const PAD_FRACTION: f64 = 0.12;
 const MAX_EDGE: u32 = 1568;
 const HIDE_SETTLE: Duration = Duration::from_millis(70);
 const PANEL_LABELS: [&str; 3] = ["bubble", "overlay", "card"];
+/// Normal windows hidden for the shot and not restored afterwards.
+const WINDOW_LABELS: [&str; 2] = ["whiteboard", "gizmo"];
 const SCREENCAPTURE: &str = "/usr/sbin/screencapture";
 const SIPS: &str = "/usr/bin/sips";
 
@@ -377,17 +379,28 @@ fn set_visible_label(app: &AppHandle, label: &str, visible: bool) {
     }
 }
 
-/// Hides every visible one of our panels. Returns the labels hidden so they can be restored.
+/// Hides every visible panel and normal window of ours that could appear in the shot.
+/// Returns the panel labels hidden so they can be restored. Normal windows (WINDOW_LABELS)
+/// are hidden but never restored: the brain re-opens them through show_window when needed.
 fn hide_ours(app: &AppHandle) -> Result<Vec<&'static str>, String> {
     on_main(app, |app| {
-        let mut hidden = Vec::new();
+        let mut restore = Vec::new();
+        let mut all = Vec::new();
         for label in PANEL_LABELS {
             if is_visible_label(app, label) {
                 set_visible_label(app, label, false);
-                hidden.push(label);
+                restore.push(label);
+                all.push(label);
             }
         }
-        hidden
+        for label in WINDOW_LABELS {
+            if is_visible_label(app, label) {
+                set_visible_label(app, label, false);
+                all.push(label);
+            }
+        }
+        log::info!("capture: hid {all:?}");
+        restore
     })
 }
 

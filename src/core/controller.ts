@@ -719,6 +719,7 @@ function resumeOrIdle(): void {
   }
   const main = st().response?.segments ?? [];
   const t = beginTurn(ctx.previousQuestion);
+  patch({ question: ctx.previousQuestion || null });
   t.streamDone = true; // the frozen stream is gone; play what is left, then end
   setPhase("speaking");
   queue(t, main.slice(ctx.from), "speak");
@@ -748,7 +749,7 @@ async function handleObjection(t: Turn, ix: Interruption, text: string): Promise
   ix.objection = objection;
   t.speakingSide = true;
   t.sideSpeechStarted = false;
-  patch({ sideNote: { segments: [], shapes: [] } });
+  patch({ sideNote: { segments: [], shapes: [] }, question: objection }); // the card shows what the student said
   setPhase("thinking");
 
   const main = st().response?.segments ?? [];
@@ -821,7 +822,7 @@ function resume(t: Turn): void {
   t.interruption = null;
   t.speakingSide = false;
   t.sideSpeechStarted = false;
-  patch({ sideNote: null, pulseShapeIds: [] });
+  patch({ sideNote: null, pulseShapeIds: [], question: t.question || null }); // back to the original question
 
   if (from < main.length) {
     setPhase("speaking");
