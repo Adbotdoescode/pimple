@@ -32,6 +32,10 @@
     "core:window:allow-is-visible",
     "core:webview:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "x-apple.systempreferences:*" }, { "url": "https://console.anthropic.com/*" }, { "url": "https://elevenlabs.io/*" }]
+    },
     "store:default",
     "process:default",
     "dialog:default",
