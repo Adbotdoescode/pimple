@@ -257,6 +257,19 @@ function OverlayView({ fixture, upto, sidenote }: { fixture: string; upto: strin
         displayId: 1,
         pixelScale: dims.w / OVERLAY_W,
         capturedAt: Date.now(),
+        // `focus=1` previews the glass rim around a pointed-at region.
+        ...(params.get("focus") === "1"
+          ? {
+              focus: {
+                imagePath: "",
+                imageBase64: "",
+                imageWidth: 0,
+                imageHeight: 0,
+                rectInImagePx: [300, 440, 420, 330] as [number, number, number, number],
+                regionInScreenPoints: { x: 300, y: 440, w: 420, h: 330 },
+              },
+            }
+          : {}),
       };
 
       const next: SessionSnapshot = {

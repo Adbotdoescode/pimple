@@ -191,7 +191,7 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       )}
       {mainLayer && (
         <g style={{ opacity: mainHeld.visible ? 1 : 0, transition: `opacity ${mainFadeMs}ms ease` }}>
-          <FocusOutline capture={mainLayer.capture} origin={origin} dim={dimMain} />
+          <FocusOutline key={mainLayer.capture.imagePath} capture={mainLayer.capture} origin={origin} />
           <ShapeLayer
             shapes={mainLayer.shapes}
             visibleSegmentIds={mainLayer.visibleIds}
@@ -225,23 +225,26 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
 }
 
 /**
- * Faint glass rim around the region the learner pointed at, while the answer plays. Two hairlines
- * (a light one and a dark one just outside it) so it reads on any background; no fill, no filter.
+ * Soft glass rim around the region the learner pointed at. It shows as the answer starts, holds for
+ * about 1.5 s, then fades away (overlay.css), so it never lingers as a stray frame. Light strokes
+ * only: a wide faint bloom, a hairline and a short specular run along the top. No fill, no filter.
  */
-function FocusOutline({ capture, origin, dim }: { capture: CaptureResult; origin: Origin; dim: boolean }) {
+function FocusOutline({ capture, origin }: { capture: CaptureResult; origin: Origin }) {
   const r = capture.focus?.regionInScreenPoints;
   if (!r || !(r.w > 8 && r.h > 8)) return null;
   const x = r.x - origin.x;
   const y = r.y - origin.y;
-  const rx = Math.min(18, r.w / 4, r.h / 4);
+  const rx = Math.min(20, r.w / 4, r.h / 4);
   return (
-    <g className="gt-focus-rim" style={{ opacity: dim ? 0.25 : 1 }}>
-      <rect x={x - 1} y={y - 1} width={r.w + 2} height={r.h + 2} rx={rx + 1} fill="none"
-        stroke="rgba(10,14,24,0.22)" strokeWidth={1} />
+    <g className="gt-focus-rim">
       <rect x={x} y={y} width={r.w} height={r.h} rx={rx} fill="none"
-        stroke="rgba(255,255,255,0.62)" strokeWidth={1.25} />
-      <path d={`M${x + rx} ${y + 1.5} L${x + Math.min(r.w - rx, rx + r.w * 0.35)} ${y + 1.5}`} fill="none"
-        stroke="rgba(255,255,255,0.9)" strokeWidth={1.5} strokeLinecap="round" />
+        stroke="rgba(255,255,255,0.16)" strokeWidth={6} />
+      <rect x={x} y={y} width={r.w} height={r.h} rx={rx} fill="none"
+        stroke="rgba(120,170,255,0.45)" strokeWidth={2.5} />
+      <rect x={x} y={y} width={r.w} height={r.h} rx={rx} fill="none"
+        stroke="rgba(255,255,255,0.85)" strokeWidth={1} />
+      <path d={`M${x + rx} ${y} L${x + Math.min(r.w - rx, rx + r.w * 0.3)} ${y}`} fill="none"
+        stroke="rgba(255,255,255,0.95)" strokeWidth={2} strokeLinecap="round" />
     </g>
   );
 }

@@ -56,13 +56,16 @@ body {
   }
 }
 
-/* Glass rim around the pointed-at region: settles in, then stays quiet under the drawing. */
+/* Glass rim around the pointed-at region: in over 240 ms, held to 1.8 s, gone by 2.4 s. */
 .gt-focus-rim {
-  transition: opacity 400ms ease;
-  animation: gt-focus-rim-in 500ms ease-out backwards;
+  opacity: 0;
+  animation: gt-focus-rim 2400ms ease-out both;
 }
-@keyframes gt-focus-rim-in {
-  from { opacity: 0; }
+@keyframes gt-focus-rim {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .gt-focus-rim { animation: none; }

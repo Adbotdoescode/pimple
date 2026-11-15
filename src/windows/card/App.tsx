@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Phase, UiIntent } from "@shared/contracts";
@@ -152,6 +153,32 @@ export default function App() {
 
   useEffect(() => clearHide, [clearHide]);
 
+  // The dock asks the card to collapse to its pill when it cannot avoid the drawings, and to
+  // expand again when it can. The card decides (a manual expand wins until the next session).
+  const [autoMinimise, setAutoMinimise] = useState<{ minimise: boolean; n: number } | null>(null);
+  useEffect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    try {
+      listen<{ minimise?: unknown }>("card:auto-minimise", (e) => {
+        const want = e.payload?.minimise;
+        if (typeof want !== "boolean") return;
+        setAutoMinimise((prev) => ({ minimise: want, n: (prev?.n ?? 0) + 1 }));
+      })
+        .then((un) => {
+          if (gone) un();
+          else off = un;
+        })
+        .catch((e) => logErr("listen card:auto-minimise", e));
+    } catch (e) {
+      logErr("listen card:auto-minimise", e);
+    }
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+
   // Typing in the card keeps it open: cancel the pending hide, and reschedule once it stops.
   const onTypingChange = useCallback(
     (typing: boolean): void => {
@@ -188,6 +215,7 @@ export default function App() {
         onHeightChange={onHeightChange}
         onTypingChange={onTypingChange}
         onMinimisedChange={onMinimisedChange}
+        autoMinimise={autoMinimise}
       />
     </div>
   );

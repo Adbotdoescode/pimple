@@ -87,6 +87,7 @@ export function Card({
   onTypingChange,
   onMinimisedChange,
   initialMinimised = false,
+  autoMinimise = null,
 }: {
   snapshot: SessionSnapshot | null;
   onIntent: (i: UiIntent) => void;
@@ -96,6 +97,11 @@ export function Card({
   /** Called when the card collapses to its pill or expands again, before the new height is reported. */
   onMinimisedChange?: (minimised: boolean) => void;
   initialMinimised?: boolean;
+  /**
+   * Request from the dock to collapse (the card would cover the drawing) or expand again.
+   * `n` changes with every request. A manual expand wins until the next session.
+   */
+  autoMinimise?: { minimise: boolean; n: number } | null;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,11 +110,45 @@ export function Card({
   const [focused, setFocused] = useState(false);
   const [minimised, setMinimised] = useState(initialMinimised);
 
-  function setMini(next: boolean) {
+  /** True while the pill is there because the dock asked for it (not the learner). */
+  const autoMini = useRef(false);
+  /** Set when the learner expands the pill by hand; auto-minimise then waits for the next session. */
+  const manualExpand = useRef(false);
+
+  function setMini(next: boolean, by: "user" | "auto" = "user") {
+    if (by === "user") {
+      if (!next) manualExpand.current = true;
+      autoMini.current = false;
+    } else {
+      autoMini.current = next;
+    }
     if (next) setFocused(false); // the input unmounts without a blur event
     onMinimisedChange?.(next);
     setMinimised(next);
   }
+
+  const autoN = autoMinimise?.n;
+  useEffect(() => {
+    if (!autoMinimise) return;
+    if (autoMinimise.minimise) {
+      // Never collapse under someone who is typing, or who already chose to keep the card open.
+      if (minimised || manualExpand.current || focused || draft.trim()) return;
+      setMini(true, "auto");
+    } else if (minimised && autoMini.current) {
+      setMini(false, "auto");
+    }
+    // Only a new request should run this, not the state it reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoN]);
+
+  // A new session forgets the manual choice.
+  const phaseNow: Phase = snapshot?.phase ?? "idle";
+  useEffect(() => {
+    if (phaseNow === "capturing" || phaseNow === "targeting" || phaseNow === "idle") manualExpand.current = false;
+    // A pill the dock asked for does not carry over into the next session.
+    if ((phaseNow === "capturing" || phaseNow === "targeting") && autoMini.current) setMini(false, "auto");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phaseNow]);
 
   useEffect(() => {
     heightCb.current = onHeightChange;
