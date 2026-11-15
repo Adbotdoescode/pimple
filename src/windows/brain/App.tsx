@@ -3,11 +3,18 @@ import { useEffect } from "react";
 import { info, warn, error } from "@tauri-apps/plugin-log";
 import { startBrain } from "@/core/brain";
 
+// Never hot-patch the brain: a partial HMR re-run would stack duplicate listeners. Reload the window instead.
+if (import.meta.hot) {
+  // Let Vite finish writing the update first, then reload the whole window.
+  import.meta.hot.on("vite:beforeUpdate", () => setTimeout(() => location.reload(), 400));
+  import.meta.hot.on("vite:error", () => setTimeout(() => location.reload(), 1500));
+}
+
 // The brain window is hidden, so mirror its console into the Rust log (/tmp/glass-tutor-dev.log).
-let forwarded = false;
+const gw = globalThis as unknown as { __gtConsoleForwarded?: boolean };
 function forwardConsole() {
-  if (forwarded) return;
-  forwarded = true;
+  if (gw.__gtConsoleForwarded) return;
+  gw.__gtConsoleForwarded = true;
   const fmt = (args: unknown[]) =>
     "[js] " +
     args

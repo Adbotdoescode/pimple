@@ -11,6 +11,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { CMD, EV } from "../../shared/contracts";
 import type { PausePoint, Segment, TtsPlayer, TtsProvider, TtsSynthResult } from "../../shared/contracts";
+import { toSpeech } from "./speechText";
 
 export interface TtsPlayerOptions {
   getVoiceId(): string;
@@ -100,7 +101,7 @@ async function load(seg: Segment, opts: TtsPlayerOptions, getGraph: () => AudioG
   const provider = opts.getProviderOverride?.();
   let res: TtsSynthResult;
   try {
-    res = await invoke<TtsSynthResult>(CMD.ttsSynthesize, { text: seg.text, voiceId, provider });
+    res = await invoke<TtsSynthResult>(CMD.ttsSynthesize, { text: toSpeech(seg.text), voiceId, provider });
   } catch (err) {
     warnOnce("synthesis", err);
     return simulated(seg);

@@ -11,6 +11,13 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Self-heal: if the brain module graph fails to load (e.g. a failed HMR reload), the
+      // controller never starts. Reload this hidden window until startBrain() sets the flag.
+      setTimeout(function check() {
+        if (!window.__gtBrainStarted) { console.warn("[brain] not started, reloading"); location.reload(); }
+      }, 8000);
+    </script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

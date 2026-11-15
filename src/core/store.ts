@@ -10,8 +10,11 @@ import {
   type TutorResponse,
 } from "../../shared/contracts";
 
+/** The broadcast snapshot. isFixture is true when the capture came from a debug fixture path. */
+export type BrainSnapshot = SessionSnapshot & { isFixture: boolean };
+
 /** Everything the brain keeps: the broadcast snapshot plus the full capture (base64, never broadcast). */
-export interface SessionData extends SessionSnapshot {
+export interface SessionData extends BrainSnapshot {
   /** Full capture incl. imageBase64. Stays in the brain window; getSnapshot() never exposes it. */
   fullCapture: CaptureResult | null;
 }
@@ -25,11 +28,9 @@ export interface SessionStore extends SessionData {
   setMeta(partial: Partial<TutorResponse>): void;
 }
 
-// TODO(M3): re-enable verifier default. The verifier is not ready in this milestone.
-const M1_SETTINGS: AppSettings = { ...DEFAULT_SETTINGS, verifierEnabled: false };
-
-export function initialSnapshot(settings: AppSettings): SessionSnapshot {
+export function initialSnapshot(settings: AppSettings): BrainSnapshot {
   return {
+    isFixture: false,
     phase: "idle",
     mode: null,
     capture: null,
@@ -76,7 +77,7 @@ function definedOnly<T extends object>(o: Partial<T>): Partial<T> {
 }
 
 export const sessionStore = createStore<SessionStore>()((set, get) => ({
-  ...initialSnapshot(M1_SETTINGS),
+  ...initialSnapshot(DEFAULT_SETTINGS),
   fullCapture: null,
 
   setPhase: (phase) => set({ phase }),
@@ -111,9 +112,10 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
  * The snapshot broadcast as session:state. Built field by field so a new SessionSnapshot field is a
  * compile error here until it is added, and so the fullCapture field can never leak out.
  */
-export function getSnapshot(): SessionSnapshot {
+export function getSnapshot(): BrainSnapshot {
   const s = sessionStore.getState();
   return {
+    isFixture: s.isFixture,
     phase: s.phase,
     mode: s.mode,
     capture: s.capture ? { ...s.capture, imageBase64: "" } : null,

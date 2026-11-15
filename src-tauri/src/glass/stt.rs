@@ -4,8 +4,8 @@
 //! offline VAD policy. Two hooks in `AudioRecordingManager::new` feed this module:
 //!   * `on_levels`   — the visualiser's spectrum buckets (~31 Hz) → `stt:level`
 //!   * `on_vad_frame` — every frame the VAD lets through (speech + 450 ms hangover)
-//! A monitor thread ends the turn once speech has been seen and no VAD frame has
-//! arrived for `END_GAP` (≈1 s of trailing silence counting Handy's hangover), after
+//! A monitor thread ends the turn once speech has been seen and no VAD-passed window
+//! above the energy floor has arrived for `END_GAP` (≈0.9 s of trailing silence), after
 //! `NO_SPEECH_TIMEOUT` with no speech at all (→ ""), or at `MAX_TURN`. The captured
 //! (VAD-trimmed) samples go to `TranscriptionManager::transcribe` and the text is emitted
 //! as `stt:final`. Nothing is pasted, copied or stored.
@@ -38,10 +38,22 @@ pub const MODEL_ID: &str =
 /// Recording binding id handed to Handy's recorder.
 const BINDING_ID: &str = "glass";
 
-/// Gap since the last VAD-passed frame that ends a turn. Handy's offline VAD keeps
-/// passing frames for 450 ms of hangover after speech stops, so the trailing silence
-/// the student actually leaves is ≈ 450 ms + END_GAP ≈ 1.05 s.
-const END_GAP: Duration = Duration::from_millis(600);
+/// Trailing silence that ends a turn, measured from the last *loud* VAD-passed frame.
+/// Handy's VAD also passes 450 ms of hangover and any background audio it classes as
+/// speech; those frames only count if they clear the energy floor below, so quiet
+/// hangover / faint background audio no longer extends the turn.
+const END_GAP: Duration = Duration::from_millis(900);
+/// Energy floor for a 32 ms window to count as the student's speech: above an absolute
+/// floor (≈ −44 dBFS) and within −18 dB of the turn's (slowly decaying) loudest window.
+const ABS_RMS_FLOOR: f32 = 0.006;
+const REL_RMS_FLOOR: f32 = 0.125;
+/// Per-window decay of the loudest-window reference (halves in ≈ 4.4 s).
+const PEAK_DECAY: f32 = 0.995;
+const RMS_WINDOW: usize = 512;
+/// Loud windows needed before the turn counts as "speech heard" (≈ 100 ms).
+const MIN_LOUD_WINDOWS: u64 = 3;
+/// A loud window after this much quiet starts a new speech segment (logging only).
+const SEGMENT_GAP_MS: u64 = 300;
 /// No speech at all within this long → end the turn with "".
 const NO_SPEECH_TIMEOUT: Duration = Duration::from_secs(8);
 /// Hard cap on one turn.
@@ -104,10 +116,35 @@ static TURN: Mutex<Turn> = Mutex::new(Turn::Idle);
 static NEXT_TURN_ID: AtomicU64 = AtomicU64::new(0);
 /// True while a turn is listening: gates the audio-thread hooks.
 static LISTENING: AtomicBool = AtomicBool::new(false);
-/// VAD-passed frames seen this turn (0 = no speech yet).
-static VAD_FRAMES: AtomicU64 = AtomicU64::new(0);
-/// `now_ms()` of the most recent VAD-passed frame.
-static LAST_VAD_MS: AtomicU64 = AtomicU64::new(0);
+/// What the VAD let through this turn. Written by the recorder's delivery thread,
+/// read by the monitor thread every 30 ms.
+#[derive(Debug, Clone, Copy)]
+struct SpeechStats {
+    /// VAD-passed callbacks (speech, pre-roll and hangover).
+    vad_frames: u64,
+    /// 32 ms windows above the energy floor.
+    loud_windows: u64,
+    segments: u64,
+    peak_rms: f32,
+    last_vad_ms: u64,
+    last_loud_ms: u64,
+}
+
+const EMPTY_STATS: SpeechStats = SpeechStats {
+    vad_frames: 0,
+    loud_windows: 0,
+    segments: 0,
+    peak_rms: 0.0,
+    last_vad_ms: 0,
+    last_loud_ms: 0,
+};
+
+static STATS: Mutex<SpeechStats> = Mutex::new(EMPTY_STATS);
+
+fn stats() -> SpeechStats {
+    *STATS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 static LAST_LEVEL_MS: AtomicU64 = AtomicU64::new(0);
 static CLOCK: OnceLock<Instant> = OnceLock::new();
 
@@ -152,13 +189,28 @@ pub fn on_levels(app: &AppHandle, levels: &[f32]) {
 }
 
 /// Called from Handy's recorder for every frame the VAD keeps (speech, pre-roll and
-/// hangover). Cheap: two atomics.
+/// hangover; the onset call carries the whole pre-roll at once). Only windows above the
+/// energy floor count as the student speaking.
 pub fn on_vad_frame(frame: &[f32]) {
     if frame.is_empty() || !LISTENING.load(Ordering::Relaxed) {
         return;
     }
-    LAST_VAD_MS.store(now_ms(), Ordering::Relaxed);
-    VAD_FRAMES.fetch_add(1, Ordering::Relaxed);
+    let now = now_ms();
+    let mut s = STATS.lock().unwrap_or_else(|e| e.into_inner());
+    s.vad_frames += 1;
+    s.last_vad_ms = now;
+    for window in frame.chunks(RMS_WINDOW) {
+        let rms = (window.iter().map(|v| v * v).sum::<f32>() / window.len() as f32).sqrt();
+        s.peak_rms = (s.peak_rms * PEAK_DECAY).max(rms);
+        let floor = ABS_RMS_FLOOR.max(REL_RMS_FLOOR * s.peak_rms);
+        if rms >= floor {
+            if s.loud_windows == 0 || now.saturating_sub(s.last_loud_ms) > SEGMENT_GAP_MS {
+                s.segments += 1;
+            }
+            s.loud_windows += 1;
+            s.last_loud_ms = now;
+        }
+    }
 }
 
 /* ─────────────────────────── commands ─────────────────────────── */
@@ -254,8 +306,7 @@ fn start_turn(app: &AppHandle) -> Result<(), String> {
         // A turn still transcribing is superseded: its result is dropped.
         *t = Turn::Listening(id);
     }
-    VAD_FRAMES.store(0, Ordering::Relaxed);
-    LAST_VAD_MS.store(0, Ordering::Relaxed);
+    *STATS.lock().unwrap_or_else(|e| e.into_inner()) = EMPTY_STATS;
     LAST_LEVEL_MS.store(0, Ordering::Relaxed);
 
     let rm = app.state::<Arc<AudioRecordingManager>>();
@@ -300,9 +351,9 @@ fn monitor_turn(app: &AppHandle, id: u64) {
             return;
         }
         let elapsed = started.elapsed();
-        let heard_speech = VAD_FRAMES.load(Ordering::Relaxed) > 0;
-        let reason = if heard_speech {
-            let gap = now_ms().saturating_sub(LAST_VAD_MS.load(Ordering::Relaxed));
+        let s = stats();
+        let reason = if s.loud_windows >= MIN_LOUD_WINDOWS {
+            let gap = now_ms().saturating_sub(s.last_loud_ms);
             if gap >= END_GAP.as_millis() as u64 {
                 Some("end of speech")
             } else if elapsed >= MAX_TURN {
@@ -329,8 +380,20 @@ fn finish_turn(app: &AppHandle, id: u64, reason: &str) {
         return;
     }
     LISTENING.store(false, Ordering::Relaxed);
-    let heard_speech = VAD_FRAMES.load(Ordering::Relaxed) > 0;
-    info!("stt: turn {id} ending ({reason}), speech detected: {heard_speech}");
+    let s = stats();
+    let now = now_ms();
+    // Transcribe whatever the VAD kept, even if it never cleared the energy floor
+    // (stt_stop on a quiet answer).
+    let heard_speech = s.vad_frames > 0;
+    info!(
+        "stt: turn {id} ending ({reason}): vad_frames={} loud_windows={} segments={} peak_rms={:.4} since_last_loud={}ms since_last_vad={}ms",
+        s.vad_frames,
+        s.loud_windows,
+        s.segments,
+        s.peak_rms,
+        if s.loud_windows > 0 { now.saturating_sub(s.last_loud_ms) as i64 } else { -1 },
+        if s.vad_frames > 0 { now.saturating_sub(s.last_vad_ms) as i64 } else { -1 },
+    );
 
     let rm = app.state::<Arc<AudioRecordingManager>>();
     let generation = rm.cancel_generation();
@@ -340,6 +403,10 @@ fn finish_turn(app: &AppHandle, id: u64, reason: &str) {
         return;
     };
     let input_silent = rm.last_input_silent();
+    info!(
+        "stt: turn {id} kept {:.2}s of VAD-passed audio",
+        samples.len() as f32 / 16_000.0
+    );
 
     let result: Result<String, String> = if !heard_speech || samples.is_empty() {
         if input_silent {
@@ -360,6 +427,11 @@ fn finish_turn(app: &AppHandle, id: u64, reason: &str) {
         Ok(text) => {
             let text = text.trim().to_string();
             info!("stt: turn {id} final ({} chars)", text.len());
+            #[cfg(debug_assertions)]
+            info!(
+                "stt: turn {id} transcript: {:?}",
+                text.chars().take(160).collect::<String>()
+            );
             let _ = app.emit(EV_FINAL, SttFinal { text });
         }
         Err(message) => emit_error(app, message),

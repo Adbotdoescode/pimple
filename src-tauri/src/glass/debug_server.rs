@@ -1,6 +1,8 @@
 //! Dev-only HTTP hook on 127.0.0.1:47823 (debug builds only).
 //! GET /debug?capture=...&question=...&shapes=...&mode=...&tts=...
 //! → emits `debug:inject` (DebugInject, URL-decoded) to all windows, replies 200 "ok".
+//! GET /emit?event=<name>&payload=<url-encoded JSON> → emits `<name>` (must be in EMIT_ALLOWLIST)
+//! with the JSON payload (default {}) to all windows. 400 for a bad event or invalid JSON, 500 if emit fails.
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use tauri::{AppHandle, Emitter};
@@ -43,6 +45,54 @@ fn url_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Events the headless driver (scripts/gt-emit.sh) may inject. Anything else is refused.
+const EMIT_ALLOWLIST: &[&str] = &[
+    "space:tap",
+    "space:hold-start",
+    "space:hold-end",
+    "key:return",
+    "key:escape",
+    "hotkey:activate",
+    "stt:final",
+    "stt:partial",
+    "stt:level",
+    "stt:error",
+    "ui:intent",
+    "tts:fallback",
+];
+
+/// First value of `key` in a raw query string, URL-decoded.
+fn query_param(query: &str, key: &str) -> Option<String> {
+    query.split('&').filter(|p| !p.is_empty()).find_map(|pair| {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        (url_decode(k) == key).then(|| url_decode(v))
+    })
+}
+
+/// GET /emit?event=...&payload=... → (status line, body).
+fn emit_event(app: &AppHandle, query: &str) -> (&'static str, String) {
+    let event = match query_param(query, "event") {
+        Some(e) if !e.is_empty() => e,
+        _ => return ("400 Bad Request", "missing event".to_string()),
+    };
+    if !EMIT_ALLOWLIST.contains(&event.as_str()) {
+        return ("400 Bad Request", format!("event not allowed: {event}"));
+    }
+    let raw = query_param(query, "payload")
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| "{}".to_string());
+    let payload: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => return ("400 Bad Request", format!("invalid payload JSON: {e}")),
+    };
+    let preview: String = raw.chars().take(200).collect();
+    log::info!("emit {event} payload={preview}");
+    match app.emit(&event, payload) {
+        Ok(()) => ("200 OK", "ok".to_string()),
+        Err(e) => ("500 Internal Server Error", format!("emit failed: {e}")),
+    }
+}
+
 pub fn start(app: AppHandle) {
     std::thread::Builder::new()
         .name("gt-debug-hook".into())
@@ -75,7 +125,7 @@ pub fn start(app: AppHandle) {
                 }
                 let target = line.split_whitespace().nth(1).unwrap_or("");
                 let (path, query) = target.split_once('?').unwrap_or((target, ""));
-                let (status, body) = if path == "/debug" {
+                let (status, body): (&str, String) = if path == "/debug" {
                     let mut payload = serde_json::Map::new();
                     for pair in query.split('&').filter(|p| !p.is_empty()) {
                         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
@@ -86,11 +136,13 @@ pub fn start(app: AppHandle) {
                     }
                     log::info!("debug:inject keys={:?}", payload.keys().collect::<Vec<_>>());
                     match app.emit("debug:inject", serde_json::Value::Object(payload)) {
-                        Ok(()) => ("200 OK", "ok"),
-                        Err(_) => ("500 Internal Server Error", "emit failed"),
+                        Ok(()) => ("200 OK", "ok".to_string()),
+                        Err(_) => ("500 Internal Server Error", "emit failed".to_string()),
                     }
+                } else if path == "/emit" {
+                    emit_event(&app, query)
                 } else {
-                    ("404 Not Found", "not found")
+                    ("404 Not Found", "not found".to_string())
                 };
                 let _ = write!(
                     stream,

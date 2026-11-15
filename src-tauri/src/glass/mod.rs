@@ -71,6 +71,7 @@ pub fn setup(app: &AppHandle) {
     windows::create_all(app);
     tray::create_tray(app);
     stt::init(app); // download/preload Parakeet V3 so the first question is fast
+    shortcuts::init(app); // always-on ctrl+option+space → hotkey:activate
     #[cfg(debug_assertions)]
     debug_server::start(app.clone());
     let _ = app; // silence unused in release

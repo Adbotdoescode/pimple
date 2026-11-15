@@ -336,6 +336,17 @@ pub fn create_detector(
                     tauri::path::BaseDirectory::Resource,
                 )
                 .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {e}"))?;
+            // Glass Tutor dev builds: resources are not copied into target/debug, so
+            // fall back to the source tree when the resolved file is missing.
+            #[cfg(debug_assertions)]
+            let vad_path = if vad_path.exists() {
+                vad_path
+            } else {
+                std::path::PathBuf::from(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/resources/models/silero-vad-v6.2-F32.gguf"
+                ))
+            };
             Box::new(
                 SileroVad::new(vad_path, SILERO_VAD_THRESHOLD)
                     .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {e}"))?,

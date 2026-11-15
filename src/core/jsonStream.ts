@@ -2,6 +2,7 @@ import { parse, Allow } from "partial-json";
 import { z } from "zod";
 import { wireToShape } from "../../shared/contracts";
 import type { Segment, Shape, TutorResponse, WireShape } from "../../shared/contracts";
+import tutorSchema from "../../shared/tutor_response.schema.json";
 
 export interface ResponseStreamHandlers {
   onSegment?(s: Segment): void;
@@ -12,12 +13,12 @@ export interface ResponseStreamHandlers {
 type Grounding = TutorResponse["grounding"];
 type Gizmo = TutorResponse["gizmo_offer"];
 
-// Top-level key order of the wire schema. A field is complete once a later key has started.
-const ORDER = [
-  "concept", "surface", "grounding", "segments", "shapes", "check_question", "gizmo_offer", "parked",
-];
-const AFTER_SEGMENTS = ["shapes", "check_question", "gizmo_offer", "parked"];
-const AFTER_SHAPES = ["check_question", "gizmo_offer", "parked"];
+// Top-level key order of the wire schema, read from the schema itself so a reorder needs no code change.
+// A field is complete once a later key has started.
+const ORDER: string[] = Object.keys(tutorSchema.properties);
+const keysAfter = (key: string): string[] => ORDER.slice(ORDER.indexOf(key) + 1);
+const AFTER_SEGMENTS = keysAfter("segments");
+const AFTER_SHAPES = keysAfter("shapes");
 // Partial parse with incomplete strings and numbers omitted (see push()).
 const STRICT_ALLOW = Allow.ALL & ~Allow.STR & ~Allow.NUM;
 
@@ -148,10 +149,17 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
       if (shape) h.onShape?.(shape);
     }
 
-    const later = (key: string) => done || ORDER.slice(ORDER.indexOf(key) + 1).some(has);
+    const later = (key: string) => done || keysAfter(key).some(has);
+    // grounding's quote is its last field, so the strict parse has all three strings only once it is closed.
+    const strictGrounding = strict && isObj(strict.grounding) ? strict.grounding : null;
+    const groundingClosed =
+      !!strictGrounding &&
+      typeof strictGrounding.source_type === "string" &&
+      typeof strictGrounding.source_ref === "string" &&
+      typeof strictGrounding.quote === "string";
     const fresh: Partial<TutorResponse> = {};
-    const ready = (key: string, valid: boolean): boolean => {
-      if (!valid || metaSent.has(key) || !later(key)) return false;
+    const ready = (key: string, valid: boolean, extra = false): boolean => {
+      if (!valid || metaSent.has(key) || !(later(key) || extra)) return false;
       metaSent.add(key);
       return true;
     };
@@ -159,7 +167,9 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
     if (ready("surface", obj.surface === "overlay" || obj.surface === "whiteboard")) {
       fresh.surface = obj.surface as TutorResponse["surface"];
     }
-    if (ready("grounding", groundingReady(obj.grounding))) fresh.grounding = normalizeGrounding(obj.grounding);
+    if (ready("grounding", groundingReady(obj.grounding), groundingClosed)) {
+      fresh.grounding = normalizeGrounding(obj.grounding);
+    }
     if (ready("check_question", typeof obj.check_question === "string")) {
       fresh.check_question = obj.check_question as string;
     }

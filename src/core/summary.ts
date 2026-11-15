@@ -16,6 +16,7 @@ export async function summarizeCapture(a: {
       {
         model: a.settings.verifierModel,
         max_tokens: 200,
+        thinking: { type: "disabled" },
         output_config: { effort: "low" },
         system: SUMMARY_SYSTEM_PROMPT,
         messages: [
