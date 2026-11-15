@@ -7,6 +7,39 @@ import "./gizmo.css";
 
 export type GizmoStatus = "none" | "offered" | "building" | "ready" | "failed";
 
+const STORE_KEY = "pimple.gizmo.last";
+
+export interface StoredDiagram {
+  html: string;
+  title: string;
+  at: number;
+}
+
+/** The last ready diagram, so the window can show it again after an app relaunch. Best effort. */
+export function readStoredDiagram(): StoredDiagram | null {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<StoredDiagram>;
+    if (typeof v.html !== "string" || !v.html) return null;
+    return {
+      html: v.html,
+      title: typeof v.title === "string" ? v.title : "",
+      at: typeof v.at === "number" ? v.at : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function storeDiagram(html: string, title: string): void {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({ html, title, at: Date.now() }));
+  } catch {
+    /* storage disabled or full */
+  }
+}
+
 /** Tell the overlay where this window is, so it can keep off it. Screen points; best effort. */
 async function announceRect(visible: boolean): Promise<void> {
   try {
@@ -38,7 +71,7 @@ function decodeEntities(s: string): string {
 }
 
 /** The <title> of a kept diagram, which is the concept it was built for. */
-function titleFromHtml(html: string | null): string | null {
+export function titleFromHtml(html: string | null): string | null {
   if (!html) return null;
   const m = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html);
   const t = m ? decodeEntities(m[1]).trim() : "";
@@ -51,25 +84,25 @@ function displayTitle(concept?: string | null): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function StatusPill({ status, hasHtml }: { status: GizmoStatus; hasHtml: boolean }) {
+function StatusChip({ status, hasHtml }: { status: GizmoStatus; hasHtml: boolean }) {
   if (status === "building") {
     return (
-      <span className="gz-status gz-status--building" role="status">
+      <span className="chip gz-chip gz-chip--building" role="status">
         <span className="gz-label">Building…</span>
       </span>
     );
   }
   if (status === "failed") {
     return (
-      <span className="gz-status gz-status--failed" role="status">
-        <span className="gz-dot" aria-hidden="true" />
+      <span className="chip gz-chip gz-chip--failed" role="status">
+        <span className="gz-dot gz-dot--bad" aria-hidden="true" />
         Failed
       </span>
     );
   }
   if (hasHtml) {
     return (
-      <span className="gz-status gz-status--live" role="status">
+      <span className="chip gz-chip gz-chip--live" role="status">
         <span className="gz-dot" aria-hidden="true" />
         Live
       </span>
@@ -103,48 +136,52 @@ export function GizmoView({
   let body: React.ReactNode;
   if (html) {
     body = (
-      <iframe
-        key={frameKey}
-        className="gz-frame"
-        title="Interactive diagram"
-        sandbox="allow-scripts"
-        srcDoc={html}
-        referrerPolicy="no-referrer"
-        style={{ border: 0, width: "100%", height: "100%" }}
-      />
+      <div className="gz-stage">
+        <iframe
+          key={frameKey}
+          className="gz-frame"
+          title="Interactive diagram"
+          sandbox="allow-scripts"
+          srcDoc={html}
+          referrerPolicy="no-referrer"
+          style={{ border: 0, width: "100%", height: "100%" }}
+        />
+      </div>
     );
   } else if (status === "building") {
     body = (
-      <div className="gz-center">
-        <div className="gz-card glass-panel">
-          <div className="gz-bar" aria-hidden="true" />
-          <h2 className="gz-card-title">Building your diagram…</h2>
-          <p className="gz-card-sub">This usually takes 15–40 seconds.</p>
-        </div>
-      </div>
+      <section className="gz-card glass-panel">
+        <i className="liquid" aria-hidden="true" />
+        <div className="gz-bar" aria-hidden="true" />
+        <h2 className="gz-card-title">Building your diagram…</h2>
+        <p className="gz-card-sub">This usually takes 15–40 seconds.</p>
+      </section>
     );
   } else if (status === "failed") {
     body = (
-      <div className="gz-center">
-        <div className="gz-card glass-panel">
-          <h2 className="gz-card-title">Couldn't build the diagram</h2>
-          <p className="gz-card-sub">Ask the tutor to draw it on the whiteboard instead.</p>
-        </div>
-      </div>
+      <section className="gz-card glass-panel">
+        <i className="liquid" aria-hidden="true" />
+        <span className="gz-dot gz-dot--bad gz-dot--card" aria-hidden="true" />
+        <h2 className="gz-card-title">Couldn't build the diagram</h2>
+        <p className="gz-card-sub">Ask the tutor to draw it on the whiteboard instead.</p>
+      </section>
     );
   } else {
     body = (
-      <div className="gz-center">
-        <p className="gz-empty">
+      <section className="gz-card glass-panel">
+        <i className="liquid" aria-hidden="true" />
+        <p className="gz-card-sub">
           No diagram yet. Say &ldquo;make me an interactive diagram&rdquo; during an explanation.
         </p>
-      </div>
+      </section>
     );
   }
 
   return (
     <div className="gz-root">
-      <header className="gz-header">
+      <main className="gz-body">{body}</main>
+      <header className="gz-header glass-panel">
+        <i className="liquid" aria-hidden="true" />
         <div className="gz-titles">
           <span className="gz-eyebrow">INTERACTIVE DIAGRAM</span>
           <h1 className="gz-title" title={title}>
@@ -152,10 +189,10 @@ export function GizmoView({
           </h1>
         </div>
         <div className="gz-actions">
-          <StatusPill status={status} hasHtml={html !== null} />
+          <StatusChip status={status} hasHtml={html !== null} />
           <button
             type="button"
-            className="gz-btn"
+            className="glass-btn gz-btn"
             aria-label="Reload diagram"
             title="Reload"
             disabled={!html}
@@ -168,7 +205,7 @@ export function GizmoView({
           </button>
           <button
             type="button"
-            className="gz-btn"
+            className="glass-btn gz-btn"
             aria-label="Close diagram window"
             title="Close"
             onClick={() => onClose?.()}
@@ -179,7 +216,6 @@ export function GizmoView({
           </button>
         </div>
       </header>
-      <main className="gz-body">{body}</main>
     </div>
   );
 }
@@ -189,9 +225,12 @@ export default function App() {
   const liveHtml = snap.gizmo.status === "ready" && snap.gizmo.html ? snap.gizmo.html : null;
 
   // Keep the last ready diagram so it stays on screen when a new session resets the snapshot.
-  const [kept, setKept] = useState<string | null>(null);
+  // Starts from storage, so the last diagram also survives an app relaunch.
+  const [kept, setKept] = useState<string | null>(() => readStoredDiagram()?.html ?? null);
   useEffect(() => {
-    if (liveHtml) setKept(liveHtml);
+    if (!liveHtml) return;
+    setKept(liveHtml);
+    storeDiagram(liveHtml, titleFromHtml(liveHtml) ?? "");
   }, [liveHtml]);
 
   const html = liveHtml ?? kept;

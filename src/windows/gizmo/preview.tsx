@@ -1,12 +1,13 @@
 // Dev-only harness: open http://localhost:1420/src/windows/gizmo/preview.html
 // Params: state=ready|building|failed|none (default ready), title=<concept>,
 // assembled=1 (run the template's last <script> through assembleGizmoHtml),
-// broken=1 with assembled=1 (appends an undefined call to prove the error card).
+// broken=1 with assembled=1 (appends an undefined call to prove the error card),
+// stored=1 (show the diagram saved in localStorage under pimple.gizmo.last).
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "@/ui/glass.css";
 import { assembleGizmoHtml } from "@/core/gizmo";
-import { GizmoView, type GizmoStatus } from "./App";
+import { GizmoView, readStoredDiagram, type GizmoStatus } from "./App";
 
 const DEFAULT_TITLE = "Sun's power spread over a growing bubble";
 const STATES: readonly GizmoStatus[] = ["ready", "building", "failed", "none"];
@@ -28,9 +29,11 @@ function Preview() {
   const status: GizmoStatus = (STATES as readonly string[]).includes(requested)
     ? (requested as GizmoStatus)
     : "ready";
-  const concept = params.get("title") ?? DEFAULT_TITLE;
+  const stored = params.get("stored") === "1";
   const assembled = params.get("assembled") === "1";
   const broken = params.get("broken") === "1";
+  const concept =
+    params.get("title") ?? (stored ? readStoredDiagram()?.title : null) ?? DEFAULT_TITLE;
 
   const [template, setTemplate] = useState<string | null>(null);
   useEffect(() => {
@@ -50,6 +53,7 @@ function Preview() {
   }, []);
 
   const html = useMemo(() => {
+    if (stored) return readStoredDiagram()?.html ?? null;
     if (status !== "ready" || template === null) return null;
     if (!assembled) return template;
     const scene = lastScriptBody(template);
@@ -58,7 +62,7 @@ function Preview() {
       return null;
     }
     return assembleGizmoHtml(broken ? `${scene}\nundefinedFn();` : scene, concept);
-  }, [status, template, assembled, broken, concept]);
+  }, [stored, status, template, assembled, broken, concept]);
 
   return <GizmoView html={html} status={status} concept={concept} />;
 }

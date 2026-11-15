@@ -1,21 +1,33 @@
 /*
- * Gizmo window chrome. Class prefix gz-. Glass material and tokens come from src/ui/glass.css.
- * The diagram body stays light (the kit is light-only); only the header follows the theme.
+ * Gizmo window chrome, in the liquid-glass kit from src/ui/glass.css (.glass-panel + .liquid,
+ * .glass-btn, .chip). Class prefix gz-. The diagram page inside the stage stays light.
  */
 
 :root {
-  --gz-ground: #EEF0F3;   /* diagram page ground, light in both themes */
-  --gz-chrome: #EEF0F3;   /* window ground behind the glass header */
+  --gz-ground: #EEF0F3;   /* diagram page ground: the kit is light-only */
+  --gz-page: #E8EBF0;     /* window ground, behind the backdrop */
+  --gz-backdrop:
+    radial-gradient(70% 60% at 0% 0%, rgba(190, 220, 255, 0.55) 0%, rgba(190, 220, 255, 0) 70%),
+    radial-gradient(70% 60% at 100% 100%, rgba(255, 214, 190, 0.5) 0%, rgba(255, 214, 190, 0) 70%),
+    linear-gradient(180deg, #F3F5F8 0%, #E8EBF0 100%);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --gz-chrome: #16181D;
+    --gz-page: #101216;
+    --gz-backdrop:
+      radial-gradient(70% 60% at 0% 0%, rgba(70, 130, 220, 0.22) 0%, rgba(70, 130, 220, 0) 70%),
+      radial-gradient(70% 60% at 100% 100%, rgba(220, 130, 90, 0.16) 0%, rgba(220, 130, 90, 0) 70%),
+      linear-gradient(180deg, #181A20 0%, #101216 100%);
   }
 }
 
 :root[data-theme="dark"] {
-  --gz-chrome: #16181D;
+  --gz-page: #101216;
+  --gz-backdrop:
+    radial-gradient(70% 60% at 0% 0%, rgba(70, 130, 220, 0.22) 0%, rgba(70, 130, 220, 0) 70%),
+    radial-gradient(70% 60% at 100% 100%, rgba(220, 130, 90, 0.16) 0%, rgba(220, 130, 90, 0) 70%),
+    linear-gradient(180deg, #181A20 0%, #101216 100%);
 }
 
 html,
@@ -24,40 +36,73 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden;
-}
-
-body {
-  background: var(--gz-chrome);
+  background: var(--gz-page);
 }
 
 .gz-root {
   position: fixed;
   inset: 0;
-  display: flex;
-  flex-direction: column;
   width: 100vw;
   height: 100vh;
-  background: var(--gz-chrome);
   color: var(--text-1);
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Header: liquid glass over the window ground. */
-.gz-header {
+/* Body: the backdrop fills the window; the diagram stage sits below the floating header. */
+.gz-body {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 84px 10px 10px; /* header bottom (66 px) + 18 px */
+  background: var(--gz-backdrop);
+}
+
+.gz-stage {
   position: relative;
-  z-index: 2;
-  flex: 0 0 56px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--gz-ground);
+  box-shadow: 0 0 0 1px var(--glass-hairline), 0 12px 30px -14px rgba(0, 0, 0, 0.22);
+}
+
+.gz-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  animation: gz-fade-in 300ms ease-out both;
+}
+
+@keyframes gz-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Floating header: a glass bar inset 10 px from the window edges. */
+.gz-header.glass-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 12px;
   height: 56px;
-  padding: 0 12px 0 20px;
-  background: var(--glass-bg);
+  box-sizing: border-box;
+  padding: 0 10px 0 20px;
+  border-radius: 22px;
   -webkit-backdrop-filter: blur(24px) saturate(180%);
   backdrop-filter: blur(24px) saturate(180%);
-  border-bottom: 1px solid var(--glass-hairline);
-  box-shadow: inset 0 1px 0 var(--glass-specular);
+}
+
+.gz-header.glass-panel::after {
+  display: none; /* the liquid layer draws the rim */
 }
 
 .gz-titles {
@@ -96,41 +141,65 @@ body {
   gap: 8px;
 }
 
-/* Status pill. */
-.gz-status {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 10px;
-  border: 1px solid var(--chip-border);
-  border-radius: var(--r-pill);
-  background: var(--chip-bg);
+.gz-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.gz-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.gz-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gz-btn:disabled:hover {
+  background: var(--glass-btn-bg);
   color: var(--text-2);
+}
+
+/* Status chip (.chip from the kit). */
+.gz-chip {
+  height: 24px;
+  padding: 0 11px;
+  gap: 7px;
   font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
+}
+
+.gz-chip--failed {
+  color: var(--bad-ink);
 }
 
 .gz-dot {
+  flex-shrink: 0;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--ok);
+  animation: gz-breathe 2.4s ease-in-out infinite;
 }
 
-.gz-status--failed {
-  color: var(--bad-ink);
-}
-
-.gz-status--failed .gz-dot {
+.gz-dot--bad {
   background: var(--bad);
+  animation: none;
 }
 
-/* Shimmering "Building…" label: a moving highlight clipped to the text. */
-.gz-status--building .gz-label {
+.gz-dot--card {
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 0 6px rgba(255, 69, 58, 0.16);
+}
+
+@keyframes gz-breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+/* "Building…" label: a moving highlight clipped to the text. */
+.gz-chip--building .gz-label {
   background: linear-gradient(90deg, var(--text-3) 0%, var(--text-1) 50%, var(--text-3) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -139,87 +208,23 @@ body {
   animation: gt-shimmer 1.8s linear infinite;
 }
 
-/* Round glass button, 32 px. */
-.gz-btn {
-  display: inline-grid;
-  flex-shrink: 0;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--chip-border);
-  border-radius: 50%;
-  background: var(--glass-btn-bg);
-  color: var(--text-2);
-  box-shadow: var(--glass-btn-shadow), inset 0 1px 0 var(--glass-specular);
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease, transform 120ms ease;
-}
-
-.gz-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.gz-btn:hover:not(:disabled) {
-  background: var(--glass-btn-hover);
-  color: var(--text-1);
-}
-
-.gz-btn:active:not(:disabled) {
-  transform: scale(0.94);
-}
-
-.gz-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.gz-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Body: the diagram fills it edge to edge. */
-.gz-body {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  background: var(--gz-ground);
-}
-
-.gz-frame {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  animation: gz-fade-in 300ms ease-out both;
-}
-
-@keyframes gz-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Centred states (building, failed, empty). */
-.gz-center {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-}
-
+/* Centred glass cards (building, failed, empty). */
 .gz-card {
+  position: relative;
   display: flex;
   box-sizing: border-box;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   width: min(420px, 100%);
-  padding: 28px 28px 26px;
-  border-radius: var(--r-lg);
+  max-width: 420px;
+  padding: 30px 30px 28px;
+  border-radius: 26px;
   text-align: center;
+}
+
+.gz-card::after {
+  display: none; /* the liquid layer draws the rim */
 }
 
 .gz-card-title {
@@ -234,49 +239,51 @@ body {
 .gz-card-sub {
   margin: 0;
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--text-2);
 }
 
-/* Animated shimmer bar inside the building card. */
+/* Building: an iridescent bar that drifts and breathes. */
 .gz-bar {
   width: 100%;
   height: 6px;
-  margin: 8px 0 6px;
-  border-radius: var(--r-pill);
-  background-color: var(--skel);
-  background-image: linear-gradient(90deg, transparent 0%, var(--skel-hi) 50%, transparent 100%);
-  background-size: 50% 100%;
-  background-repeat: no-repeat;
-  animation: gt-shimmer 1.4s linear infinite;
+  margin: 10px 0 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #ff5fa8, #ffb35c, #fff27a, #7df7b6, #5cd2ff, #8f8bff, #e07cff, #ff5fa8,
+    #ffb35c, #fff27a, #7df7b6, #5cd2ff, #8f8bff, #e07cff, #ff5fa8
+  );
+  background-size: 200% 100%;
+  animation: gz-iris 3.2s linear infinite, gz-pulse 2.2s ease-in-out infinite;
 }
 
-.gz-empty {
-  margin: 0;
-  max-width: 420px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-3);
-  text-align: center;
+@keyframes gz-iris {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+
+@keyframes gz-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gz-frame,
+  .gz-dot,
   .gz-bar,
-  .gz-status--building .gz-label {
+  .gz-chip--building .gz-label {
     animation: none;
   }
 
-  .gz-status--building .gz-label {
+  .gz-chip--building .gz-label {
     background: none;
     -webkit-background-clip: border-box;
     background-clip: border-box;
     color: var(--text-1);
   }
 
-  .gz-btn,
-  .gz-btn:active:not(:disabled) {
-    transition: none;
-    transform: none;
+  .gz-bar {
+    opacity: 1;
   }
 }
