@@ -42,6 +42,8 @@ export default function App() {
     seenKey.current = key;
     if (resp.surface === "whiteboard") {
       void invokeCmd(CMD.showWindow, { label: "whiteboard" });
+    } else if (resp.surface === "overlay") {
+      void invokeCmd(CMD.hideWindow, { label: "whiteboard" });
     }
   }, [snap.response]);
 
