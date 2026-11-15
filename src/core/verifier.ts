@@ -1,10 +1,11 @@
 import type { AppSettings, CaptureResult, Segment, Shape, TutorResponse, VerifierResult } from "../../shared/contracts";
 import verifierSchema from "../../shared/verifier.schema.json";
 import { getAnthropic } from "./anthropic";
-import { VERIFIER_SEGMENT_PROMPT, VERIFIER_SYSTEM_PROMPT, imageBlock } from "./prompts";
+import { REWRITE_PROMPT, VERIFIER_SEGMENT_PROMPT, VERIFIER_SYSTEM_PROMPT, imageBlock } from "./prompts";
 
 const VERIFIER_TIMEOUT_MS = 4000;
 const SEGMENT_TIMEOUT_MS = 3000;
+const REWRITE_TIMEOUT_MS = 2000;
 const PASS: VerifierResult = { verdict: "pass", unsupported_claims: [] };
 
 function shapeLabel(s: Shape): string {
@@ -160,5 +161,65 @@ export async function verifySegment(a: {
     const ms = Math.round(performance.now() - t0);
     console.warn(`[verifier] seg ${a.segment.id} skipped`, { ...errorParts(err), ms });
     return { ran: false, ok: true, claims: [], ms };
+  }
+}
+
+/** Removes one pair of wrapping quotes, if the model added them. */
+function trimQuotes(s: string): string {
+  const open = /^["“‘']/;
+  const close = /["”’']$/;
+  return s.length >= 2 && open.test(s) && close.test(s) ? s.slice(1, -1).trim() : s;
+}
+
+/**
+ * Haiku rewrite of ONE flagged sentence, fixing only the flagged problem. Hard 2 s cap. On timeout,
+ * error or empty reply returns ok: false with the original sentence text.
+ */
+export async function rewriteSentence(a: {
+  capture: CaptureResult;
+  question: string;
+  segment: Segment;
+  previous: Segment[];
+  claims: string[];
+  settings: AppSettings;
+  signal?: AbortSignal;
+}): Promise<{ ok: boolean; text: string; ms: number }> {
+  const t0 = performance.now();
+  const original = a.segment.text;
+  const text =
+    `Student question: "${a.question}"\n` +
+    `Earlier sentences (context, already said): ${JSON.stringify(a.previous.map((s) => s.text))}\n` +
+    `Flagged sentence: ${original}\n` +
+    `Checker's claims: ${JSON.stringify(a.claims)}`;
+  try {
+    const raw = await withTimeout(REWRITE_TIMEOUT_MS, a.signal, async (signal) => {
+      const client = await getAnthropic();
+      const msg = await client.messages.create(
+        {
+          model: a.settings.verifierModel,
+          max_tokens: 200,
+          thinking: { type: "disabled" },
+          output_config: { effort: "low" },
+          system: REWRITE_PROMPT,
+          messages: [{ role: "user", content: [imageBlock(a.capture), { type: "text", text }] }],
+        },
+        { signal },
+      );
+      if (msg.stop_reason === "refusal") throw new Error("refused");
+      return msg.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    });
+    const cleaned = trimQuotes(raw.trim());
+    const ms = Math.round(performance.now() - t0);
+    if (!cleaned) {
+      console.info(`[verifier] rewrite ${a.segment.id}`, { ok: false, ms });
+      return { ok: false, text: original, ms };
+    }
+    console.info(`[verifier] rewrite ${a.segment.id}`, { ok: true, ms });
+    return { ok: true, text: cleaned, ms };
+  } catch (err) {
+    const ms = Math.round(performance.now() - t0);
+    console.warn(`[verifier] rewrite ${a.segment.id} skipped`, { ...errorParts(err), ms });
+    console.info(`[verifier] rewrite ${a.segment.id}`, { ok: false, ms });
+    return { ok: false, text: original, ms };
   }
 }

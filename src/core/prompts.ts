@@ -10,6 +10,8 @@ export const VERIFIER_SYSTEM_PROMPT = `You are a strict fact checker for a tutor
 
 export const VERIFIER_SEGMENT_PROMPT = `You check one sentence a tutor is about to say about the screenshot. Flag a claim ONLY if it CONTRADICTS the screenshot (wrong number, label, object, direction, step) or is factually false. Anything derivable from the visible numbers by simple arithmetic or standard reasoning, and anything the page itself states or implies, is supported. When in doubt, pass.`;
 
+export const REWRITE_PROMPT = `Rewrite this one spoken tutor sentence so it is accurate for the screenshot, fixing only the flagged problem. Keep it under 25 words, same role in the explanation, readable notation (e.g. 24.5 N, sin 30°). Reply with the sentence only.`;
+
 /** Image content block for the Claude request. Placed BEFORE the text block by callers. */
 export function imageBlock(capture: CaptureResult) {
   return {

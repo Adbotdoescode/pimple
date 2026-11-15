@@ -17,7 +17,7 @@ import {
   type UiIntent,
 } from "../../shared/contracts";
 import { streamTutor, type TutorCallInput, type TutorStreamHandlers } from "./claude";
-import { verifySegment } from "./verifier";
+import { rewriteSentence, verifySegment } from "./verifier";
 import { summarizeCapture } from "./summary";
 import { createTtsPlayer } from "./ttsPlayer";
 import { wireToTutorResponse } from "./jsonStream";
@@ -723,19 +723,15 @@ function onGatedVerdict(
   r: { ran: boolean; ok: boolean; claims: string[]; ms: number },
 ): void {
   if (!live(t, g)) return;
-  // Only an unspoken first sentence is regenerated. Later flagged sentences are kept (the verifier has
-  // false positives on derivable claims) and the card shows the fail badge instead.
-  const regen = !r.ok && index === 0 && g.allowRegen;
-  entry.state = regen ? "dropped" : "ok";
   g.ranAny = g.ranAny || r.ran;
   g.droppedAny = g.droppedAny || !r.ok;
   g.maxMs = Math.max(g.maxMs, r.ms);
-  publishVerifier(g);
-  if (!r.ok) console.info("[brain] verifier flagged segment", entry.seg.id, regen ? "(regenerating)" : "(kept)", r.claims);
 
-  // Nothing has been spoken while the first segment is pending, so regenerate once from scratch.
+  // Nothing has been spoken while the first sentence is pending: regenerate the whole answer once.
   if (!r.ok && index === 0 && g.allowRegen) {
-    console.info("[brain] first segment failed verification, regenerating once");
+    console.info("[brain] first segment failed verification, regenerating once", r.claims);
+    entry.state = "dropped";
+    publishVerifier(g);
     setPhase("thinking");
     g.ac.abort(); // the old stream's rejection is ignored: its gate is no longer live
     void runGatedAttempt(t, { ...base, critique: r.claims }, false, {
@@ -745,7 +741,38 @@ function onGatedVerdict(
     });
     return;
   }
-  pump(t, g);
+
+  if (r.ok) {
+    entry.state = "ok";
+    publishVerifier(g);
+    pump(t, g);
+    return;
+  }
+
+  // A later sentence failed: rewrite it in place. It stays pending, so the gate keeps releasing in order.
+  // The verdict stays "fail" (badge) whatever the rewrite returns.
+  entry.state = "pending";
+  publishVerifier(g);
+  console.info("[brain] verifier flagged segment", entry.seg.id, "(rewriting)", r.claims);
+  void rewriteSentence({
+    capture: base.capture,
+    question: base.question,
+    segment: entry.seg,
+    previous: g.entries.slice(0, index).map((e) => e.seg),
+    claims: r.claims,
+    settings: base.settings,
+    signal: g.ac.signal,
+  }).then((rw) => {
+    if (!live(t, g)) return;
+    g.maxMs = Math.max(g.maxMs, r.ms + rw.ms);
+    if (rw.ok && rw.text.trim()) {
+      entry.seg = { ...entry.seg, text: rw.text.trim() }; // same id, so the shapes still line up
+      console.info("[brain] rewrote segment", entry.seg.id);
+    }
+    entry.state = "ok";
+    publishVerifier(g);
+    pump(t, g);
+  });
 }
 
 function onGatedShape(t: Turn, g: Gate, shape: Shape): void {
