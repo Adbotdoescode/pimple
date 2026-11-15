@@ -145,16 +145,32 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-const ERROR_GUARD_CATCH =
-  "} catch (e) { document.body.insertAdjacentHTML(\"beforeend\", '<div style=\"margin:24px;padding:16px;border-radius:12px;" +
-  "background:#fff4f2;color:#a33;font:14px -apple-system\">This diagram hit an error: ' + " +
-  "String(e && e.message || e).replace(/</g,\"&lt;\") + '</div>'); }";
+/**
+ * Error guard, emitted before the scene's try block. Defines __gizmoShow (shows the error card once,
+ * pinned to the viewport bottom) and routes window errors through it, so errors thrown later inside
+ * slider or play callbacks also show the card.
+ */
+const ERROR_GUARD_PREFIX =
+  "var __gizmoShow = (function () {\n" +
+  "  var shown = false;\n" +
+  "  function show(m) {\n" +
+  "    if (shown) return;\n" +
+  "    shown = true;\n" +
+  "    document.body.insertAdjacentHTML(\"beforeend\", '<div style=\"position:fixed;left:16px;right:16px;bottom:16px;z-index:99;" +
+  "box-shadow:0 8px 24px rgba(0,0,0,.15);margin:24px;padding:16px;border-radius:12px;background:#fff4f2;color:#a33;" +
+  "font:14px -apple-system\">This diagram hit an error: ' + String(m).replace(/</g,\"&lt;\") + '</div>');\n" +
+  "  }\n" +
+  "  window.addEventListener(\"error\", function (ev) { show((ev && ev.error && ev.error.message) || ev.message || ev); });\n" +
+  "  return show;\n" +
+  "})();\n";
+
+const ERROR_GUARD_CATCH = "} catch (e) { __gizmoShow((e && e.message) || e); }";
 
 /** Pure: kit template + scene code + title -> one self-contained page. */
 export function assembleGizmoHtml(sceneCode: string, title: string): string {
   // A "</script" inside the code would close the page's script block early.
   const code = sceneCode.trim().replace(/<\/script/gi, () => "<\\/script");
-  const scene = `try {\n${code}\n${ERROR_GUARD_CATCH}`;
+  const scene = `${ERROR_GUARD_PREFIX}try {\n${code}\n${ERROR_GUARD_CATCH}`;
   let html = `${PREFIX}\n${scene}\n${SUFFIX}`;
 
   const safeTitle = escapeHtml(title);
