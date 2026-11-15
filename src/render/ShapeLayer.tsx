@@ -233,7 +233,11 @@ function strokePts(s: Shape, toView: (p: Pt) => Pt): Pt[] {
 
 /* ───────────── label placement ───────────── */
 
-function combineLabel(label: string | undefined, magnitude: string | undefined): string | undefined {
+function combineLabel(labelIn: string | undefined, magnitudeIn: string | undefined): string | undefined {
+  const label = labelIn?.trim();
+  const magnitude = magnitudeIn?.trim();
+  // Never "T = T", and never repeat a magnitude the label already states.
+  if (label && magnitude && label.toLowerCase().includes(magnitude.toLowerCase())) return label;
   if (label && magnitude) return label.includes("=") ? `${label} ${magnitude}` : `${label} = ${magnitude}`;
   return label || magnitude || undefined;
 }
@@ -389,7 +393,17 @@ function obstaclesOf(s: Shape, toView: (p: Pt) => Pt, scale: number): Seg[] {
     case "arrow":
     case "vector": {
       const g = segGeom(s, toView);
-      return g ? [[g.a[0], g.a[1], g.b[0], g.b[1]]] : [];
+      if (!g) return [];
+      const out: Seg[] = [[g.a[0], g.a[1], g.b[0], g.b[1]]];
+      if (s.kind !== "line") {
+        // The arrowhead triangle, so a label pill never sits on its own (or another) arrow tip.
+        const len = s.kind === "vector" ? 17 : 15, half = s.kind === "vector" ? 8 : 7;
+        const bx = g.b[0] - g.u[0] * len, by = g.b[1] - g.u[1] * len;
+        const lx = bx - g.u[1] * half, ly = by + g.u[0] * half;
+        const rx = bx + g.u[1] * half, ry = by - g.u[0] * half;
+        out.push([g.b[0], g.b[1], lx, ly], [lx, ly, rx, ry], [rx, ry, g.b[0], g.b[1]]);
+      }
+      return out;
     }
     case "stroke":
       return polySegs(strokePts(s, toView));
@@ -427,16 +441,25 @@ function computePlacements(
   cache: Map<string, LabelPlacement>,
 ): Map<string, LabelPlacement> {
   const segs: Seg[] = [];
-  const interiors: Box[] = [];
+  // Insides of boxes and circles. A label keeps out of them, except when its own shape sits inside
+  // one (an arrow drawn within a circle keeps its label next to the arrow).
+  const interiors: { id: string; box: Box; holds: (p: Pt) => boolean }[] = [];
   for (const { shape } of items) {
     segs.push(...obstaclesOf(shape, toView, scale));
     if (shape.kind === "box") {
       const g = rectGeom(shape.rect, toView);
-      if (g) interiors.push({ x0: g.L, y0: g.T, x1: g.L + g.W, y1: g.T + g.H });
+      if (!g) continue;
+      const box: Box = { x0: g.L, y0: g.T, x1: g.L + g.W, y1: g.T + g.H };
+      interiors.push({ id: shape.id, box, holds: (p) => p[0] >= box.x0 && p[0] <= box.x1 && p[1] >= box.y0 && p[1] <= box.y1 });
     } else if (shape.kind === "circle") {
       const g = circleGeom(shape, toView, scale);
-      const k = g ? g.R * Math.SQRT1_2 : 0;
-      if (g) interiors.push({ x0: g.cx - k, y0: g.cy - k, x1: g.cx + k, y1: g.cy + k });
+      if (!g) continue;
+      const k = g.R * Math.SQRT1_2;
+      interiors.push({
+        id: shape.id,
+        box: { x0: g.cx - k, y0: g.cy - k, x1: g.cx + k, y1: g.cy + k },
+        holds: (p) => Math.hypot(p[0] - g.cx, p[1] - g.cy) <= g.R,
+      });
     }
   }
 
@@ -462,10 +485,11 @@ function computePlacements(
     const base = labelCandidates(shape, toView, scale);
     if (base.length === 0) continue;
     const ref = shape.kind === "text" ? null : labelRef(shape, toView, scale);
+    const avoid = ref ? interiors.filter((it) => it.id === shape.id || !it.holds(ref)).map((it) => it.box) : [];
     let pick = base[0];
     let best = Infinity;
     search:
-    for (const push of ref ? [0, 12, 24, 36] : [0]) {
+    for (const push of ref ? [0, 6, 12, 18, 24, 30, 36] : [0]) {
       for (const cand0 of base) {
         let cand = cand0;
         if (push > 0 && ref) {
@@ -474,7 +498,7 @@ function computePlacements(
           const L = Math.hypot(dx, dy) || 1;
           cand = { x: cand0.x + (dx / L) * push, y: cand0.y + (dy / L) * push, anchor: cand0.anchor };
         }
-        const score = scoreCandidate(labelBox(cand, text), segs, placed, vp, ref ? interiors : []) + push * 0.5;
+        const score = scoreCandidate(labelBox(cand, text), segs, placed, vp, avoid) + push * 0.5;
         if (score === 0) { pick = cand; best = 0; break search; }
         if (score < best) { best = score; pick = cand; }
       }

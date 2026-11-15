@@ -178,7 +178,10 @@ function cardSnapshot(state: CardState): SessionSnapshot {
 
 function CardView({ state, dark, mini = false }: { state: CardState; dark: boolean; mini?: boolean }) {
   applyTheme(dark);
-  const snap = cardSnapshot(state);
+  // `notice=<text>` previews the service note line in the footer.
+  const noticeParam = params.get("notice");
+  const base = cardSnapshot(state);
+  const snap = noticeParam && base ? ({ ...base, notice: noticeParam } as typeof base) : base;
   return (
     <div className="pv-wallpaper" data-bg={dark ? "dark" : "light"}>
       <div className="pv-blur" aria-hidden="true">
