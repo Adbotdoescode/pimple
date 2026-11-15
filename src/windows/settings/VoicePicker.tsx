@@ -27,11 +27,14 @@ function classify(e: unknown): "nokey" | "unavailable" | "failed" {
 
 const pretty = (s: string) => s.replace(/[_-]+/g, " ").trim();
 
-function describe(v: Voice): { line: string; use: string } {
+/** "Roger - Laid-Back, Casual, Resonant" → short name + tagline; labels → one line + a use-case chip. */
+function describe(v: Voice): { short: string; tagline: string; line: string; use: string } {
   const l = v.labels ?? {};
+  const [short, ...rest] = v.name.split(" - ");
+  const tagline = rest.join(" - ").trim() || pretty(String(l.description ?? l.descriptive ?? ""));
   const line = [l.accent, l.gender, l.age].filter(Boolean).map((s) => pretty(String(s))).join(" · ");
-  const use = pretty(String(l.use_case ?? l["use case"] ?? l.description ?? l.descriptive ?? v.category ?? ""));
-  return { line, use };
+  const use = pretty(String(l.use_case ?? l["use case"] ?? v.category ?? ""));
+  return { short: short.trim() || v.name, tagline, line, use };
 }
 
 /**
@@ -53,7 +56,6 @@ export function VoicePicker({
   const [progress, setProgress] = useState(0);
   const [justPicked, setJustPicked] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const gridRef = useRef<HTMLDivElement | null>(null);
   const attempt = useRef(0);
 
   const fetchVoices = useCallback(async (quiet = false) => {
@@ -139,19 +141,11 @@ export function VoicePicker({
     if (!q) return voices;
     return voices.filter((v) => {
       const d = describe(v);
-      return `${v.name} ${d.line} ${d.use}`.toLowerCase().includes(q);
+      return `${v.name} ${d.tagline} ${d.line} ${d.use}`.toLowerCase().includes(q);
     });
   }, [voices, query]);
 
   const current = voices.find((v) => v.voiceId === voiceId);
-
-  // Bring the selected voice into view once the list arrives.
-  const scrolled = useRef(false);
-  useEffect(() => {
-    if (load.status !== "ok" || scrolled.current) return;
-    scrolled.current = true;
-    gridRef.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [load]);
 
   return (
     <div className="voices">
@@ -159,7 +153,8 @@ export function VoicePicker({
         <div className="voices-now">
           <span className="eyebrow">Speaking as</span>
           <span className="voices-now-name">
-            {current ? current.name : load.status === "ok" ? "A custom voice" : "…"}
+            {current ? describe(current).short : load.status === "ok" ? "A custom voice" : "…"}
+            {current && describe(current).tagline && <em>{describe(current).tagline}</em>}
           </span>
         </div>
         {load.status === "ok" && voices.length > 6 && (
@@ -229,7 +224,7 @@ export function VoicePicker({
       )}
 
       {load.status === "ok" && shown.length > 0 && (
-        <div className="voice-grid" role="radiogroup" aria-label="Assistant voice" ref={gridRef}>
+        <div className="voice-grid" role="radiogroup" aria-label="Assistant voice">
           {shown.map((v, i) => {
             const d = describe(v);
             const on = v.voiceId === voiceId;
@@ -257,12 +252,16 @@ export function VoicePicker({
                   type="button"
                   role="radio"
                   aria-checked={on}
+                  aria-label={`${v.name}${d.line ? `, ${d.line}` : ""}`}
                   className="voice-pick"
                   onClick={() => pick(v)}
                 >
-                  <span className="voice-name">{v.name}</span>
-                  {d.line && <span className="voice-line">{d.line}</span>}
-                  {d.use && <span className="voice-use">{d.use}</span>}
+                  <span className="voice-top">
+                    <span className="voice-name">{d.short}</span>
+                    {d.use && <span className="voice-chip">{d.use}</span>}
+                  </span>
+                  {d.tagline && <span className="voice-line">{d.tagline}</span>}
+                  {d.line && <span className="voice-meta">{d.line}</span>}
                 </button>
                 {on && (
                   <span className="voice-tick" aria-hidden="true">

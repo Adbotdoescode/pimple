@@ -11,17 +11,20 @@ export const BUBBLE_Y_MAX = 0.92;
 const clampY = (y: number) => Math.min(BUBBLE_Y_MAX, Math.max(BUBBLE_Y_MIN, y));
 
 const BEAD = 34; // px, the mini bubble's diameter on the map
-const MERGE = 3; // px, how far the resting centre sits inside the edge
+const MERGE = 8; // px from the map's outer edge to the resting centre (5 px bezel + 3 px on screen)
 
 /**
  * A mini map of the display. The user drags a liquid bead; on release it snaps to the
  * nearer wall at that height with a springy wobble and reports {bubbleEdge, bubbleY}.
  */
 export function BubbleMap({
+  ready = true,
   edge,
   y,
   onChange,
 }: {
+  /** False until the saved position is known: the bead stays hidden and nothing can be sent. */
+  ready?: boolean;
   edge: Edge;
   y: number;
   onChange: (edge: Edge, y: number) => void;
@@ -57,8 +60,10 @@ export function BubbleMap({
   }, []);
 
   const size = () => {
-    const r = mapRef.current?.getBoundingClientRect();
-    return { w: r?.width ?? 1, h: r?.height ?? 1, left: r?.left ?? 0, top: r?.top ?? 0 };
+    // Layout size, not the bounding rect: the pane's entrance animation scales the rect.
+    const el = mapRef.current;
+    const r = el?.getBoundingClientRect();
+    return { w: el?.clientWidth || 1, h: el?.clientHeight || 1, left: r?.left ?? 0, top: r?.top ?? 0 };
   };
   const restX = (e: Edge, w: number) => (e === "left" ? MERGE : w - MERGE);
 
@@ -144,7 +149,11 @@ export function BubbleMap({
     loop.current?.kick();
   };
 
+  const readyRef = useRef(ready);
+  readyRef.current = ready;
+
   const commit = (e: Edge, yy: number, kick = 1) => {
+    if (!readyRef.current) return;
     const { w, h } = size();
     const cy = clampY(yy);
     sx.current.target = restX(e, w);
@@ -164,14 +173,18 @@ export function BubbleMap({
   };
 
   const onPointerDown = (ev: React.PointerEvent<HTMLDivElement>) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || !readyRef.current) return;
     ev.preventDefault();
     const { left, top } = size();
     grab.current = {
       dx: ev.clientX - left - sx.current.x,
       dy: ev.clientY - top - sy.current.x,
     };
-    ev.currentTarget.setPointerCapture(ev.pointerId);
+    try {
+      ev.currentTarget.setPointerCapture(ev.pointerId);
+    } catch {
+      /* no active pointer with this id (scripted drag) */
+    }
     draggingRef.current = true;
     setDragging(true);
     jelly.current.v -= 5;
@@ -221,7 +234,7 @@ export function BubbleMap({
     <div className="bmap-wrap">
       <div
         ref={mapRef}
-        className={`bmap ${dragging ? "dragging" : ""} near-${hoverEdge}`}
+        className={`bmap ${dragging ? "dragging" : ""} ${ready ? "" : "pending"} near-${hoverEdge}`}
         style={{ aspectRatio: String(aspect) }}
         onPointerDown={onMapPointerDown}
       >

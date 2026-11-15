@@ -185,7 +185,7 @@ body,
   position: relative;
   z-index: 2;
   flex: none;
-  padding: 14px 22px 20px;
+  padding: 8px 22px 20px;
   background:
     var(--gloss),
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.02));
@@ -674,13 +674,22 @@ body,
     radial-gradient(80% 90% at 88% 30%, rgba(176, 132, 255, 0.5), transparent 64%),
     radial-gradient(90% 80% at 46% 108%, rgba(255, 176, 132, 0.55), transparent 62%),
     rgba(255, 255, 255, 0.16);
+  box-shadow: 0 16px 30px -16px rgba(10, 20, 60, 0.6);
+  cursor: pointer;
+  touch-action: none;
+}
+/* The display bezel sits above the droplet, so the droplet reads as merged into the screen edge. */
+.bmap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  border-radius: inherit;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.5),
     inset 0 0 0 5px rgba(10, 14, 30, 0.82),
-    inset 0 0 0 6px rgba(255, 255, 255, 0.22),
-    0 16px 30px -16px rgba(10, 20, 60, 0.6);
-  cursor: pointer;
-  touch-action: none;
+    inset 0 0 0 6px rgba(255, 255, 255, 0.22);
+  pointer-events: none;
 }
 .bmap > * { pointer-events: none; }
 .bmap > .bead { pointer-events: auto; }
@@ -746,6 +755,8 @@ body,
   z-index: 3;
 }
 .bmap.dragging .bead { cursor: grabbing; }
+.bmap.pending { cursor: default; }
+.bmap.pending .bead { opacity: 0; pointer-events: none; }
 .bead-glass {
   position: absolute;
   inset: 0;
@@ -786,9 +797,14 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.voices-now-name em {
+  margin-left: 8px;
+  font: 400 12.5px var(--font-ui);
+  color: var(--text-2);
+}
 .voice-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(204px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
 }
 .voice-card {
@@ -796,8 +812,8 @@ body,
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 62px;
-  padding: 9px 12px 9px 10px;
+  min-height: 70px;
+  padding: 9px 12px 9px 12px;
   border-radius: 22px 18px 24px 18px / 18px 24px 18px 22px;
   background: var(--well);
   box-shadow: inset 0 0 0 1px var(--hair);
@@ -877,7 +893,7 @@ body,
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
-  padding: 2px 16px 2px 0;
+  padding: 2px 28px 2px 0;
   border: 0;
   background: none;
   text-align: left;
@@ -886,30 +902,46 @@ body,
   cursor: pointer;
   border-radius: 12px;
 }
+.voice-top { display: flex; align-items: center; gap: 8px; max-width: 100%; }
 .voice-name {
-  max-width: 100%;
-  font-size: 13.5px;
-  font-weight: 650;
+  min-width: 0;
+  font-family: var(--font-round);
+  font-size: 14.5px;
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.voice-chip {
+  flex: none;
+  max-width: 60%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--well);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.voice-chip::first-letter { text-transform: uppercase; }
 .voice-line,
-.voice-use {
+.voice-meta {
   max-width: 100%;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-transform: capitalize;
 }
-.voice-use { color: var(--text-3); text-transform: none; }
-.voice-use::first-letter { text-transform: uppercase; }
+.voice-meta { font-size: 11.5px; color: var(--text-3); text-transform: capitalize; }
 .voice-tick {
   position: absolute;
-  top: 8px;
-  right: 9px;
+  top: 50%;
+  right: 12px;
+  margin-top: -9px;
   display: grid;
   place-items: center;
   width: 18px;

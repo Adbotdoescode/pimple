@@ -10,6 +10,7 @@ import {
   type TtsProvider,
   type UiIntent,
 } from "@shared/contracts";
+import { loadSettings } from "../../core/settingsStore";
 import { BubbleMap } from "./BubbleMap";
 import { VoicePicker } from "./VoicePicker";
 import { CheckIcon, RefreshIcon, WarningIcon } from "./icons";
@@ -165,12 +166,37 @@ export function Settings({
     if (!keys.anthropic) go("keys");
   }, [keys, go]);
 
-  // Local copy for optimistic updates; the snapshot is the source of truth.
+  // Local copy for optimistic updates; the snapshot is the source of truth. Until the first real
+  // snapshot arrives the mirror holds DEFAULT_SETTINGS (same object), so the persisted settings
+  // are read straight from the store instead. Nothing here ever emits: settings-changed is sent
+  // only from `change`, which only user gestures call.
   const serverSettings = snapshot?.settings;
+  const live = !!serverSettings && serverSettings !== DEFAULT_SETTINGS;
+  const liveRef = useRef(live);
+  liveRef.current = live;
   const [settings, setSettings] = useState<AppSettings>(serverSettings ?? DEFAULT_SETTINGS);
+  const [ready, setReady] = useState(live);
   useEffect(() => {
-    if (serverSettings) setSettings({ ...DEFAULT_SETTINGS, ...serverSettings });
-  }, [serverSettings]);
+    if (!live || !serverSettings) return;
+    setSettings({ ...DEFAULT_SETTINGS, ...serverSettings });
+    setReady(true);
+  }, [live, serverSettings]);
+  useEffect(() => {
+    if (liveRef.current) return;
+    let alive = true;
+    loadSettings()
+      .then((stored) => {
+        if (!alive) return;
+        if (!liveRef.current) setSettings(stored);
+        setReady(true);
+      })
+      .catch(() => {
+        if (alive) setReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const change = (patch: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -267,6 +293,7 @@ export function Settings({
                 sub="Drag the droplet to either edge, at any height. Let go and the real bubble glides there."
               >
                 <BubbleMap
+                  ready={ready}
                   edge={settings.bubbleEdge}
                   y={typeof settings.bubbleY === "number" ? settings.bubbleY : 0.5}
                   onChange={(e, y) => change({ bubbleEdge: e, bubbleY: y })}

@@ -6,6 +6,35 @@ import { Settings } from "./Settings";
 
 type Section = "general" | "keys";
 
+/**
+ * Dev only: drags the mini bubble with in-page pointer events (the OS cursor does not move) to the
+ * map fraction (fx, fy), holds `hold` ms, then lets go. Exercises the real drag handlers.
+ */
+function devDragBead(fx: number, fy: number, hold = 120): void {
+  const map = document.querySelector<HTMLElement>(".bmap");
+  const bead = document.querySelector<HTMLElement>(".bead");
+  if (!map || !bead) return;
+  const m = map.getBoundingClientRect();
+  const b = bead.getBoundingClientRect();
+  const from = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  const to = { x: m.left + fx * m.width, y: m.top + fy * m.height };
+  const fire = (type: string, x: number, y: number) =>
+    bead.dispatchEvent(
+      new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, clientX: x, clientY: y, isPrimary: true }),
+    );
+  fire("pointerdown", from.x, from.y);
+  const steps = 24;
+  let i = 0;
+  const tick = () => {
+    i += 1;
+    const t = i / steps;
+    fire("pointermove", from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+    if (i < steps) requestAnimationFrame(tick);
+    else window.setTimeout(() => fire("pointerup", to.x, to.y), hold);
+  };
+  requestAnimationFrame(tick);
+}
+
 export default function App() {
   const snapshot = useSession((s) => s);
   const [section, setSection] = useState<Section>("general");
@@ -35,15 +64,21 @@ export default function App() {
     };
   }, []);
 
-  // Dev only (the tray is hard to reach from scripts): an injected ui:intent carrying
-  // `devOpen: "<tab>"` shows this window on that tab, `devOpen: "hide"` hides it. Example:
-  //   scripts/gt-emit.sh ui:intent '{"type":"settings-changed","settings":{},"devOpen":"voice"}'
+  // Dev only (the tray is hard to reach from scripts): an injected ui:intent of the made-up type
+  // "dev" (which the brain ignores) drives this window. `devOpen: "<tab>"` shows it on that tab,
+  // `devOpen: "hide"` hides it, `devTab: "<tab>"` switches section without focusing. Example:
+  //   scripts/gt-emit.sh ui:intent '{"type":"dev","devOpen":"voice"}'
   const [devTab, setDevTab] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     onEvent(EV.uiIntent, (p) => {
+      // `devTab` switches the section without showing or focusing the window.
+      const tabOnly = (p as { devTab?: unknown }).devTab;
+      if (typeof tabOnly === "string") setDevTab(tabOnly);
+      const drag = (p as { devDrag?: { x: number; y: number; hold?: number } }).devDrag;
+      if (drag && typeof drag.x === "number" && typeof drag.y === "number") devDragBead(drag.x, drag.y, drag.hold);
       const dev = (p as { devOpen?: unknown }).devOpen;
       if (typeof dev !== "string") return;
       if (dev === "hide") {
