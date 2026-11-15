@@ -12,11 +12,17 @@ import type {
 import { ShapeLayer } from "@/render/ShapeLayer";
 import { boardStyle } from "@/render/palette";
 import { graphMapper } from "@/render/geometry";
-import { fitShapes } from "./layout";
+import { fitShapes, imageRectOnBoard, mapImageShapesToBoard } from "./layout";
 import "./whiteboard.css";
+
+/** A captured screenshot the overlay response's coordinates refer to (pixels of the image). */
+export interface Backdrop { src: string; w: number; h: number }
 
 export interface WhiteboardProps {
   response: TutorResponse | null;
+  /** Retained drawing shown dimmed while a new answer is pending (no caption text except "Thinking…"). */
+  pending?: boolean;
+  backdrop?: Backdrop | null;
   visibleSegmentIds: string[];
   currentSegmentId: string | null;
   pulseShapeIds: string[];
@@ -193,6 +199,7 @@ interface BoardProps {
   pulseShapeIds: string[];
   theme: "light" | "dark";
   width: number;
+  backdrop: Backdrop | null;
 }
 
 interface SliderItem {
@@ -203,7 +210,7 @@ interface SliderItem {
 }
 
 /** The paper card. Keyed by concept in the parent, so each new answer crossfades in. */
-function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width }: BoardProps) {
+function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width, backdrop }: BoardProps) {
   const height = Math.floor(width / BOARD_ASPECT);
   const s = width / BOARD_W;
   const [sliderValues, setSliderValues] = useState<Record<string, number>>({});
@@ -221,14 +228,21 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
     };
   }, [dragging]);
 
+  // Overlay (image-pixel) coordinates are mapped onto the board first, with no margin so the fit
+  // cannot move them off the screenshot.
+  const prep = (shapes: Shape[]) =>
+    backdrop
+      ? fitShapes(mapImageShapesToBoard(shapes, backdrop.w, backdrop.h), undefined, 0)
+      : fitShapes(shapes);
   const mainShapes = useMemo(
-    () => applySliders(fitShapes(response?.shapes ?? []), sliderValues),
-    [response, sliderValues],
+    () => applySliders(prep(response?.shapes ?? []), sliderValues),
+    [response, sliderValues, backdrop],
   );
   const sideShapes = useMemo(
-    () => applySliders(fitShapes(sideNote?.shapes ?? []), sliderValues),
-    [sideNote, sliderValues],
+    () => applySliders(prep(sideNote?.shapes ?? []), sliderValues),
+    [sideNote, sliderValues, backdrop],
   );
+  const imgRect = backdrop ? imageRectOnBoard(backdrop.w, backdrop.h) : null;
   const sideIds = useMemo(() => sideNote?.segments.map((seg) => seg.id) ?? [], [sideNote]);
 
   const toView = useMemo(() => (p: Pt): Pt => [p[0] * s, p[1] * s], [s]);
@@ -297,7 +311,40 @@ function Board({ response, sideNote, visibleSegmentIds, pulseShapeIds, theme, wi
           </radialGradient>
         </defs>
         <rect width={width} height={height} fill="url(#wb-grid)" />
-        <rect width={width} height={height} fill="url(#wb-vig)" />
+        {backdrop && imgRect && (
+          <>
+            <defs>
+              <clipPath id="wb-backdrop-clip">
+                <rect
+                  x={imgRect[0] * s}
+                  y={imgRect[1] * s}
+                  width={imgRect[2] * s}
+                  height={imgRect[3] * s}
+                  rx={12 * s}
+                />
+              </clipPath>
+            </defs>
+            <image
+              href={backdrop.src}
+              x={imgRect[0] * s}
+              y={imgRect[1] * s}
+              width={imgRect[2] * s}
+              height={imgRect[3] * s}
+              preserveAspectRatio="none"
+              opacity={0.92}
+              clipPath="url(#wb-backdrop-clip)"
+            />
+            <rect
+              className="wb-backdrop-edge"
+              x={imgRect[0] * s}
+              y={imgRect[1] * s}
+              width={imgRect[2] * s}
+              height={imgRect[3] * s}
+              rx={12 * s}
+            />
+          </>
+        )}
+        {!backdrop && <rect width={width} height={height} fill="url(#wb-vig)" />}
         <ShapeLayer
           shapes={mainDraw}
           visibleSegmentIds={visibleSegmentIds}
@@ -405,6 +452,8 @@ export function Whiteboard(props: WhiteboardProps) {
     sourceLabel,
     onToggleTheme,
     onClose,
+    pending = false,
+    backdrop = null,
   } = props;
 
   const stageRef = useRef<HTMLElement>(null);
@@ -416,7 +465,7 @@ export function Whiteboard(props: WhiteboardProps) {
   const visible = useMemo(() => new Set(visibleSegmentIds), [visibleSegmentIds]);
   const segments = response?.segments ?? [];
   const currentText = segments.find((seg) => seg.id === currentSegmentId)?.text ?? "";
-  const thinking = phase === "thinking" || phase === "verifying";
+  const thinking = pending || phase === "thinking" || phase === "verifying";
   const text = (caption || currentText).trim();
 
   return (
@@ -455,15 +504,18 @@ export function Whiteboard(props: WhiteboardProps) {
 
       <main className="wb-stage" ref={stageRef}>
         {boardW >= 40 && (
-          <Board
-            key={response?.concept ?? "__empty__"}
-            response={response}
-            sideNote={sideNote}
-            visibleSegmentIds={visibleSegmentIds}
-            pulseShapeIds={pulseShapeIds}
-            theme={theme}
-            width={boardW}
-          />
+          <div className={`wb-board-wrap${pending ? " is-pending" : ""}`}>
+            <Board
+              key={response?.concept ?? "__empty__"}
+              response={response}
+              sideNote={sideNote}
+              visibleSegmentIds={visibleSegmentIds}
+              pulseShapeIds={pulseShapeIds}
+              theme={theme}
+              width={boardW}
+              backdrop={backdrop}
+            />
+          </div>
         )}
       </main>
 

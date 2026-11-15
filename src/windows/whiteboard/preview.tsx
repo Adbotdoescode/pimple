@@ -9,6 +9,9 @@ import type { Phase, Shape, TutorResponse, WireResponse } from "@shared/contract
 import { Whiteboard } from "./Whiteboard";
 import { SAMPLE_WHITEBOARD } from "./sample";
 
+// ?backdrop=incline draws the captured screenshot under an overlay-style (image-pixel) response.
+const INCLINE_BACKDROP = { src: "/demo/fixtures/incline.png", w: 1440, h: 900 };
+
 async function loadFixture(name: string): Promise<TutorResponse> {
   const res = await fetch(`/demo/fixtures/${encodeURIComponent(name)}.json`);
   if (!res.ok) throw new Error(`fixture ${name}: HTTP ${res.status}`);
@@ -57,6 +60,7 @@ function Preview() {
       currentSegmentId={last?.id ?? null}
       pulseShapeIds={[]}
       sideNote={null}
+      backdrop={params.get("backdrop") === "incline" ? INCLINE_BACKDROP : null}
       theme={theme}
       caption={last?.text ?? ""}
       phase={phase}

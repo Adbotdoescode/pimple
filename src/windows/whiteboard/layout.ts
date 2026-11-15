@@ -172,3 +172,31 @@ export function fitShapes(
     return dx || dy ? mapShape(s, (p): Pt => [p[0] + dx, p[1] + dy]) : s;
   });
 }
+
+/**
+ * Where a captured image (imgW × imgH px) sits on the board: contained, centred, with a margin.
+ * Returns [x, y, w, h] in board units.
+ */
+export function imageRectOnBoard(
+  imgW: number,
+  imgH: number,
+  board: BoardSize = { w: 1600, h: 1000 },
+  margin = 24,
+): [number, number, number, number] {
+  if (!(imgW > 0) || !(imgH > 0)) return [0, 0, board.w, board.h];
+  const k = Math.min((board.w - 2 * margin) / imgW, (board.h - 2 * margin) / imgH);
+  const w = imgW * k, h = imgH * k;
+  return [(board.w - w) / 2, (board.h - h) / 2, w, h];
+}
+
+/**
+ * Overlay responses use pixels of the captured image. Map them into board units using the same
+ * transform as imageRectOnBoard, so they line up with the drawn screenshot. Pure: returns new shapes.
+ */
+export function mapImageShapesToBoard(shapes: Shape[], imgW: number, imgH: number): Shape[] {
+  if (!(imgW > 0) || !(imgH > 0)) return shapes.map((s) => ({ ...s }));
+  const [x0, y0, w] = imageRectOnBoard(imgW, imgH);
+  const k = w / imgW;
+  const f = (p: Pt): Pt => [x0 + p[0] * k, y0 + p[1] * k];
+  return shapes.map((s) => mapShape(s, f, k));
+}
