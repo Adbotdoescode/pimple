@@ -109,6 +109,7 @@ interface Turn {
   audioStarted: boolean; // first-audio latency recorded for this turn
   freezeMode: "hold" | "tap" | "interrupt" | "shut" | null; // how a frozen turn's mic was opened
   frozenMicPending: boolean; // open the mic once the "Which part?" line has played
+  replaceResponse: boolean; // a follow-up keeps the old shapes until the new answer's first segment is released
 }
 
 /** Context for the student's next question after an interrupt or shut-up. */
@@ -147,8 +148,9 @@ function setKeys(space: boolean, returnEsc: boolean): void {
   );
 }
 
-function setPhase(phase: Phase): void {
-  console.info("[brain]", phase);
+function setPhase(phase: Phase, reason?: string): void {
+  if (phase === "idle") console.info("[brain] idle — reason:", reason ?? "unspecified");
+  else console.info("[brain]", phase);
   st().setPhase(phase);
   if (phase === "capturing") setKeys(true, false);
   else if (phase === "targeting") setKeys(false, true);
@@ -187,6 +189,7 @@ function beginTurn(question: string, stage: Stage = "generating"): Turn {
     audioStarted: false,
     freezeMode: null,
     frozenMicPending: false,
+    replaceResponse: false,
   };
   turn = t;
   return t;
@@ -201,6 +204,7 @@ function cancelAll(): void {
   turn?.ac.abort();
   turn = null;
   player.stop();
+  cancelMicTimer();
   invoke(CMD.sttCancel).catch(() => undefined);
 }
 
@@ -246,6 +250,13 @@ function maybeShowWhiteboard(t: Turn, surface: TutorResponse["surface"] | undefi
   invoke(CMD.showWindow, { label: "whiteboard" }).catch((err) =>
     console.warn("[brain] show whiteboard failed:", errMsg(err)),
   );
+}
+
+/** The first new segment of a follow-up replaces the kept response (and its shapes). */
+function takeOverResponse(t: Turn): void {
+  if (!t.replaceResponse) return;
+  t.replaceResponse = false;
+  patch({ response: null, sideNote: null });
 }
 
 function commitResponse(t: Turn, r: TutorResponse): void {
@@ -307,6 +318,7 @@ function mainHandlers(t: Turn): TutorStreamHandlers {
     onSegment: (seg) => {
       if (!isCurrent(t)) return;
       markFirstSegment(t);
+      takeOverResponse(t);
       st().appendSegment(seg);
       // While an interruption is active the segment is stored but not played; resume() replays it.
       if (!t.interruption) queue(t, [seg], "append");
@@ -342,6 +354,67 @@ function sideHandlers(t: Turn, alive: () => boolean): TutorStreamHandlers {
   };
 }
 
+/** Our own speech tails off into the mic for a moment; wait before opening it. */
+const ECHO_DELAY_MS = 600;
+let micTimer: ReturnType<typeof setTimeout> | null = null;
+/** The last three sentences the tutor spoke, for the echo check. */
+const recentSpoken: string[] = [];
+
+function normWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** True when at least 60% of the transcript's words appear in one of the last three tutor sentences. */
+function isEcho(text: string): boolean {
+  const words = normWords(text);
+  if (words.length === 0) return false;
+  return recentSpoken.some((sentence) => {
+    const said = new Set(normWords(sentence));
+    const hits = words.filter((w) => said.has(w)).length;
+    return hits / words.length >= 0.6;
+  });
+}
+
+/** Drops our own speech picked up by the mic, or a single word. Not used in the check step. */
+function rejectUtterance(text: string): boolean {
+  if (normWords(text).length === 1) {
+    console.info("[brain] dropped short transcript:", text);
+    return true;
+  }
+  if (isEcho(text)) {
+    console.info("[brain] dropped echo transcript:", text);
+    return true;
+  }
+  return false;
+}
+
+function cancelMicTimer(): void {
+  if (micTimer !== null) {
+    clearTimeout(micTimer);
+    micTimer = null;
+  }
+}
+
+/** Open the mic after the echo delay. Cancelled if the phase changes meanwhile. One attempt, no retry loop. */
+function scheduleMic(onFail: () => void): void {
+  cancelMicTimer();
+  const phase = st().phase;
+  micTimer = setTimeout(() => {
+    micTimer = null;
+    if (st().phase !== phase) {
+      console.info("[brain] mic start cancelled: phase changed");
+      return;
+    }
+    void tryMic().then((ok) => {
+      if (!ok) onFail();
+    });
+  }, ECHO_DELAY_MS);
+}
+
 /** One attempt to open the mic. Returns false (and logs) if it cannot; never retries. */
 async function tryMic(): Promise<boolean> {
   try {
@@ -357,23 +430,25 @@ async function startListening(): Promise<void> {
   patch({ partialTranscript: "" });
   setPhase("listening");
   // Stay in listening on failure so the typed box can still be used.
-  if (!(await tryMic())) patch({ error: MIC_DOWN });
+  scheduleMic(() => patch({ error: MIC_DOWN }));
 }
 
-async function openMicForCheck(t: Turn): Promise<void> {
-  if (await tryMic()) return;
-  if (!isCurrent(t)) return;
-  t.stage = "done";
-  patch({ error: MIC_DOWN });
-  setPhase("listening"); // the typed box takes the answer
+function openMicForCheck(t: Turn): void {
+  scheduleMic(() => {
+    if (!isCurrent(t)) return;
+    t.stage = "done";
+    patch({ error: MIC_DOWN });
+    setPhase("listening"); // the typed box takes the answer
+  });
 }
 
 /** Opens the mic for a push-to-talk or "which part" answer. On failure the main explanation resumes. */
-async function openMicForInterrupt(t: Turn, ix: Interruption): Promise<void> {
-  if (await tryMic()) return;
-  if (!isCurrent(t) || t.interruption !== ix) return;
-  patch({ error: MIC_DOWN });
-  beginBack(t);
+function openMicForInterrupt(t: Turn, ix: Interruption): void {
+  scheduleMic(() => {
+    if (!isCurrent(t) || t.interruption !== ix) return;
+    patch({ error: MIC_DOWN });
+    beginBack(t);
+  });
 }
 
 /** Ends the turn: optionally mention parked questions first, then idle. */
@@ -390,7 +465,7 @@ function endSession(t: Turn): void {
     return;
   }
   t.stage = "done";
-  setPhase("idle");
+  setPhase("idle", "answer complete");
 }
 
 function nextCheck(t: Turn): string | null {
@@ -455,7 +530,7 @@ function advance(t: Turn): void {
       return;
     case "ending":
       t.stage = "done";
-      setPhase("idle");
+      setPhase("idle", "parked sentence done");
       return;
     default:
       return;
@@ -480,7 +555,7 @@ async function recoverToListening(message: string): Promise<void> {
   patch({ error: message, partialTranscript: "" });
   setPhase("listening");
   await micCancel();
-  await tryMic(); // no retry loop: if the mic is down, the error stands and the typed box is the fallback
+  scheduleMic(() => undefined); // no retry loop: if the mic is down, the error stands and the typed box is the fallback
 }
 
 function fail(t: Turn, err: unknown): void {
@@ -529,6 +604,12 @@ function onSpaceHoldEnd(): void {
   const ix = t?.interruption;
   const holdingObjection = !!ix && ix.mode === "hold" && ix.stage === "recording";
   const holdingFollowUp = t?.stage === "frozen" && t.freezeMode === "hold";
+  if (micTimer !== null && (holdingObjection || holdingFollowUp)) {
+    cancelMicTimer(); // released before the mic opened: nothing was said
+    if (holdingObjection && t) beginBack(t);
+    else resumeOrIdle();
+    return;
+  }
   if (holdingObjection || holdingFollowUp || st().phase === "listening") {
     invoke(CMD.sttStop).catch((err) => console.warn("[brain] stt_stop failed:", errMsg(err)));
   }
@@ -538,13 +619,13 @@ async function micCancel(): Promise<void> {
   await invoke(CMD.sttCancel).catch(() => undefined);
 }
 
-async function openMicFrozen(t: Turn): Promise<void> {
+function openMicFrozen(t: Turn): void {
   patch({ partialTranscript: "" });
-  if (await tryMic()) return;
-  if (isCurrent(t)) {
+  scheduleMic(() => {
+    if (!isCurrent(t)) return;
     patch({ error: MIC_DOWN });
     setPhase("listening"); // typed box is the fallback
-  }
+  });
 }
 
 /** Snapshot where the main answer stopped, for a follow-up question or a resume. Call before stopping the turn. */
@@ -593,7 +674,9 @@ async function onInterrupt(mode: "hold" | "tap" | "interrupt"): Promise<void> {
   }
 
   // Anywhere else: freeze what is shown and ask for the student's next question.
+  const heardNothing = !t?.audioStarted;
   const ctx = freezeMain();
+  if (heardNothing) patch({ caption: "Go ahead, I'm listening" });
   const t2 = beginTurn(ctx.previousQuestion, "frozen");
   t2.freezeMode = mode;
   t2.streamDone = true;
@@ -631,7 +714,7 @@ function resumeOrIdle(): void {
   pendingFollowUp = null;
   if (!ctx || !ctx.resumable) {
     patch({ error: "I didn't catch that." });
-    setPhase("idle");
+    setPhase("idle", "nothing to resume");
     return;
   }
   const main = st().response?.segments ?? [];
@@ -647,7 +730,8 @@ function closeCard(): void {
   pendingFollowUp = null;
   st().resetSession();
   patch({ notice: null }); // the notice lasts for the session only
-  setPhase("idle");
+  recentSpoken.length = 0;
+  setPhase("idle", "card closed");
 }
 
 /** The student's objection arrived: stream a side note answer about the paused segment. */
@@ -831,6 +915,7 @@ function pump(t: Turn, g: Gate): void {
     g.released += 1;
     e.released = true;
     if (e.state === "dropped") continue;
+    takeOverResponse(t);
     st().appendSegment(e.seg);
     for (const sh of g.shapes.get(e.seg.id) ?? []) st().appendShape(sh);
     g.shapes.delete(e.seg.id);
@@ -984,19 +1069,21 @@ function runGatedAttempt(t: Turn, base: TutorCallInput, allowRegen: boolean, car
 async function ask(question: string): Promise<void> {
   const q = question.trim();
   if (!q) return;
+  cancelMicTimer(); // a reopen scheduled for a dropped utterance must not fire into this turn
   const cap = st().fullCapture;
   if (!cap) {
     patch({ error: "No screen capture yet — click the bubble first" });
-    setPhase("idle");
+    setPhase("idle", "no screen capture");
     return;
   }
   const followUp = pendingFollowUp;
   pendingFollowUp = null;
   cancelAll();
   const t = beginTurn(q);
+  t.replaceResponse = !!followUp;
   patch({
     question: q,
-    response: null,
+    response: followUp ? st().response : null,
     checkQuestion: null,
     sourceLabel: null,
     currentSegmentId: null,
@@ -1048,7 +1135,7 @@ async function runCapture(req: CaptureRequest, fixture?: string): Promise<boolea
     return true;
   } catch (err) {
     console.warn("[brain] capture failed:", errMsg(err));
-    setPhase("idle");
+    setPhase("idle", "capture failed");
     patch({ error: `Capture failed: ${errMsg(err)}` });
     return false;
   }
@@ -1089,7 +1176,7 @@ async function handleDebugInject(d: DebugInject): Promise<void> {
       commitAndSpeak(t, resp);
     } catch (err) {
       console.warn("[brain] debug shapes failed:", errMsg(err));
-      setPhase("idle");
+      setPhase("idle", "debug shapes failed");
       patch({ error: `Debug shapes failed: ${errMsg(err)}` });
     }
     return;
@@ -1157,9 +1244,14 @@ function onSegmentStarted(id: string): void {
   recordFirstAudio(t, id);
   if (id === "back") patch({ sideNote: null }); // views fade the side note out as "Back to where we were" starts
   const before = st();
+  const spokenText = textFor(id);
+  if (spokenText) {
+    recentSpoken.push(spokenText);
+    if (recentSpoken.length > 3) recentSpoken.shift();
+  }
   patch({
     currentSegmentId: id,
-    caption: textFor(id),
+    caption: spokenText,
     spokenSegmentIds: before.spokenSegmentIds.includes(id)
       ? before.spokenSegmentIds
       : [...before.spokenSegmentIds, id],
@@ -1224,17 +1316,24 @@ export async function startController(): Promise<() => void> {
     listen<UiIntent>(EV.uiIntent, (e) => void run(handleIntent(e.payload))),
     listen<DebugInject>(EV.debugInject, (e) => void run(handleDebugInject(e.payload))),
     listen<SttFinal>(EV.sttFinal, (e) => {
-      const text = (e.payload?.text ?? "").trim();
+      const raw = (e.payload?.text ?? "").trim();
       const ph = st().phase;
       const t = turn;
-      if (ph === "listening" || (ph === "interrupted" && t?.stage === "frozen")) {
-        if (text) void run(ask(text));
+      const frozenListen = ph === "interrupted" && t?.stage === "frozen";
+      const objection = ph === "interrupted" && !frozenListen && !!t?.interruption && t.interruption.stage === "recording";
+      if (ph === "checking") {
+        // One-word answers are valid in the check step, and it is where the tutor's own question is echoed back.
+        if (t && t.stage === "awaitingAnswer") void run(handleCheckAnswer(t, raw));
+        return;
+      }
+      if (ph === "listening" || frozenListen || objection) {
+        if (raw && rejectUtterance(raw)) {
+          scheduleMic(() => patch({ error: MIC_DOWN })); // stay listening, open the mic again once
+          return;
+        }
+        if (objection && t?.interruption) void run(handleObjection(t, t.interruption, raw));
+        else if (raw) void run(ask(raw));
         else resumeOrIdle();
-      } else if (ph === "checking") {
-        if (t && t.stage === "awaitingAnswer") void run(handleCheckAnswer(t, text));
-      } else if (ph === "interrupted") {
-        const ix = t?.interruption;
-        if (t && ix && ix.stage === "recording") void run(handleObjection(t, ix, text));
       }
     }),
     listen<SttPartial>(EV.sttPartial, (e) => {
