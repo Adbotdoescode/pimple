@@ -304,6 +304,8 @@ export function Card({
   const caption = s?.caption ?? "";
   const error = s?.error ?? null;
   const gizmo = s?.gizmo?.status ?? "none";
+  // With the mic set not to open by itself, the learner opens it: hold Space, or tap this button.
+  const tapToTalk = s?.settings?.micAutoOpen === false && (phase === "listening" || phase === "checking");
   // Live refraction of the desktop under the card, while the card is on screen.
   useCardLens(panelRef, lensRef, phase !== "idle" || !!error, minimised);
   // Landing in the contract shortly; read defensively until the type has it.
@@ -640,8 +642,25 @@ export function Card({
           )}
         </div>
 
-        {busy && (
+        {(busy || tapToTalk) && (
           <div className="card-actions" role="group" aria-label="Pimple controls">
+            {tapToTalk && (
+              <button
+                type="button"
+                className="action action-talk"
+                {...NO_FOCUS}
+                onClick={(e) => {
+                  if (e.detail === 0 || clickTooSoon()) return;
+                  blurActiveButton();
+                  onIntent({ type: "interrupt" });
+                }}
+                aria-label="Tap to talk"
+              >
+                <Mic size={15} strokeWidth={2.3} aria-hidden="true" />
+                Tap to talk
+              </button>
+            )}
+            {busy && (
             <button
               type="button"
               className="action action-stop"
@@ -656,6 +675,8 @@ export function Card({
               <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" />
               Stop
             </button>
+            )}
+            {busy && !tapToTalk && (
             <button
               type="button"
               className="action action-interrupt"
@@ -670,6 +691,7 @@ export function Card({
               <Mic size={14} strokeWidth={2.2} aria-hidden="true" />
               Interrupt
             </button>
+            )}
           </div>
         )}
 

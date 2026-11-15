@@ -184,7 +184,11 @@ function CardView({ state, dark, mini = false }: { state: CardState; dark: boole
   // `gizmo=offered|building|ready|failed` previews the interactive-diagram row.
   const gizmoParam = (["offered", "building", "ready", "failed"] as const).find((g) => g === params.get("gizmo"));
   const withNotice = noticeParam && base ? ({ ...base, notice: noticeParam } as typeof base) : base;
-  const snap = gizmoParam && withNotice ? { ...withNotice, gizmo: { status: gizmoParam } } : withNotice;
+  const withGizmo = gizmoParam && withNotice ? { ...withNotice, gizmo: { status: gizmoParam } } : withNotice;
+  // `talk=1` previews "Tap to talk": the mic set not to open by itself, in the listening phase.
+  const snap = params.get("talk") === "1" && withGizmo
+    ? { ...withGizmo, phase: "listening" as const, settings: { ...withGizmo.settings, micAutoOpen: false } }
+    : withGizmo;
   return (
     <div className="pv-wallpaper" data-bg={dark ? "dark" : "light"}>
       <div className="pv-blur" aria-hidden="true">
