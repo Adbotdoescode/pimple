@@ -14,7 +14,7 @@ pub mod tray;
 pub mod tts;
 pub mod windows;
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Every command this module owns. lib.rs dispatches these names to `glass_handler`.
 pub const GLASS_COMMANDS: &[&str] = &[
@@ -40,6 +40,9 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "bubble_set_frame",
     "cursor_pos",
     "lens_grab_below",
+    "validate_key",
+    "delete_secret",
+    "onboarding_needed",
 ];
 
 pub fn is_glass_command(name: &str) -> bool {
@@ -60,6 +63,9 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         keys::get_secret,
         keys::set_secret,
         keys::keys_status,
+        keys::validate_key,
+        keys::delete_secret,
+        keys::onboarding_needed,
         shortcuts::set_session_keys,
         windows::bubble_display,
         windows::overlay_set_ignore_cursor,
@@ -85,7 +91,24 @@ pub fn setup(app: &AppHandle) {
     shortcuts::init(app); // always-on ctrl+option+space → hotkey:activate
     #[cfg(debug_assertions)]
     debug_server::start(app.clone());
-    let _ = app; // silence unused in release
+
+    // First run (no Anthropic key, or GT_FORCE_ONBOARDING=1): open the settings window and tell
+    // the UI to start onboarding. The short delay lets the windows load their listeners.
+    let first_run = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        let Some(reason) = keys::onboarding_reason() else { return };
+        log::info!("onboarding: shown ({reason})");
+        let app2 = first_run.clone();
+        let _ = first_run.run_on_main_thread(move || {
+            if let Err(e) = windows::show_window(app2.clone(), "settings".into()) {
+                log::error!("onboarding: show settings failed: {e}");
+            }
+            if let Err(e) = app2.emit("onboarding:show", serde_json::json!({})) {
+                log::error!("onboarding: emit failed: {e}");
+            }
+        });
+    });
 }
 
 /// ({name}) → string. Reads content/sources/<name> (repo root in dev, resources in release).
