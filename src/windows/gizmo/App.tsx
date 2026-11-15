@@ -1,9 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSession } from "@/lib/sessionMirror";
 import { CMD, invokeCmd } from "@/lib/ipc";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./gizmo.css";
 
 export type GizmoStatus = "none" | "offered" | "building" | "ready" | "failed";
+
+/** Tell the overlay where this window is, so it can keep off it. Screen points; best effort. */
+async function announceRect(visible: boolean): Promise<void> {
+  try {
+    const win = getCurrentWindow();
+    const sf = await win.scaleFactor();
+    const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+    await emit("gizmo:rect", {
+      x: pos.x / sf, y: pos.y / sf, w: size.width / sf, h: size.height / sf, visible,
+    });
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Hide the window (it stays alive and reopenable), clearing the overlay's avoid-rect first. */
+async function closeWindow(): Promise<void> {
+  await announceRect(false);
+  await invokeCmd(CMD.hideWindow, { label: "gizmo" }).catch(() => undefined);
+}
 
 /** Decodes the few entities assembleGizmoHtml escapes into <title>. &amp; goes last. */
 function decodeEntities(s: string): string {
@@ -176,13 +198,77 @@ export default function App() {
   // The diagram's own title wins: a later turn may have changed the response concept.
   const concept = useMemo(() => titleFromHtml(html) ?? snap.response?.concept ?? null, [html, snap.response?.concept]);
 
+  // Window rect for the overlay. Visible on show (visibilitychange), move/resize (debounced), new html.
+  useEffect(() => {
+    let disposed = false;
+    const cleanups: Array<() => void> = [];
+    const onVisibility = () => {
+      void announceRect(document.visibilityState === "visible");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    cleanups.push(() => document.removeEventListener("visibilitychange", onVisibility));
+
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    const nudge = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        void announceRect(document.visibilityState === "visible");
+      }, 50);
+    };
+    cleanups.push(() => clearTimeout(debounce));
+
+    const track = (p: Promise<() => void>) => {
+      p.then((unlisten) => {
+        if (disposed) unlisten();
+        else cleanups.push(unlisten);
+      }).catch(() => undefined);
+    };
+
+    try {
+      const win = getCurrentWindow();
+      track(win.onMoved(nudge));
+      track(win.onResized(nudge));
+      track(
+        win.onCloseRequested(async (event) => {
+          event.preventDefault(); // red button hides instead of destroying the window
+          await closeWindow();
+        }),
+      );
+      void win
+        .isVisible()
+        .then((visible) => {
+          if (visible && !disposed) void announceRect(true);
+        })
+        .catch(() => undefined);
+    } catch {
+      /* not running inside Tauri */
+    }
+
+    return () => {
+      disposed = true;
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, []);
+
+  // A new ready diagram means the window is showing (or about to), so refresh the rect.
+  useEffect(() => {
+    if (!liveHtml) return;
+    void (async () => {
+      try {
+        await announceRect(await getCurrentWindow().isVisible());
+      } catch {
+        /* best effort */
+      }
+    })();
+  }, [liveHtml]);
+
   return (
     <GizmoView
       html={html}
       status={snap.gizmo.status}
       concept={concept}
       onClose={() => {
-        void invokeCmd(CMD.hideWindow, { label: "gizmo" }).catch(() => undefined);
+        void closeWindow();
       }}
     />
   );
