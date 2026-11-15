@@ -56,6 +56,8 @@ export function visibleSegmentsFor(snapshot: SessionSnapshot): string[] {
 
 const GRID = 40;
 const SLIDER_MIN_W = 200;
+/** Crossfade length when one board is swapped for another. */
+const BOARD_FADE_MS = 260;
 /** View px per board unit: the layer is always drawn at this scale and the camera does the rest. */
 const V = VIEW_SCALE;
 // Camera limits. At zoom 1 a label is 16 px; below Z_MIN it would stop being readable.
@@ -464,6 +466,33 @@ export function Whiteboard(props: WhiteboardProps) {
   const stageRef = useRef<HTMLElement>(null);
   const stage = useStageSize(stageRef);
 
+  const boardKey = response?.concept ?? "__empty__";
+  const boardProps: BoardProps = {
+    response, sideNote, visibleSegmentIds, pulseShapeIds, theme, width: stage.w, height: stage.h,
+  };
+  // Last committed board props, so a board that is replaced can stay up, frozen, while it fades.
+  const lastBoard = useRef<BoardProps>(boardProps);
+  useEffect(() => {
+    lastBoard.current = boardProps;
+  });
+  const [shownKey, setShownKey] = useState(boardKey);
+  const [leaving, setLeaving] = useState<{ key: string; props: BoardProps }[]>([]);
+  if (shownKey !== boardKey) {
+    // Derived during render, so the old board never unmounts for a frame before it fades.
+    setShownKey(boardKey);
+    setLeaving((l) => [...l.filter((x) => x.key !== boardKey && x.key !== shownKey), { key: shownKey, props: lastBoard.current }]);
+  }
+  const leavingKeys = leaving.map((l) => l.key).join("|");
+  useEffect(() => {
+    if (!leavingKeys) return;
+    const timer = window.setTimeout(() => setLeaving([]), BOARD_FADE_MS + 40);
+    return () => window.clearTimeout(timer);
+  }, [leavingKeys]);
+  const boards = [
+    ...leaving.filter((l) => l.key !== boardKey).map((l) => ({ key: l.key, props: l.props, out: true })),
+    { key: boardKey, props: boardProps, out: false },
+  ];
+
   const visible = useMemo(() => new Set(visibleSegmentIds), [visibleSegmentIds]);
   const segments = response?.segments ?? [];
   const currentText = segments.find((seg) => seg.id === currentSegmentId)?.text ?? "";
@@ -485,16 +514,11 @@ export function Whiteboard(props: WhiteboardProps) {
         <main className="wb-stage" ref={stageRef}>
           {stage.w >= 80 && stage.h >= 80 && (
             <div className={`wb-board-wrap${pending ? " is-pending" : ""}`}>
-              <Board
-                key={response?.concept ?? "__empty__"}
-                response={response}
-                sideNote={sideNote}
-                visibleSegmentIds={visibleSegmentIds}
-                pulseShapeIds={pulseShapeIds}
-                theme={theme}
-                width={stage.w}
-                height={stage.h}
-              />
+              {boards.map((b) => (
+                <div key={b.key} className={`wb-board-layer${b.out ? " is-leaving" : ""}`}>
+                  <Board {...b.props} />
+                </div>
+              ))}
             </div>
           )}
         </main>

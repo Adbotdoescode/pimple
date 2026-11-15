@@ -11,6 +11,7 @@ export interface TutorCallInput {
   interruption?: { segmentId: string; segmentText: string; spokenSegments: Segment[]; shapes: Shape[]; objection: string };
   followUp?: { previousQuestion: string; spokenSegments: Segment[]; shapes: Shape[]; note: string };
   checkAnswer?: { checkQuestion: string; answer: string };
+  previousConcept?: string; // concept of the previous answer this session; absent for the first question
   critique?: string[];
   surfaceHint?: "overlay" | "whiteboard";
   signal?: AbortSignal;

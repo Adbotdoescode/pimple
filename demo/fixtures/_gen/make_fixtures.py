@@ -133,6 +133,7 @@ def incline_shapes():
 def incline_response():
     return {
         "concept": "Forces on a block on a frictionless incline",
+        "topic_changed": False,
         "surface": "overlay",
         "grounding": {"source_type": "screen", "source_ref": "Problem 4 on the page", "quote": LINE1},
         "segments": [
@@ -197,6 +198,7 @@ def colourful_response():
              for t in [-170 + 70 * k / 11.0 for k in range(12)]]
     return {
         "concept": "Planetary orbits and Kepler's second law",
+        "topic_changed": False,
         "surface": "overlay",
         "grounding": {"source_type": "screen", "source_ref": "Figure 3.1 on the page",
                       "quote": "The line from the sun to the planet sweeps equal areas in equal times."},

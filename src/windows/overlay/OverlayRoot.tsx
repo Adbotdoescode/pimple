@@ -21,6 +21,7 @@ const SIDE_FADE_MS = 450;
 const SIDE_DIM = 0.3;
 const FLAT_BG = { lum: 0.9, hue: 0 };
 const TARGET_FADE_MS = 200;
+const SWAP_FADE_MS = 260; // old drawing fading out when an answer is replaced or the topic changes
 /** Phases in which the debug fixture backdrop may show. Never while the user is aiming. */
 const FIXTURE_PHASES = new Set<Phase>([
   "summarising", "listening", "thinking", "verifying", "speaking", "interrupted", "checking",
@@ -86,6 +87,52 @@ function toViewFor(capture: CaptureResult | null, origin: Origin): (p: Pt) => Pt
     const s = imagePxToScreen(capture, p);
     return [s[0] - origin.x, s[1] - origin.y];
   };
+}
+
+interface Gen { key: number; layer: Layer; leaving: boolean }
+
+/** Shapes a layer has drawn so far (visible segments only), id → content. */
+function drawn(layer: Layer): Map<string, string> {
+  const vis = new Set(layer.visibleIds);
+  const out = new Map<string, string>();
+  for (const s of layer.shapes) if (vis.has(s.segment_id)) out.set(s.id, JSON.stringify(s));
+  return out;
+}
+
+/** True when `next` only adds to `prev`: same capture, and every shape drawn in prev is still drawn, unchanged. */
+function continues(prev: Layer, next: Layer): boolean {
+  if (prev.capture.imagePath !== next.capture.imagePath) return false;
+  const after = drawn(next);
+  for (const [id, sig] of drawn(prev)) if (after.get(id) !== sig) return false;
+  return true;
+}
+
+/**
+ * The main layer as generations. A layer that only grows stays one generation. When its drawn shapes
+ * are replaced or cleared (a new answer, a topic change), the old generation stays mounted with frozen
+ * props, so nothing re-animates, and fades out while the new one draws on.
+ */
+function useGenerations(main: Layer | null, fadeMs: number): Gen[] {
+  const seq = useRef(main ? 1 : 0);
+  const [gens, setGens] = useState<Gen[]>(() => (main ? [{ key: 1, layer: main, leaving: false }] : []));
+  useEffect(() => {
+    setGens((prev) => {
+      const cur = prev.find((g) => !g.leaving);
+      const gone = prev.filter((g) => g.leaving);
+      if (!main) return cur ? [...gone, { ...cur, leaving: true }] : prev;
+      if (cur && continues(cur.layer, main)) return [...gone, { ...cur, layer: main }];
+      seq.current += 1;
+      return [...gone, ...(cur ? [{ ...cur, leaving: true }] : []), { key: seq.current, layer: main, leaving: false }];
+    });
+  }, [main]);
+  // Unmount faded generations. Keyed on the leaving set only, so streaming updates do not keep restarting the timer.
+  const leavingKeys = gens.filter((g) => g.leaving).map((g) => g.key).join(",");
+  useEffect(() => {
+    if (!leavingKeys) return;
+    const timer = window.setTimeout(() => setGens((p) => p.filter((g) => !g.leaving)), fadeMs + 40);
+    return () => window.clearTimeout(timer);
+  }, [leavingKeys, fadeMs]);
+  return gens;
 }
 
 export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) {
@@ -165,10 +212,12 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
     return isFixture || forcedByUrl ? snapshot.capture : null;
   }, [snapshot, phase, isFixture, forcedByUrl, cuts.whiteboard]);
 
-  // Fade lengths: 200 ms when a drag starts, 400 ms at session end, 450 ms for a side note cleared mid-session.
-  const mainFadeMs = inTarget ? TARGET_FADE_MS : MAIN_FADE_MS;
-  const sideFadeMs = inTarget ? TARGET_FADE_MS : phase === "idle" ? MAIN_FADE_MS : SIDE_FADE_MS;
+  // Fade lengths: 200 ms when a drag starts, 400 ms at session end, 260 ms when an answer is replaced or the
+  // topic changes mid-session (the side note goes with it), 450 ms for a side note cleared on resume.
+  const mainFadeMs = inTarget ? TARGET_FADE_MS : phase === "idle" ? MAIN_FADE_MS : SWAP_FADE_MS;
+  const sideFadeMs = inTarget ? TARGET_FADE_MS : phase === "idle" ? MAIN_FADE_MS : main === null ? SWAP_FADE_MS : SIDE_FADE_MS;
   const mainHeld = useRetained(main, mainFadeMs);
+  const gens = useGenerations(main, mainFadeMs);
   const sideHeld = useRetained(side, sideFadeMs);
   const backdropHeld = useRetained(backdrop, MAIN_FADE_MS);
 
@@ -221,17 +270,21 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       {mainLayer && (
         <g style={{ opacity: mainHeld.visible ? 1 : 0, transition: `opacity ${mainFadeMs}ms ease` }}>
           <FocusOutline key={mainLayer.capture.imagePath} capture={mainLayer.capture} origin={origin} />
-          <ShapeLayer
-            shapes={mainLayer.shapes}
-            visibleSegmentIds={mainLayer.visibleIds}
-            pulseShapeIds={mainLayer.pulseIds}
-            variant="main"
-            toView={toViewFor(mainLayer.capture, origin)}
-            scale={1 / mainLayer.capture.pixelScale}
-            styleFor={mainStyle}
-            opacity={dimMain ? SIDE_DIM : 1}
-            viewport={viewport}
-          />
+          {gens.map((g) => (
+            <g key={g.key} style={{ opacity: g.leaving ? 0 : 1, transition: `opacity ${mainFadeMs}ms ease-out` }}>
+              <ShapeLayer
+                shapes={g.layer.shapes}
+                visibleSegmentIds={g.layer.visibleIds}
+                pulseShapeIds={g.layer.pulseIds}
+                variant="main"
+                toView={toViewFor(g.layer.capture, origin)}
+                scale={1 / g.layer.capture.pixelScale}
+                styleFor={mainStyle}
+                opacity={dimMain ? SIDE_DIM : 1}
+                viewport={viewport}
+              />
+            </g>
+          ))}
         </g>
       )}
       {sideLayer && (

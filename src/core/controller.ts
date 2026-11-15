@@ -117,6 +117,8 @@ interface Turn {
   pendingOffer: boolean; // a gizmo offer is waiting for the student's answer
   replaceResponse: boolean; // a follow-up keeps the old shapes until the new answer's first segment is released
   surface: TutorResponse["surface"] | null; // the answer's surface as soon as the stream reports it
+  pendingMeta: Partial<TutorResponse>; // meta of a replacing answer, applied when it takes over the kept response
+  topicCleared: boolean; // topic_changed was handled this turn (the old drawings are gone)
 }
 
 /** Context for the student's next question after an interrupt or shut-up. */
@@ -209,6 +211,8 @@ function beginTurn(question: string, stage: Stage = "generating"): Turn {
     pendingOffer: false,
     replaceResponse: false,
     surface: null,
+    pendingMeta: {},
+    topicCleared: false,
   };
   turn = t;
   return t;
@@ -279,12 +283,48 @@ function noteSurface(t: Turn, surface: TutorResponse["surface"] | undefined): vo
   if (!t.replaceResponse) st().setMeta({ surface });
 }
 
-/** The first new segment of a follow-up replaces the kept response (and its shapes). */
+/** The first new segment of a replacing answer takes over: the kept response, its side note and spoken ids go. */
 function takeOverResponse(t: Turn): void {
   if (!t.replaceResponse) return;
   t.replaceResponse = false;
-  patch({ response: null, sideNote: null });
-  if (t.surface) st().setMeta({ surface: t.surface }); // the new answer keeps its surface (emptyResponse defaults to overlay)
+  patch({ response: null, sideNote: null, spokenSegmentIds: [], currentSegmentId: null, pulseShapeIds: [] });
+  // The new answer starts with the meta that streamed before it, and keeps its surface (emptyResponse defaults to overlay).
+  st().setMeta({ ...t.pendingMeta, ...(t.surface ? { surface: t.surface } : {}) });
+  t.pendingMeta = {};
+}
+
+/**
+ * The tutor says the student moved to a different concept: the previous answer's drawings and side note
+ * go now (the views fade them), its caption clears, and the stale follow-up context is dropped.
+ * Parked questions and contested points stay.
+ */
+function clearStaleTopic(): void {
+  pendingFollowUp = null;
+  patch({ response: null, sideNote: null, spokenSegmentIds: [], currentSegmentId: null, pulseShapeIds: [], caption: "" });
+}
+
+/** Main answer: topic_changed arrived while the old response is still shown, before any new segment. */
+function onMainTopicChanged(t: Turn): void {
+  if (!isCurrent(t) || !t.replaceResponse || t.topicCleared) return; // never touches the new answer
+  t.topicCleared = true;
+  console.info("[brain] topic changed: clearing the previous answer's drawings");
+  clearStaleTopic(); // replaceResponse stays true: meta keeps buffering and the first segment creates the new response
+}
+
+/** Check feedback that is about a different concept: the old drawings go, and the side note keeps a surface to draw on. */
+function onFeedbackTopicChanged(t: Turn, concept: string): void {
+  if (!isCurrent(t) || t.topicCleared || t.sideSpeechStarted) return; // only before the new answer has started
+  t.topicCleared = true;
+  console.info("[brain] topic changed during check feedback: clearing the previous answer's drawings");
+  const r = st().response;
+  clearStaleTopic();
+  t.checkQuestion = null;
+  if (r) {
+    patch({
+      response: { ...r, concept: concept || r.concept, topic_changed: true, segments: [], shapes: [],
+        check_question: "", gizmo_offer: { recommended: false, pitch: "" }, parked: [] },
+    });
+  }
 }
 
 function commitResponse(t: Turn, r: TutorResponse): void {
@@ -312,22 +352,31 @@ function commitAndSpeak(t: Turn, resp: TutorResponse): void {
 
 function applyMeta(t: Turn, m: Partial<TutorResponse>, mode: "buffered" | "stream"): void {
   if (!isCurrent(t)) return;
+  if (m.topic_changed === true && t.stage === "generating" && !t.interruption) onMainTopicChanged(t);
   const label = sourceLabelFor(m.grounding);
   if (mode === "buffered") {
     // Buffered mode shows only the concept, source and surface while the answer is held for verification.
-    st().setMeta({ concept: m.concept });
+    if (!t.replaceResponse) st().setMeta({ concept: m.concept });
+    else if (m.concept !== undefined) t.pendingMeta.concept = m.concept; // the kept response keeps its own concept
     if (label) patch({ sourceLabel: label });
     noteSurface(t, m.surface);
     maybeShowWhiteboard(t, m.surface);
     return;
   }
   // Segments and shapes arrive through onSegment/onShape, so they are not taken from meta.
-  st().setMeta({
+  const meta: Partial<TutorResponse> = {
     concept: m.concept,
     grounding: m.grounding,
     gizmo_offer: m.gizmo_offer,
     summary_sentence: m.summary_sentence,
-  });
+  };
+  if (!t.replaceResponse) st().setMeta(meta);
+  else {
+    // A replacing answer's meta waits for its first segment, so the kept response is not relabelled.
+    for (const [k, v] of Object.entries(meta)) {
+      if (v !== undefined) (t.pendingMeta as Record<string, unknown>)[k] = v;
+    }
+  }
   noteSurface(t, m.surface);
   if (label) patch({ sourceLabel: label });
   if (m.parked) patch({ parked: mergeUnique(st().parked, m.parked) });
@@ -361,9 +410,12 @@ function mainHandlers(t: Turn): TutorStreamHandlers {
 
 /** Handlers for side-note answers (interruption answer and check feedback). They go to sideNote, not response. */
 function sideHandlers(t: Turn, alive: () => boolean): TutorStreamHandlers {
+  let concept = "";
   return {
     onMeta: (m) => {
       if (!alive()) return;
+      if (m.concept) concept = m.concept;
+      if (m.topic_changed === true && t.stage === "feedback") onFeedbackTopicChanged(t, concept);
       if (m.parked) patch({ parked: mergeUnique(st().parked, m.parked) });
       maybeShowWhiteboard(t, m.surface);
     },
@@ -1128,6 +1180,7 @@ async function handleCheckAnswer(t: Turn, answer: string): Promise<void> {
         settings: st().settings,
         signal: t.ac.signal,
         surfaceHint: st().response?.surface,
+        previousConcept: st().response?.concept || undefined,
         checkAnswer: { checkQuestion: check, answer },
       },
       sideHandlers(t, () => isCurrent(t) && t.stage === "feedback"),
@@ -1348,19 +1401,21 @@ async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}):
     setPhase("idle", "no screen capture");
     return;
   }
+  // A previous answer this session stays drawn until the new answer takes over (first segment) or the tutor says the topic changed.
+  const prev = st().response;
+  const keep = !!prev && (prev.segments.length > 0 || prev.shapes.length > 0);
   const followUp = pendingFollowUp;
   pendingFollowUp = null;
   gizmoFailedQuestion = null;
   cancelAll();
   const t = beginTurn(q);
-  t.replaceResponse = !!followUp;
+  t.replaceResponse = keep;
   patch({
     question: q,
-    response: followUp ? st().response : null,
+    response: keep ? prev : null,
     checkQuestion: null,
     sourceLabel: null,
-    currentSegmentId: null,
-    spokenSegmentIds: [],
+    ...(keep ? {} : { currentSegmentId: null, spokenSegmentIds: [] }), // kept drawings stay visible until takeover
     caption: "",
     sideNote: null,
     pulseShapeIds: [],
@@ -1376,6 +1431,7 @@ async function ask(question: string, opts: { surfaceHint?: "whiteboard" } = {}):
     settings: st().settings,
     signal: t.ac.signal,
     surfaceHint: opts.surfaceHint,
+    previousConcept: keep && prev ? prev.concept || undefined : undefined,
     followUp: followUp
       ? {
           previousQuestion: followUp.previousQuestion,

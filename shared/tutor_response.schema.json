@@ -3,6 +3,7 @@
   "additionalProperties": false,
   "required": [
     "concept",
+    "topic_changed",
     "surface",
     "segments",
     "shapes",
@@ -14,6 +15,9 @@
   "properties": {
     "concept": {
       "type": "string"
+    },
+    "topic_changed": {
+      "type": "boolean"
     },
     "surface": {
       "enum": [

@@ -61,6 +61,18 @@ export function buildTutorUserText(input: TutorCallInput): string {
     `Student question: "${input.question}"`,
   ];
 
+  if (input.interruption) {
+    parts.push("Set topic_changed false: an interruption stays on the current point, and an off-topic one is parked.");
+  } else if (input.previousConcept) {
+    parts.push(
+      `PREVIOUS TOPIC. Your previous answer this session was about "${input.previousConcept}". ` +
+        `Set topic_changed true only if what you answer now is about a different concept; ` +
+        `false if it stays on that concept (a follow-up, an objection, an answer to your check question) or if you only park an aside.`,
+    );
+  } else {
+    parts.push("This is the first question of the session: set topic_changed false.");
+  }
+
   if (gizmoSession.offeredThisSession) {
     parts.push("An interactive diagram was already offered this session; keep gizmo_offer.recommended false.");
   }

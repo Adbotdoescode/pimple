@@ -222,6 +222,20 @@
   opacity: 0.35;
 }
 
+/* One layer per board; a replaced board fades out over the new one's entrance. */
+.wb-board-layer {
+  position: absolute;
+  inset: 0;
+}
+.wb-board-layer.is-leaving {
+  pointer-events: none;
+  animation: wb-leave 260ms ease-out forwards;
+}
+@keyframes wb-leave {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 .wb-board {
   position: relative;
   overflow: hidden;

@@ -49,6 +49,7 @@ export interface Shape {
 export interface Segment { id: string; text: string }
 export interface TutorResponse {
   concept: string;
+  topic_changed: boolean; // true when this answer is about a different concept than the previous answer this session
   summary_sentence?: string;
   surface: "overlay" | "whiteboard";
   grounding: { source_type: "screen" | "fixed_source"; source_ref: string; quote: string };

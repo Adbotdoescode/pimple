@@ -221,9 +221,21 @@ export default function App() {
   // Keep the last drawing: a new session dims it rather than blanking the board, and a spoken-only
   // turn is captioned over the drawing that is already up.
   const [kept, setKept] = useState<Drawing | null>(null);
+  const keptCapture = useRef<number | null>(null);
+  const capturedAt = snap.capture?.capturedAt ?? null;
   useEffect(() => {
-    if (live) setKept(live);
-  }, [live]);
+    if (!live) return;
+    setKept(live);
+    keptCapture.current = capturedAt;
+  }, [live, capturedAt]);
+
+  // The tutor moved to a different topic mid-session: the brain cleared the answer while the capture stayed
+  // the same. The old drawing goes (the board crossfades it out) instead of staying dimmed. A new session
+  // (new capture) keeps it dimmed until its own answer arrives.
+  useEffect(() => {
+    if (snap.response !== null || snap.phase === "idle" || capturedAt === null) return;
+    if (kept && keptCapture.current === capturedAt) setKept(null);
+  }, [snap.response, snap.phase, capturedAt, kept]);
 
   const shown = live ?? kept;
   const pending = snap.response === null && kept !== null && snap.phase !== "idle";

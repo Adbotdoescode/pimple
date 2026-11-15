@@ -77,6 +77,7 @@ export function initialSnapshot(settings: AppSettings): BrainSnapshot {
 function emptyResponse(): TutorResponse {
   return {
     concept: "",
+    topic_changed: false,
     surface: "overlay",
     grounding: { source_type: "screen", source_ref: "", quote: "" },
     segments: [],

@@ -97,6 +97,7 @@ export function wireToTutorResponse(w: unknown): TutorResponse {
     .filter((s): s is Shape => s !== null);
   return {
     concept: typeof o.concept === "string" ? o.concept : "",
+    topic_changed: o.topic_changed === true,
     surface: o.surface === "whiteboard" ? "whiteboard" : "overlay",
     grounding: normalizeGrounding(o.grounding),
     segments,
@@ -138,6 +139,7 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
       return true;
     };
     if (ready("concept", typeof obj.concept === "string")) fresh.concept = obj.concept as string;
+    if (ready("topic_changed", typeof obj.topic_changed === "boolean")) fresh.topic_changed = obj.topic_changed as boolean;
     if (ready("surface", obj.surface === "overlay" || obj.surface === "whiteboard")) {
       fresh.surface = obj.surface as TutorResponse["surface"];
     }
@@ -232,6 +234,7 @@ export function createResponseStreamParser(h: ResponseStreamHandlers) {
       const r = wireToTutorResponse(obj);
       const rest: Partial<TutorResponse> = {};
       if (!metaSent.has("concept")) rest.concept = r.concept;
+      if (!metaSent.has("topic_changed")) rest.topic_changed = r.topic_changed;
       if (!metaSent.has("surface")) rest.surface = r.surface;
       if (!metaSent.has("grounding")) rest.grounding = r.grounding;
       if (!metaSent.has("check_question")) rest.check_question = r.check_question;

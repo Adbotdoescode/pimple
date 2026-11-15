@@ -106,6 +106,7 @@ type CardState = "idle" | "thinking" | "speaking" | "full";
 
 const CARD_RESPONSE: TutorResponse = {
   concept: "Forces on a block on a frictionless incline",
+  topic_changed: false,
   surface: "overlay",
   grounding: {
     source_type: "screen",

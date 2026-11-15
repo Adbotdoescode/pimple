@@ -19,6 +19,7 @@ const normalGraph: GraphSpec = {
 /** Hand-written whiteboard answer on the virtual 1600 × 1000 board. Used by preview.html. */
 export const SAMPLE_WHITEBOARD: TutorResponse = {
   concept: "Forces on a block on an incline",
+  topic_changed: false,
   summary_sentence:
     "Gravity splits into a push into the slope (N) and a pull along it (mg sin θ), and friction balances the pull.",
   surface: "whiteboard",
