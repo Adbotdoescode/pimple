@@ -103,8 +103,8 @@ export const sessionStore = createStore<SessionStore>()((set, get) => ({
     set(partial);
   },
 
-  // The notice survives a new capture; card-close clears it.
-  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: get().notice }),
+  // Every new session starts clean, including the TTS fallback notice.
+  resetSession: () => set({ ...initialSnapshot(get().settings), fullCapture: null, notice: null }),
 
   appendSegment: (seg) =>
     set((s) => {
