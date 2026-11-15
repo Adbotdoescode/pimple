@@ -548,6 +548,7 @@ function startGizmoOffer(t: Turn): void {
   gizmoSession.offeredThisSession = true;
   patch({ gizmo: { status: "offered" } });
   gizmoLog("offered");
+  t.pendingOffer = true; // set before speaking, so a button press during the line is already an answer
   t.stage = "gizmoSpeech";
   setPhase("speaking");
   queue(t, [{ id: "gizmo-offer", text: "Want an interactive diagram for this?" }], "speak");
@@ -599,6 +600,8 @@ function acceptGizmo(resp: TutorResponse, question: string): void {
 /** The student's answer to the offer. Empty or no answer counts as no. Any other question is a normal follow-up. */
 function answerOffer(t: Turn, text: string): void {
   if (!isCurrent(t) || !t.pendingOffer) return;
+  cancelMicTimer();
+  if (t.stage === "gizmoSpeech") player.stop(); // a press during the offer line cuts it short
   const a = text.trim();
   if (ACCEPT_RE.test(a)) {
     const r = st().response;
@@ -1503,15 +1506,28 @@ export async function startController(): Promise<() => void> {
       const t = turn;
       const frozenListen = ph === "interrupted" && t?.stage === "frozen";
       const objection = ph === "interrupted" && !frozenListen && !!t?.interruption && t.interruption.stage === "recording";
+      // Ambient speech: a long transcript is never a question (typed questions bypass this).
+      const words = normWords(raw).length;
+      if (words > 40 && (ph === "listening" || ph === "checking" || ph === "interrupted")) {
+        console.info(`[brain] ignored long transcript (${words} words)`);
+        scheduleMic(() => patch({ error: MIC_DOWN }));
+        return;
+      }
       if (ph === "checking") {
         // One-word answers are valid in the check step, and it is where the tutor's own question is echoed back.
         if (t && t.stage === "awaitingAnswer") void run(handleCheckAnswer(t, raw));
         return;
       }
       if (ph === "listening" || frozenListen || objection) {
-        // Yes/no answers to a gizmo offer or a whiteboard retry skip the short-word filter.
+        // While a gizmo offer is pending, only a short yes/no counts as an answer.
         if (ph === "listening" && t?.pendingOffer) {
-          answerOffer(t, raw);
+          const yesNo = ACCEPT_RE.test(raw) || DECLINE_RE.test(raw);
+          if (yesNo && words <= 4) {
+            answerOffer(t, raw);
+          } else {
+            console.info("[brain] ignored offer reply (not a short yes/no):", raw);
+            scheduleMic(() => patch({ error: MIC_DOWN }));
+          }
           return;
         }
         if (ph === "listening" && gizmoFailedQuestion !== null) {

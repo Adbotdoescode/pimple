@@ -1,18 +1,92 @@
 [
   {
-    "id": "incline-normal-force",
-    "fixture": "demo/fixtures/incline.png",
-    "question": "Why is the normal force smaller than the weight on this incline?",
-    "reference": "The normal force only balances the part of gravity that pushes into the slope. For a frictionless incline at angle θ, N = mg cos θ, which is less than mg for any angle above 0°. With m = 5 kg and θ = 30°, N ≈ 42.4 N while mg ≈ 49 N.",
+    "id": "incline-slide",
+    "fixture": "eval/fixtures/incline.png",
+    "question": "Will the block slide down the ramp?",
+    "reference": "Yes. The weight is mg = 5.0 × 9.8 = 49 N. Its component along the slope is mg sin 30° = 24.5 N. The normal force is mg cos 30° ≈ 42.4 N, so the maximum static friction is μs N = 0.45 × 42.4 ≈ 19.1 N. Since 19.1 N < 24.5 N, static friction cannot hold the block and it slides down.",
     "key_facts": [
-      "N = mg cos θ",
-      "N ≈ 42.4 N for m = 5 kg and θ = 30°",
-      "The component of the weight along the slope is mg sin θ"
+      "mg sin 30° = 24.5 N along the slope",
+      "N = mg cos 30° ≈ 42.4 N",
+      "maximum static friction = μs N ≈ 19.1 N",
+      "19.1 N < 24.5 N, so the block slides"
     ],
     "known_wrong": [
-      "The normal force equals mg on any surface",
-      "N = mg sin θ",
-      "The normal force is larger than the weight on an incline"
+      "The block stays at rest",
+      "The normal force equals mg (49 N)",
+      "Maximum friction is μs mg ≈ 22 N",
+      "The force along the slope is mg cos 30°"
+    ]
+  },
+  {
+    "id": "calculus-chain-rule",
+    "fixture": "eval/fixtures/calculus.png",
+    "question": "Is my derivative right?",
+    "reference": "Not quite. Line 3 is wrong: by the chain rule, d/dx sin(2x) = 2 cos(2x), not cos(2x). Line 2 (d/dx (3x² + 1) = 6x) is correct. The correct result is dy/dx = 6x · sin(2x) + 2(3x² + 1) · cos(2x).",
+    "key_facts": [
+      "d/dx sin(2x) = 2 cos(2x) (chain rule)",
+      "d/dx (3x² + 1) = 6x is correct",
+      "dy/dx = 6x sin(2x) + 2(3x² + 1) cos(2x)"
+    ],
+    "known_wrong": [
+      "The derivative is completely correct",
+      "d/dx (3x² + 1) = 3x",
+      "The product rule was applied incorrectly in line 1",
+      "dy/dx = 6x cos(2x)"
+    ]
+  },
+  {
+    "id": "chemistry-o2-mass",
+    "fixture": "eval/fixtures/chemistry.png",
+    "question": "How many grams of O2 react with 8.0 g of CH4?",
+    "reference": "Balance first: CH₄ + 2O₂ → CO₂ + 2H₂O. Molar mass of CH₄ = 12.01 + 4 × 1.008 ≈ 16.04 g/mol, so 8.0 g is about 0.50 mol. The ratio is 1 CH₄ : 2 O₂, so about 1.0 mol O₂ reacts. Molar mass of O₂ = 32.00 g/mol, so the mass of O₂ is about 32 g (31.9 g).",
+    "key_facts": [
+      "Balanced: CH₄ + 2O₂ → CO₂ + 2H₂O",
+      "8.0 g CH₄ ≈ 0.50 mol",
+      "mole ratio CH₄ : O₂ = 1 : 2",
+      "about 32 g of O₂"
+    ],
+    "known_wrong": [
+      "16 g of O₂",
+      "The mole ratio is 1:1",
+      "The molar mass of O₂ is 16 g/mol",
+      "CH₄ + O₂ → CO₂ + H₂O is already balanced"
+    ]
+  },
+  {
+    "id": "history-diktat",
+    "fixture": "eval/fixtures/history.png",
+    "question": "Why did many Germans see the treaty as a 'Diktat'?",
+    "reference": "Because it was imposed rather than negotiated: the terms were drafted largely by the victorious nations (France, Britain, the United States and Italy) and Germany was given little room to negotiate. The terms were harsh: Article 231, the war guilt clause, made Germany accept responsibility for the loss and damage; reparations were later set at 132 billion gold marks (1921); Germany lost about 13% of its European territory and about 10% of its population, including Alsace-Lorraine; and its army was capped at 100,000 men. Nationalist politicians later used this grievance against the Weimar Republic.",
+    "key_facts": [
+      "Germany was given little room to negotiate",
+      "Article 231 war guilt clause",
+      "reparations set at 132 billion gold marks in 1921",
+      "about 13% of European territory and 10% of population lost",
+      "army capped at 100,000 men"
+    ],
+    "known_wrong": [
+      "Germany negotiated the treaty as an equal partner",
+      "The reparations total was fixed in 1919",
+      "The treaty was signed in 1918",
+      "Germany kept Alsace-Lorraine"
+    ]
+  },
+  {
+    "id": "code-off-by-one",
+    "fixture": "eval/fixtures/code.png",
+    "question": "Why does this print 4.666 instead of 6.0?",
+    "reference": "The loop is range(1, len(nums)), so it starts at index 1 and skips nums[0] = 4. It adds only 8 + 6 = 14, but still divides by len(nums) = 3, giving 14 / 3 ≈ 4.67. Starting at 0, with range(len(nums)), or using sum(nums), gives 18 / 3 = 6.0.",
+    "key_facts": [
+      "range(1, len(nums)) skips index 0",
+      "total is 8 + 6 = 14",
+      "14 / 3 ≈ 4.67",
+      "fix: range(len(nums)) or sum(nums), giving 6.0"
+    ],
+    "known_wrong": [
+      "The bug is integer division",
+      "len(nums) should be len(nums) - 1",
+      "The loop skips the last element",
+      "total should start at 1"
     ]
   }
 ]
