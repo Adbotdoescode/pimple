@@ -32,7 +32,8 @@ import {
   type Spring1,
   type Spring2,
 } from "./spring";
-import { dockCard } from "./cardDock";
+import { cardSessionEnded, cardUserMoved, dockCard } from "./cardDock";
+import { listen } from "@tauri-apps/api/event";
 import { LassoTracker, type LassoLoop } from "./lasso";
 import { lensState } from "./liquidLens";
 import { useSessionMirror } from "../../lib/sessionMirror";
@@ -48,12 +49,15 @@ const PARK_MARGIN = 8;
 const COMMIT_MS = 1000; // after release
 const COMMIT_HELD_MS = 2000; // while the button is still held and the pointer is still
 const DRAG_SLOP = 4;
+const Y_MIN = 0.08; // settings.bubbleY range (shared with the app window's mini map)
+const Y_MAX = 0.92;
 const INPUT_SLOP = 1.5;
 const WHEEL_GAIN = 0.0025;
 const LENS_DELAY_MS = 40; // let the drag read as a drag before the lens opens
 
 type Edge = "left" | "right";
-type Mode = "rest" | "dragging" | "armed" | "parking" | "parked" | "returning";
+// "moving" = Shift + drag: reposition the resting spot, no capture, no lens, no targeting.
+type Mode = "rest" | "dragging" | "armed" | "parking" | "parked" | "returning" | "moving";
 type WinMode = "small" | "big";
 interface Rect { x: number; y: number; w: number; h: number }
 
@@ -97,7 +101,7 @@ export interface BubbleMotion {
   gestures: Partial<Omit<BubbleGestureOptions, "onClick">>;
 }
 
-export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotion {
+export function useBubbleMotion(phase: Phase, edge: Edge = "right", bubbleY = 0.5): BubbleMotion {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [diameter, setDiameter] = useState(R_REST * 2);
   const [motion, setMotion] = useState(0);
@@ -142,9 +146,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     sentClosed: false,
     // rest edge
     wantEdge: edge as Edge,
+    wantY: bubbleY, // resting height, fraction of the display height (settings.bubbleY)
     geomReady: false,
     // real pointer tracking (independent of useBubbleGestures, which can go stale)
-    down: null as null | { id: number; x: number; y: number; el: HTMLElement | null },
+    down: null as null | { id: number; x: number; y: number; el: HTMLElement | null; shift?: boolean },
     shrinkPending: false,
     homeEdge: edge as Edge, // rest edge before the current excursion (cancel returns here)
     modeSince: 0,
@@ -347,13 +352,13 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     return x > f.x + f.w / 2 ? "right" : "left";
   }, []);
 
-  const edgeTarget = useCallback((force?: Edge) => {
+  const edgeTarget = useCallback((force?: Edge, atY?: number) => {
     const s = S.current;
     const f = s.frame;
     const onRight = (force ?? sideOf(s.pos.x)) === "right";
     const x = onRight ? f.x + f.w - EDGE_GAP - R_REST : f.x + EDGE_GAP + R_REST;
     const y = clamp(
-      fin(s.pos.y, f.y + f.h / 2),
+      fin(atY ?? s.pos.y, f.y + f.h / 2),
       f.y + EDGE_MARGIN_Y + R_REST,
       f.y + f.h - EDGE_MARGIN_Y - R_REST,
     );
@@ -392,11 +397,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     render();
     if (s.mode === "rest") {
       const side = sideOf(s.pos.x);
-      s.homeEdge = side;
-      if (side !== s.wantEdge) {
-        s.wantEdge = side; // optimistic, so a stale snapshot does not bounce it back
-        sendIntent({ type: "settings-changed", settings: { bubbleEdge: side } });
-      }
+      s.homeEdge = side; // the resting spot only changes through settings or a Shift + drag
     }
     render();
     ensureWindow("small");
@@ -493,12 +494,18 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     startLoop();
   }, [clearLens, edgeTarget, parkTarget, resetLasso, setMode, startLoop]);
 
-  const startReturn = useCallback((force?: Edge, reason = "return") => {
+  /** The resting y the settings ask for (global points); edgeTarget clamps it to the display. */
+  const homeY = useCallback(() => {
+    const s = S.current;
+    return s.frame.y + clamp(fin(s.wantY, 0.5), Y_MIN, Y_MAX) * s.frame.h;
+  }, []);
+
+  const startReturn = useCallback((force?: Edge, reason = "return", atY?: number) => {
     const s = S.current;
     setMode("returning", force ? `${reason} → ${force} edge` : reason);
     s.lensAt = 0;
     s.rT = R_REST;
-    const t = edgeTarget(force);
+    const t = edgeTarget(force, atY);
     s.tx = t.x;
     s.ty = t.y;
     const near =
@@ -518,8 +525,8 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     clearLens();
     resetLasso();
     if (s.held) s.suppress = true;
-    startReturn(s.homeEdge, "cancel");
-  }, [clearLens, resetLasso, startReturn]);
+    startReturn(s.wantEdge, "cancel", homeY());
+  }, [clearLens, homeY, resetLasso, startReturn]);
 
   loopRef.current = (now: number) => {
     const s = S.current;
@@ -534,7 +541,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     }
 
     const cfg =
-      s.mode === "dragging" || s.mode === "armed"
+      s.mode === "dragging" || s.mode === "armed" || s.mode === "moving"
         ? SPRING_DRAG
         : s.mode === "parking"
           ? SPRING_PARK
@@ -579,6 +586,20 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         return;
       }
       const now = performance.now();
+      if (d.shift && s.mode !== "dragging" && s.mode !== "armed" && s.mode !== "parking") {
+        // Shift + drag: move the resting spot. No target-start, no lens, no lasso, no outline.
+        s.held = true;
+        s.suppress = false;
+        s.lensAt = 0;
+        s.rT = R_REST;
+        s.tx = p.x;
+        s.ty = p.y;
+        s.lastInput = now;
+        if (s.mode !== "moving") setMode("moving", "shift-drag: reposition, no capture");
+        ensureWindow("big");
+        startLoop();
+        return;
+      }
       s.held = true;
       s.suppress = false;
       const wasTargeting = s.mode === "dragging" || s.mode === "armed";
@@ -605,6 +626,12 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
 
   const onDragMove = useCallback((p: { x: number; y: number }) => {
     const s = S.current;
+    if (s.mode === "moving") {
+      if (!s.down || !s.held || ![p.x, p.y].every(Number.isFinite)) return;
+      s.tx = p.x;
+      s.ty = p.y;
+      return;
+    }
     if (s.suppress || s.mode !== "dragging" || !s.down || !s.held) return;
     if (![p.x, p.y].every(Number.isFinite)) return;
     s.tx = p.x;
@@ -634,6 +661,23 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     const wasHeld = s.held;
     s.held = false;
     s.down = null; // the gesture hook only ends a drag on pointerup / pointercancel
+    if (s.mode === "moving") {
+      // Stick to the nearest wall at the release height and remember it as the resting spot.
+      s.suppress = false;
+      s.shrinkPending = false;
+      const side = sideOf(fin(s.tx, s.pos.x));
+      const f = s.frame;
+      // bubbleY = the drop CENTRE's y as a fraction of the display height, kept in 0.08..0.92.
+      const relY = clamp(fin((fin(s.ty, s.pos.y) - f.y) / f.h, 0.5), Y_MIN, Y_MAX);
+      startReturn(side, "reposition release", f.y + relY * f.h);
+      const frac = clamp(fin((s.ty - f.y) / f.h, relY), Y_MIN, Y_MAX);
+      s.wantEdge = side; // optimistic, so a stale snapshot does not bounce it back
+      s.wantY = frac;
+      s.homeEdge = side;
+      blog(`[bubble] resting spot → ${side} edge, y=${frac.toFixed(3)}`);
+      sendIntent({ type: "settings-changed", settings: { bubbleEdge: side, bubbleY: frac } });
+      return;
+    }
     if (s.suppress) {
       s.suppress = false;
     } else if (s.mode === "dragging") {
@@ -643,7 +687,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       s.shrinkPending = false;
       if (s.mode === "rest" || s.mode === "parked") ensureWindow("small");
     }
-  }, [ensureWindow, setMode]);
+  }, [ensureWindow, setMode, sideOf, startReturn]);
 
   /** The physical pointer is no longer pressed: end everything, including a stale gesture hook. */
   const endPointer = useCallback(
@@ -716,7 +760,7 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
       if (e.button !== 0) return;
       const el = (e.target as Element | null)?.closest?.(".gt-bubble") as HTMLElement | null;
       if (!el) return;
-      S.current.down = { id: e.pointerId, x: e.screenX, y: e.screenY, el };
+      S.current.down = { id: e.pointerId, x: e.screenX, y: e.screenY, el, shift: e.shiftKey };
     };
     const onPMove = (e: PointerEvent) => {
       const d = S.current.down;
@@ -773,6 +817,13 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         track(card.onResized(() => redockSoon(60)));
       })
       .catch((e) => logErr("card lookup", e));
+    // The user dragged the card: their position wins until the session ends.
+    track(
+      listen("card:user-moved", () => {
+        cardUserMoved();
+        blog("[bubble] card moved by the user: auto-dock off until the session ends");
+      }),
+    );
     // New drawings arrive while the tutor talks: move the card out of their way (debounced).
     let shapeKey = "";
     const unsubShapes = useSessionMirror.subscribe((st) => {
@@ -837,12 +888,16 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
   syncEdgeRef.current = () => {
     const s = S.current;
     if (!s.geomReady || s.mode !== "rest") return;
-    if (sideOf(s.pos.x) !== s.wantEdge) startReturn(s.wantEdge, "settings edge");
+    const t = edgeTarget(s.wantEdge, homeY());
+    if (sideOf(s.pos.x) !== s.wantEdge || Math.abs(s.pos.y - t.y) > 1.5) {
+      startReturn(s.wantEdge, "settings resting spot", homeY());
+    }
   };
   useEffect(() => {
     S.current.wantEdge = edge;
+    if (Number.isFinite(bubbleY)) S.current.wantY = bubbleY;
     syncEdgeRef.current();
-  }, [edge]);
+  }, [edge, bubbleY]);
 
   const prevPhase = useRef<Phase>(phase);
   useEffect(() => {
@@ -853,21 +908,23 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
     if (phase === "idle" && prev !== "idle") {
       s.idleSince = performance.now();
       s.lastRegion = null; // the next session has its own target (or none, for a click)
+      cardSessionEnded(); // the card docks again for the next session
     }
     if (prev === "idle" || phase !== "idle") return;
     if (s.mode === "returning") return; // already heading home (e.g. our own cancel)
+    if (s.mode === "moving") return; // the user is repositioning it; release decides
     if (s.mode === "dragging" && s.held && s.down) return; // user is holding it; they decide
     if (s.mode === "dragging") s.held = false; // stale drag: the session ended under it
     if (s.mode === "armed" || s.mode === "dragging") {
       // Targeting was cancelled elsewhere: go back where we came from.
       clearLens();
       resetLasso();
-      startReturn(s.homeEdge, `targeting cancelled (${prev} → idle)`);
+      startReturn(s.wantEdge, `targeting cancelled (${prev} → idle)`, homeY());
       return;
     }
-    // Natural session end: nearest edge.
-    startReturn(undefined, `session ${prev} → idle`);
-  }, [phase, clearLens, resetLasso, startReturn]);
+    // Natural session end: back to the resting spot.
+    startReturn(s.wantEdge, `session ${prev} → idle`, homeY());
+  }, [phase, clearLens, homeY, resetLasso, startReturn]);
 
   // Watchdog: away from rest, nothing held, and the session idle for 3 s → go home.
   useEffect(() => {
@@ -881,10 +938,10 @@ export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotio
         clearLens();
         resetLasso();
       }
-      startReturn(s.homeEdge, `watchdog: idle ${IDLE_WATCHDOG_MS / 1000}s in ${s.mode}`);
+      startReturn(s.wantEdge, `watchdog: idle ${IDLE_WATCHDOG_MS / 1000}s in ${s.mode}`, homeY());
     }, 500);
     return () => clearInterval(id);
-  }, [clearLens, resetLasso, startReturn]);
+  }, [clearLens, homeY, resetLasso, startReturn]);
 
   return {
     wrapRef,

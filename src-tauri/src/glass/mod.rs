@@ -39,6 +39,7 @@ pub const GLASS_COMMANDS: &[&str] = &[
     "lens_grab",
     "bubble_set_frame",
     "cursor_pos",
+    "lens_grab_below",
 ];
 
 pub fn is_glass_command(name: &str) -> bool {
@@ -68,6 +69,7 @@ pub fn glass_handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send
         lens::lens_grab,
         lens::bubble_set_frame,
         lens::cursor_pos,
+        lens::lens_grab_below,
     ]
 }
 

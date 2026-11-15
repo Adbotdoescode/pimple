@@ -62,6 +62,7 @@ uniform float u_motion;
 uniform vec4 u_tint;
 uniform float u_pulse;
 uniform float u_alpha;
+uniform vec4 u_hover;   // lean vector toward the cursor (xy), jiggle, swell
 
 float smin(float a, float b, float k) {
   float h = max(k - abs(a - b), 0.0) / k;
@@ -76,8 +77,9 @@ float blob(vec2 p) {
   q /= sc;
   float len = length(q);
   float a = atan(q.y, q.x);
-  float rr = u_r * (1.0 - 0.26 * st * cos(a)
-    + (0.010 + 0.10 * st) * sin(3.0 * a + u_def.z)
+  float lean = dot(p / max(length(p), 1e-3), u_hover.xy);
+  float rr = u_r * (1.0 + lean + u_hover.w) * (1.0 - 0.26 * st * cos(a)
+    + (0.010 + 0.10 * st + u_hover.z) * sin(3.0 * a + u_def.z)
     + (0.006 + 0.04 * st) * sin(5.0 * a - u_def.z * 1.7));
   return (len - rr) * min(sc.x, sc.y);
 }
@@ -222,7 +224,7 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
   const u = {
     half: U("u_half"), tex: U("u_tex"), hasTex: U("u_hasTex"), center: U("u_center"),
     rect: U("u_rect"), r: U("u_r"), def: U("u_def"), wall: U("u_wall"), tether: U("u_tether"),
-    motion: U("u_motion"), tint: U("u_tint"), pulse: U("u_pulse"), alpha: U("u_alpha"),
+    motion: U("u_motion"), tint: U("u_tint"), pulse: U("u_pulse"), alpha: U("u_alpha"), hover: U("u_hover"),
   };
   gl.uniform1f(u.half, HALF);
   gl.uniform1i(u.tex, 0);
@@ -289,6 +291,37 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
   let sized = 0;
   let drawnHidden = false;
 
+  // ── hover: the window gets no mouse events outside its small frame, so the global cursor is
+  // polled (Rust `cursor_pos`) while the drop rests; it leans and swells toward a nearby cursor
+  // on an underdamped spring, which gives the wobble on enter and exit. ──
+  const cursor = { x: NaN, y: NaN, t: 0 };
+  let polling = false;
+  let lastPoll = 0;
+  let pollFails = 0;
+  const H = { x: 0, y: 0, vx: 0, vy: 0 }; // lean
+  const W = { x: 0, v: 0 }; // swell
+  const eye = { x: 0, y: 0 };
+  const pollCursor = (now: number, every: number) => {
+    if (polling || document.hidden || now - lastPoll < (pollFails > 5 ? 3000 : every)) return;
+    lastPoll = now;
+    polling = true;
+    invoke<[number, number]>("cursor_pos")
+      .then((p) => {
+        pollFails = 0;
+        if (Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])) {
+          cursor.x = p[0];
+          cursor.y = p[1];
+          cursor.t = performance.now();
+        }
+      })
+      .catch(() => {
+        pollFails++;
+      })
+      .finally(() => {
+        polling = false;
+      });
+  };
+
   const frame = (now: number) => {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
@@ -342,7 +375,55 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
       tr = 20 * (1 - Math.min(Math.max((dist - 22) / 120, 0), 1));
     }
 
-    const calm = atRest && om < 0.3 && speedK < 0.01 && s.hidden === drawnHidden;
+    // hover reaction (only while docked)
+    let leanX = 0;
+    let leanY = 0;
+    let swell = 0;
+    if (atRest) {
+      const cdx = cursor.x - s.cx;
+      const cdy = cursor.y - s.cy;
+      const cd = Math.hypot(cdx, cdy);
+      pollCursor(now, Number.isFinite(cd) && cd < 420 ? 33 : 110);
+      if (Number.isFinite(cd) && now - cursor.t < 600) {
+        const u = Math.min(Math.max((cd - s.r) / 80, 0), 1);
+        const prox = 1 - u * u * (3 - 2 * u); // 1 on the drop, 0 beyond ~80 pt from its surface
+        const k = (0.27 * prox * Math.min(cd / s.r, 1)) / Math.max(cd, 1e-3);
+        leanX = cdx * k;
+        leanY = cdy * k;
+        swell = 0.085 * prox;
+      }
+    }
+    {
+      const HK = 240;
+      const HC = 2 * 0.2 * Math.sqrt(HK);
+      let l2 = dt;
+      while (l2 > 1e-6) {
+        const h = Math.min(1 / 240, l2);
+        H.vx += (-HK * (H.x - leanX) - HC * H.vx) * h;
+        H.vy += (-HK * (H.y - leanY) - HC * H.vy) * h;
+        H.x += H.vx * h;
+        H.y += H.vy * h;
+        W.v += (-HK * (W.x - swell) - HC * W.v) * h;
+        W.x += W.v * h;
+        l2 -= h;
+      }
+    }
+    const hv = Math.hypot(H.vx, H.vy);
+    const jig = Math.min(hv * 0.04 + Math.abs(W.v) * 0.08, 0.075);
+    const hovering = Math.hypot(H.x, H.y) > 0.002 || hv > 0.01 || Math.abs(W.x) > 0.001 || Math.abs(W.v) > 0.01;
+    if (hovering) phase += dt * 5;
+    // The core (the drop's "eye") glances toward the cursor.
+    const ex = hovering ? H.x * s.r * 0.95 : 0;
+    const ey = hovering ? H.y * s.r * 0.95 : 0;
+    if (Math.abs(ex - eye.x) > 0.05 || Math.abs(ey - eye.y) > 0.05) {
+      eye.x = ex;
+      eye.y = ey;
+      const st = document.documentElement.style;
+      st.setProperty("--hx", `${ex.toFixed(2)}px`);
+      st.setProperty("--hy", `${ey.toFixed(2)}px`);
+    }
+
+    const calm = atRest && om < 0.3 && speedK < 0.01 && s.hidden === drawnHidden && !hovering;
     drawnHidden = s.hidden;
     if (calm && now - lastDraw < 66) return; // idle shimmer at ~15 fps
     lastDraw = now;
@@ -374,6 +455,7 @@ export function startLiquidLens(canvas: HTMLCanvasElement, log: (m: string) => v
     gl.uniform1f(u.motion, Math.min(1, speedK + stretch * 1.2));
     gl.uniform4f(u.tint, s.tint[0], s.tint[1], s.tint[2], s.tint[3]);
     gl.uniform1f(u.pulse, s.pulse);
+    gl.uniform4f(u.hover, H.x, H.y, jig, W.x);
     gl.uniform1f(u.alpha, s.hidden ? 0 : 1);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };

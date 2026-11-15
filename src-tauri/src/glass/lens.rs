@@ -83,12 +83,33 @@ fn bubble_window_id(app: &AppHandle) -> Option<u32> {
     Some(n as u32)
 }
 
+/// CGWindowID of one of our windows by label (looked up each call: it is one cheap message).
+#[cfg(target_os = "macos")]
+fn window_id(app: &AppHandle, label: &str) -> Option<u32> {
+    let w = app.get_webview_window(label)?;
+    let ptr = w.ns_window().ok()? as *mut objc2::runtime::AnyObject;
+    if ptr.is_null() {
+        return None;
+    }
+    let n: isize = unsafe { objc2::msg_send![ptr, windowNumber] };
+    if n <= 0 {
+        return None;
+    }
+    Some(n as u32)
+}
+
 #[cfg(target_os = "macos")]
 fn grab(app: &AppHandle, x: f64, y: f64, w: f64, h: f64) -> Result<Vec<u8>, String> {
+    let id = bubble_window_id(app).ok_or("lens_grab: no bubble window")?;
+    grab_below(id, x, y, w, h)
+}
+
+/// Raw BGRA frame of the screen BELOW window `id` for a rect in global points.
+#[cfg(target_os = "macos")]
+fn grab_below(id: u32, x: f64, y: f64, w: f64, h: f64) -> Result<Vec<u8>, String> {
     if ![x, y, w, h].iter().all(|v| v.is_finite()) || w < 2.0 || h < 2.0 || w > 1200.0 || h > 1200.0 {
         return Err("lens_grab: bad rect".into());
     }
-    let id = bubble_window_id(app).ok_or("lens_grab: no bubble window")?;
     // Retina for a small lens; nominal once the rect is large, so a frame stays around 1 MB.
     let res = if w.max(h) > 330.0 { cg::IMAGE_NOMINAL_RESOLUTION } else { cg::IMAGE_BEST_RESOLUTION };
     let rect = cg::CGRect {
@@ -164,5 +185,56 @@ pub fn bubble_set_frame(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> Resul
     match rx.recv_timeout(std::time::Duration::from_millis(400)) {
         Ok(r) => r,
         Err(_) => Ok(()),
+    }
+}
+
+/// () → [x, y]: the global cursor position in points (top-left origin). The bubble polls this
+/// at rest so the droplet can lean toward a cursor that is NEAR it (its window gets no mouse
+/// events outside its own small frame).
+#[tauri::command(async)]
+pub fn cursor_pos() -> Result<(f64, f64), String> {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "CoreGraphics", kind = "framework")]
+        extern "C" {
+            fn CGEventCreate(source: *const c_void) -> *mut c_void;
+            fn CGEventGetLocation(event: *mut c_void) -> cg::CGPoint;
+        }
+        unsafe {
+            let e = CGEventCreate(std::ptr::null());
+            if e.is_null() {
+                return Err("cursor_pos: no event".into());
+            }
+            let p = CGEventGetLocation(e);
+            cg::CFRelease(e as *const c_void);
+            Ok((p.x, p.y))
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("cursor_pos: macOS only".into())
+    }
+}
+
+/// ({label, x, y, w, h} global points) → the same raw BGRA frame as `lens_grab`, but of what is
+/// BELOW the window with that label (the card uses it to refract the desktop behind itself).
+#[tauri::command(async)]
+pub fn lens_grab_below(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<tauri::ipc::Response, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let id = window_id(&app, &label).ok_or_else(|| format!("lens_grab_below: no window '{label}'"))?;
+        grab_below(id, x, y, w, h).map(tauri::ipc::Response::new)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, &label, x, y, w, h);
+        Err("lens_grab_below: macOS only".into())
     }
 }

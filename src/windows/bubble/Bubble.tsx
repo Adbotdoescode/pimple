@@ -134,7 +134,7 @@ export function Bubble({ phase, onIntent, diameter = 68, motion = 0, gestures }:
       <button
         type="button"
         role="button"
-        aria-label="Glass Tutor"
+        aria-label="Pimple"
         className="gt-bubble"
         data-state={state}
         onKeyDown={onKeyDown}

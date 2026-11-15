@@ -27,7 +27,8 @@ const WRAP_STYLE: CSSProperties = {
 export default function App() {
   const phase = useSession((s) => s.phase);
   const edge = useSession((s) => s.settings?.bubbleEdge) ?? "right";
-  const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase, edge);
+  const bubbleY = useSession((s) => s.settings?.bubbleY) ?? 0.5;
+  const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase, edge, bubbleY);
   const lensRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const c = lensRef.current;

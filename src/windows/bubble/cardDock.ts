@@ -19,6 +19,17 @@ export const AUTO_MINIMISE_EVENT = "card:auto-minimise";
 let autoMin = false; // we asked the card to minimise (so we may ask it to expand again)
 let lastFull = { ...FALLBACK }; // last expanded card size seen
 let lastLine = "";
+let userMoved = false; // the user dragged the card: leave it alone until the session ends
+
+/** The card window reported a user drag ("card:user-moved"): stop docking and auto-minimising. */
+export function cardUserMoved(): void {
+  userMoved = true;
+  autoMin = false;
+}
+/** Session over: the card docks beside the drop again. */
+export function cardSessionEnded(): void {
+  userMoved = false;
+}
 
 /** Union bbox (global points, padded) of everything the tutor has drawn on the overlay. */
 export function drawingsBBox(s: SessionSnapshot): RectPts | null {
@@ -101,6 +112,7 @@ export async function dockCard(
   region?: RectPts | null,
 ): Promise<void> {
   if (![cx, cy, radius].every(Number.isFinite)) return;
+  if (userMoved) return;
   try {
     const card = await Window.getByLabel("card");
     if (!card) return;

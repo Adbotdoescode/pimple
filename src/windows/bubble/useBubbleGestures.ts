@@ -44,6 +44,8 @@ interface Press {
   vx: number;
   vy: number;
   dragging: boolean;
+  /** Shift was held at press: Shift + drag repositions the bubble, Shift + click does nothing. */
+  shift: boolean;
 }
 
 /**
@@ -75,6 +77,7 @@ export function useBubbleGestures(opts: BubbleGestureOptions): BubbleGestureProp
       vx: 0,
       vy: 0,
       dragging: false,
+      shift: e.shiftKey,
     };
   };
 
@@ -121,7 +124,7 @@ export function useBubbleGestures(opts: BubbleGestureOptions): BubbleGestureProp
     }
     const held = performance.now() - p.startT;
     const moved = Math.hypot(x - p.startX, y - p.startY);
-    if (moved < SLOP_PX && held < CLICK_MAX_MS) {
+    if (moved < SLOP_PX && held < CLICK_MAX_MS && !p.shift) {
       optsRef.current.onClick();
     }
   };
