@@ -5,24 +5,29 @@ import { useSession } from "../../lib/sessionMirror";
 import { Bubble } from "./Bubble";
 import { useBubbleMotion } from "./useBubbleMotion";
 
-// The wrapper is viewport-sized and always transformed, which makes it the containing block for
-// Bubble's position:fixed stage. Its centre sits at (--lx, --ly) in window-local px, so the glass
-// is drawn exactly there; the squash/stretch transform pivots on the glass centre.
-// useBubbleMotion writes --lx/--ly/transform/opacity straight to the DOM every frame.
+// The wrapper is a fixed 504 pt square (2·R_MAX + 64) centred on (--lx, --ly) in window-local px.
+// It is always transformed, which makes it the containing block for Bubble's position:fixed stage;
+// the injected rule below sizes that stage to the wrapper (instead of the viewport) so the glow
+// filter and squash transform only touch a small layer, even when the window covers the display.
+// useBubbleMotion writes --lx/--ly/transform/filter/opacity straight to the DOM every frame.
+const WRAP = 504;
+const WRAP_CSS = `.gt-wrap .gt-stage { width: 100%; height: 100%; }`;
 const WRAP_STYLE: CSSProperties = {
   position: "fixed",
-  left: "calc(var(--lx, 50vw) - 50vw)",
-  top: "calc(var(--ly, 50vh) - 50vh)",
-  width: "100vw",
-  height: "100vh",
+  left: `calc(var(--lx, 50vw) - ${WRAP / 2}px)`,
+  top: `calc(var(--ly, 50vh) - ${WRAP / 2}px)`,
+  width: WRAP,
+  height: WRAP,
   transform: "translateZ(0)",
   transformOrigin: "50% 50%",
-  willChange: "transform",
+  willChange: "transform, filter",
+  pointerEvents: "none",
 };
 
 export default function App() {
   const phase = useSession((s) => s.phase);
-  const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase);
+  const edge = useSession((s) => s.settings?.bubbleEdge) ?? "right";
+  const { wrapRef, diameter, motion, gestures } = useBubbleMotion(phase, edge);
   const send = (i: UiIntent): void => {
     emitEvent(EV.uiIntent, i).catch((e) =>
       console.error("bubble: ui:intent emit failed", e instanceof Error ? e.message : e),
@@ -30,7 +35,8 @@ export default function App() {
   };
   return (
     <div style={{ width: "100%", height: "100%", background: "transparent" }}>
-      <div ref={wrapRef} style={WRAP_STYLE}>
+      <style>{WRAP_CSS}</style>
+      <div ref={wrapRef} className="gt-wrap" style={WRAP_STYLE}>
         <Bubble
           phase={phase}
           onIntent={send}

@@ -41,3 +41,17 @@ body {
     animation: none;
   }
 }
+
+/* Debug fixture backdrop fades in on mount (fade-out is the parent group's opacity transition). */
+.gt-fixture-in {
+  animation: gt-fixture-in 200ms ease-out both;
+}
+
+@keyframes gt-fixture-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   imagePxToScreen,
   type CaptureResult,
@@ -123,8 +124,21 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
     };
   }, [snapshot, phase, current]);
 
+  // Debug fixture backdrop: the raw capture drawn under the shapes, so a headless preview can
+  // check alignment. Forced on by `?fixtureBackdrop=1` or by the snapshot's isFixture flag.
+  const forcedByUrl = useMemo(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("fixtureBackdrop") === "1",
+    [],
+  );
+  const isFixture = (snapshot as (SessionSnapshot & { isFixture?: boolean }) | null)?.isFixture === true;
+  const backdrop = useMemo<CaptureResult | null>(() => {
+    if (!snapshot || phase === "idle" || !snapshot.capture) return null;
+    return isFixture || forcedByUrl ? snapshot.capture : null;
+  }, [snapshot, phase, isFixture, forcedByUrl]);
+
   const mainHeld = useRetained(main, MAIN_FADE_MS);
   const sideHeld = useRetained(side, SIDE_FADE_MS);
+  const backdropHeld = useRetained(backdrop, MAIN_FADE_MS);
 
   const pixelScale = mainHeld.value?.capture.pixelScale ?? sideHeld.value?.capture.pixelScale ?? 1;
   const mainStyle = useStyler(sampler, pixelScale, "main");
@@ -147,6 +161,13 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
         background: "transparent",
       }}
     >
+      {backdropHeld.value && (
+        <g style={{ opacity: backdropHeld.visible ? 1 : 0, transition: `opacity ${MAIN_FADE_MS}ms ease` }}>
+          <g className="gt-fixture-in">
+            <FixtureBackdrop capture={backdropHeld.value} origin={origin} />
+          </g>
+        </g>
+      )}
       {mainLayer && (
         <g style={{ opacity: mainHeld.visible ? 1 : 0, transition: `opacity ${MAIN_FADE_MS}ms ease` }}>
           <ShapeLayer
@@ -176,5 +197,31 @@ export function OverlayRoot({ snapshot }: { snapshot: SessionSnapshot | null }) 
       )}
       <TargetingLayer origin={origin} />
     </svg>
+  );
+}
+
+/** Debug only: the raw capture drawn at its screen rect, labelled so it is never mistaken for the real screen. */
+function FixtureBackdrop({ capture, origin }: { capture: CaptureResult; origin: Origin }) {
+  const r = capture.regionInScreenPoints;
+  const x = r.x - origin.x;
+  const y = r.y - origin.y;
+  const labelW = 92;
+  return (
+    <>
+      <image
+        href={convertFileSrc(capture.imagePath)}
+        x={x}
+        y={y}
+        width={r.w}
+        height={r.h}
+        preserveAspectRatio="none"
+        opacity={1}
+      />
+      <rect x={x} y={y} width={r.w} height={r.h} fill="none" stroke="rgba(255,80,80,0.8)" strokeWidth={1} strokeDasharray="4 3" />
+      <rect x={x + 4} y={y + 4} width={labelW} height={16} rx={8} fill="rgba(220,38,38,0.92)" />
+      <text x={x + 4 + labelW / 2} y={y + 15.5} textAnchor="middle" fontSize={10} fontFamily="system-ui, sans-serif" fontWeight={600} fill="#FFFFFF">
+        DEBUG FIXTURE
+      </text>
+    </>
   );
 }

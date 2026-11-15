@@ -31,6 +31,7 @@ import {
   type Spring2,
 } from "./spring";
 import { dockCard } from "./cardDock";
+import { LassoTracker, type LassoLoop } from "./lasso";
 
 const SMALL = 104;
 const R_REST = 28;
@@ -45,6 +46,7 @@ const INPUT_SLOP = 1.5;
 const WHEEL_GAIN = 0.0025;
 const LENS_DELAY_MS = 40; // let the drag read as a drag before the lens opens
 
+type Edge = "left" | "right";
 type Mode = "rest" | "dragging" | "armed" | "parking" | "parked" | "returning";
 type WinMode = "small" | "big";
 interface Rect { x: number; y: number; w: number; h: number }
@@ -74,7 +76,7 @@ export interface BubbleMotion {
   gestures: Partial<Omit<BubbleGestureOptions, "onClick">>;
 }
 
-export function useBubbleMotion(phase: Phase): BubbleMotion {
+export function useBubbleMotion(phase: Phase, edge: Edge = "right"): BubbleMotion {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [diameter, setDiameter] = useState(R_REST * 2);
   const [motion, setMotion] = useState(0);
@@ -108,7 +110,18 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     lastT: 0,
     dRendered: R_REST * 2,
     kRendered: 0,
+    glowK: -1,
     alive: true,
+    // lasso (mode C)
+    lasso: false,
+    tracker: new LassoTracker(),
+    loop: null as LassoLoop | null,
+    loopAt: 0, // time the latest loop closed
+    sentVer: -1,
+    sentClosed: false,
+    // rest edge
+    wantEdge: edge as Edge,
+    geomReady: false,
   });
 
   const win = useRef(getCurrentWindow());
@@ -132,6 +145,12 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
           ? "translateZ(0)"
           : `rotate(${th.toFixed(4)}rad) scale(${(1 + 0.12 * k).toFixed(4)}, ${(1 - 0.1 * k).toFixed(4)}) rotate(${(-th).toFixed(4)}rad)`;
       el.style.opacity = s.hidden ? "0" : "1";
+      // Outer glow breathes with speed; quantised so the filter is not re-rasterised every frame.
+      const gk = Math.round(k * 20) / 20;
+      if (gk !== s.glowK) {
+        s.glowK = gk;
+        el.style.filter = `drop-shadow(0 0 ${(6 + 8 * gk).toFixed(1)}px rgba(130, 200, 255, ${(0.15 + 0.25 * gk).toFixed(3)}))`;
+      }
     }
     const d = clamp(fin(s.rad.x, R_REST), R_REST, R_MAX) * 2;
     if (Math.abs(d - s.dRendered) > 0.2) {
@@ -226,10 +245,15 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
 
   // ───────── geometry helpers ─────────
 
-  const edgeTarget = useCallback(() => {
+  const sideOf = useCallback((x: number): Edge => {
+    const f = S.current.frame;
+    return x > f.x + f.w / 2 ? "right" : "left";
+  }, []);
+
+  const edgeTarget = useCallback((force?: Edge) => {
     const s = S.current;
     const f = s.frame;
-    const onRight = s.pos.x > f.x + f.w / 2;
+    const onRight = (force ?? sideOf(s.pos.x)) === "right";
     const x = onRight ? f.x + f.w - EDGE_GAP - R_REST : f.x + EDGE_GAP + R_REST;
     const y = clamp(
       fin(s.pos.y, f.y + f.h / 2),
@@ -237,14 +261,14 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
       f.y + f.h - EDGE_MARGIN_Y - R_REST,
     );
     return { x, y };
-  }, []);
+  }, [sideOf]);
 
-  const parkTarget = useCallback((cx: number, cy: number, r: number) => {
+  const parkTarget = useCallback((reg: RectPts) => {
     const f = S.current.frame;
-    let x = cx + r + PARK_GAP + R_REST;
-    if (x + R_REST > f.x + f.w - PARK_MARGIN) x = cx - r - PARK_GAP - R_REST;
+    let x = reg.x + reg.w + PARK_GAP + R_REST;
+    if (x + R_REST > f.x + f.w - PARK_MARGIN) x = reg.x - PARK_GAP - R_REST;
     x = clamp(x, f.x + PARK_MARGIN + R_REST, f.x + f.w - PARK_MARGIN - R_REST);
-    const y = clamp(cy, f.y + PARK_MARGIN + R_REST, f.y + f.h - PARK_MARGIN - R_REST);
+    const y = clamp(reg.y + reg.h / 2, f.y + PARK_MARGIN + R_REST, f.y + f.h - PARK_MARGIN - R_REST);
     return { x: fin(x, f.x + f.w - 40), y: fin(y, f.y + f.h / 2) };
   }, []);
 
@@ -269,6 +293,13 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     s.rad.v = 0;
     s.mode = s.mode === "parking" ? "parked" : "rest";
     render();
+    if (s.mode === "rest") {
+      const side = sideOf(s.pos.x);
+      if (side !== s.wantEdge) {
+        s.wantEdge = side; // optimistic, so a stale snapshot does not bounce it back
+        sendIntent({ type: "settings-changed", settings: { bubbleEdge: side } });
+      }
+    }
     ensureWindow("small");
     const settledMode = s.mode;
     s.chain = s.chain.then(() => {
@@ -276,7 +307,7 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
       if (c.mode !== settledMode) return;
       return dockCard(c.pos.x, c.pos.y, R_REST, c.frame, logErr);
     });
-  }, [ensureWindow, render]);
+  }, [ensureWindow, render, sideOf]);
 
   const emitLens = useCallback(() => {
     const s = S.current;
@@ -297,35 +328,65 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     emitEventTo("overlay", EV.targeting, { kind: "clear" }).catch((e) => logErr("targeting emit", e));
   }, []);
 
+  const emitLasso = useCallback(() => {
+    const s = S.current;
+    // Show the closed loop once the pen pauses or lifts; the live trail while it is moving.
+    const showClosed =
+      s.loop !== null && (!s.held || performance.now() - s.lastInput > 150 || s.loopAt >= s.lastInput);
+    if (showClosed === s.sentClosed && s.tracker.version === s.sentVer) return;
+    s.sentClosed = showClosed;
+    s.sentVer = s.tracker.version;
+    const update =
+      showClosed && s.loop
+        ? { kind: "lasso" as const, points: s.loop.points, closed: true }
+        : { kind: "lasso" as const, points: s.tracker.trail(), closed: false };
+    emitEventTo("overlay", EV.targeting, update).catch((e) => logErr("targeting emit", e));
+  }, []);
+
+  const resetLasso = useCallback(() => {
+    const s = S.current;
+    s.lasso = false;
+    s.loop = null;
+    s.loopAt = 0;
+    s.sentVer = -1;
+    s.sentClosed = false;
+    s.tracker.reset();
+  }, []);
+
   const commit = useCallback(() => {
     const s = S.current;
     if (s.mode !== "dragging" && s.mode !== "armed") return;
-    const r = clamp(fin(s.rad.x, R_REST), R_REST, R_MAX);
-    const cx = s.pos.x;
-    const cy = s.pos.y;
-    if (![cx, cy].every(Number.isFinite)) return;
-    sendIntent({
-      type: "target-commit",
-      mode: "region",
-      region: { x: cx - r, y: cy - r, w: 2 * r, h: 2 * r },
-    });
+    let region: RectPts;
+    let mode: "region" | "lasso";
+    if (s.lasso) {
+      if (!s.loop) return; // lasso mode always has a loop; be defensive
+      region = s.loop.bbox;
+      mode = "lasso";
+    } else {
+      const r = clamp(fin(s.rad.x, R_REST), R_REST, R_MAX);
+      region = { x: s.pos.x - r, y: s.pos.y - r, w: 2 * r, h: 2 * r };
+      mode = "region";
+    }
+    if (![region.x, region.y, region.w, region.h].every(Number.isFinite)) return;
+    sendIntent({ type: "target-commit", mode, region });
     clearLens();
+    resetLasso();
     if (s.held) s.suppress = true;
     s.mode = "parking";
     s.lensAt = 0;
     s.rT = R_REST;
-    const p = parkTarget(cx, cy, r);
+    const p = parkTarget(region);
     s.tx = p.x;
     s.ty = p.y;
     startLoop();
-  }, [clearLens, parkTarget, startLoop]);
+  }, [clearLens, parkTarget, resetLasso, startLoop]);
 
-  const startReturn = useCallback(() => {
+  const startReturn = useCallback((force?: Edge) => {
     const s = S.current;
     s.mode = "returning";
     s.lensAt = 0;
     s.rT = R_REST;
-    const t = edgeTarget();
+    const t = edgeTarget(force);
     s.tx = t.x;
     s.ty = t.y;
     const near =
@@ -343,9 +404,10 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     if (s.mode !== "dragging" && s.mode !== "armed") return;
     sendIntent({ type: "cancel" });
     clearLens();
+    resetLasso();
     if (s.held) s.suppress = true;
     startReturn();
-  }, [clearLens, startReturn]);
+  }, [clearLens, resetLasso, startReturn]);
 
   loopRef.current = (now: number) => {
     const s = S.current;
@@ -372,7 +434,8 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
 
     const targeting = s.mode === "dragging" || s.mode === "armed";
     if (targeting) {
-      emitLens();
+      if (s.lasso) emitLasso();
+      else emitLens();
       if (!s.suppress && performance.now() - s.lastInput >= COMMIT_MS) commit();
     } else if (s.mode === "parking" || s.mode === "returning") {
       const still =
@@ -404,7 +467,9 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
         sendIntent({ type: "target-start" });
         s.rT = R_REST;
         s.lensAt = now + LENS_DELAY_MS;
+        resetLasso();
       }
+      s.tracker.push(p.x, p.y, now);
       s.mode = "dragging";
       s.tx = p.x;
       s.ty = p.y;
@@ -413,7 +478,7 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
       ensureWindow("big");
       startLoop();
     },
-    [ensureWindow, startLoop],
+    [ensureWindow, resetLasso, startLoop],
   );
 
   const onDragMove = useCallback((p: { x: number; y: number }) => {
@@ -422,9 +487,22 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     if (![p.x, p.y].every(Number.isFinite)) return;
     s.tx = p.x;
     s.ty = p.y;
+    const now = performance.now();
     if (Math.hypot(p.x - s.lastPt.x, p.y - s.lastPt.y) >= INPUT_SLOP) {
       s.lastPt = { x: p.x, y: p.y };
-      s.lastInput = performance.now();
+      s.lastInput = now;
+    }
+    s.tracker.push(p.x, p.y, now);
+    const loop = s.tracker.detect();
+    if (loop) {
+      if (!s.lasso) {
+        // Became a pen: no lens growth; spring the glass back to 56 pt.
+        s.lasso = true;
+        s.lensAt = 0;
+        s.rT = R_REST;
+      }
+      s.loop = loop; // latest closed loop wins
+      s.loopAt = now;
     }
   }, []);
 
@@ -447,8 +525,14 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     const onWheel = (e: WheelEvent) => {
       const c = S.current;
       if (c.mode !== "dragging" && c.mode !== "armed") return;
+      if (c.lasso) return; // the pen does not resize
       const dy = fin(e.deltaY, 0);
       if (!dy) return;
+      // Only scrolls over (or near) the lens resize it; leave the rest alone.
+      const gx = c.geom.x + e.clientX;
+      const gy = c.geom.y + e.clientY;
+      const r = clamp(fin(c.rad.x, R_REST), R_REST, R_MAX);
+      if (Math.hypot(gx - c.pos.x, gy - c.pos.y) > 2 * r) return;
       e.preventDefault();
       c.lensAt = 0;
       const base = Math.max(c.rT, R_REST);
@@ -499,7 +583,9 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
         c.pos = { x: lp.x + SMALL / 2, y: lp.y + SMALL / 2, vx: 0, vy: 0 };
         c.tx = c.pos.x;
         c.ty = c.pos.y;
+        c.geomReady = true;
         render();
+        syncEdgeRef.current();
       } catch (e) {
         logErr("initial geometry", e);
       }
@@ -518,6 +604,19 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
 
   // ───────── session end → spring home ─────────
 
+  // ───────── rest edge from settings ─────────
+
+  const syncEdgeRef = useRef<() => void>(() => {});
+  syncEdgeRef.current = () => {
+    const s = S.current;
+    if (!s.geomReady || s.mode !== "rest") return;
+    if (sideOf(s.pos.x) !== s.wantEdge) startReturn(s.wantEdge);
+  };
+  useEffect(() => {
+    S.current.wantEdge = edge;
+    syncEdgeRef.current();
+  }, [edge]);
+
   const prevPhase = useRef<Phase>(phase);
   useEffect(() => {
     const prev = prevPhase.current;
@@ -525,9 +624,12 @@ export function useBubbleMotion(phase: Phase): BubbleMotion {
     if (prev === "idle" || phase !== "idle") return;
     const s = S.current;
     if (s.mode === "dragging") return; // user is holding it; they decide
-    if (s.mode === "armed") clearLens();
+    if (s.mode === "armed") {
+      clearLens();
+      resetLasso();
+    }
     startReturn();
-  }, [phase, clearLens, startReturn]);
+  }, [phase, clearLens, resetLasso, startReturn]);
 
   return {
     wrapRef,
